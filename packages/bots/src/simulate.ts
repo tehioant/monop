@@ -60,8 +60,8 @@ export function simulate(config: SimulationConfig): Report {
   if (!Number.isInteger(games) || games < 1) throw new RangeError(`Unsupported number of games: ${games}`);
   if (!Number.isInteger(seed)) throw new RangeError(`Unsupported seed: ${seed}`);
 
-  const turns: number[] = [];
-  const actions: number[] = [];
+  const turnCounts: number[] = [];
+  const actionCounts: number[] = [];
   const winsBySeat = Array.from({ length: players }, () => 0);
   let noWinner = 0;
   const countries: Report['countries'] = COUNTRIES.map(({ id }) => ({ country: id, held: 0, wins: 0 }));
@@ -70,9 +70,9 @@ export function simulate(config: SimulationConfig): Report {
   for (let game = 0; game < games; game++) {
     const gameSeed = (seed + game) >>> 0;
     const bot = createBot(difficulty, gameSeed);
-    const { winner, view, ...length } = playGame({ players, countriesToWin }, gameSeed, bot);
-    turns.push(length.turns);
-    actions.push(length.actions);
+    const { turns, actions, winner, view } = playGame({ players, countriesToWin }, gameSeed, bot);
+    turnCounts.push(turns);
+    actionCounts.push(actions);
     if (winner === null) noWinner++;
     else winsBySeat[winner]!++;
     view.players.forEach((player, seat) => {
@@ -96,8 +96,8 @@ export function simulate(config: SimulationConfig): Report {
 
   return {
     config,
-    turns: spread(turns),
-    actions: spread(actions),
+    turns: spread(turnCounts),
+    actions: spread(actionCounts),
     winsBySeat,
     noWinner,
     countries,

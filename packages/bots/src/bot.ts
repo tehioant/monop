@@ -27,8 +27,7 @@ export function createBot(difficulty: Difficulty, seed: number): Bot {
     const roll = random(seed, view.log.length);
     const pick = random(roll, view.log.length);
     if (roll < mistakes * 2 ** 32) return careless(legal, pick);
-    const score = rate(view, depth);
-    const scores = legal.map(score);
+    const scores = legal.map(rate(view, depth));
     const best = Math.max(...scores);
     const choices = legal.filter((_, i) => scores[i] === best);
     return choices[pick % choices.length]!;

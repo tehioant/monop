@@ -50,21 +50,23 @@ function deck(...hands: CardId[][]): CardId[] {
   return [...dealt, ...coins, ...spare.filter((id) => !id.startsWith('coin'))];
 }
 
+/** The player the game is waiting on. */
+function actor(state: GameState): number {
+  const { phase } = viewFor(state, 0);
+  if (phase.kind === 'over') throw new Error('The game is over');
+  return phase.player;
+}
+
 /** Applies actions in sequence, each as the player the game is waiting on. */
 function act(state: GameState, ...actions: Action[]): GameState {
-  return actions.reduce((s, action) => {
-    const { phase } = viewFor(s, 0);
-    if (phase.kind === 'over') throw new Error('The game is over');
-    return applyAction(s, phase.player, action);
-  }, state);
+  return actions.reduce((s, action) => applyAction(s, actor(s), action), state);
 }
 
 /** What a bot of that level, made with each of the seeds, chooses for the player the game is waiting on. */
 function choices(state: GameState, level: Difficulty, among = (_: Action) => true): Action[] {
-  const { phase } = viewFor(state, 0);
-  if (phase.kind === 'over') throw new Error('The game is over');
-  const legal = legalActions(state, phase.player).filter(among);
-  return SEEDS.map((seed) => createBot(level, seed)(viewFor(state, phase.player), legal));
+  const view = viewFor(state, actor(state));
+  const legal = legalActions(state, view.viewer).filter(among);
+  return SEEDS.map((seed) => createBot(level, seed)(view, legal));
 }
 
 const all = (action: Action) => SEEDS.map(() => action);
@@ -92,7 +94,7 @@ test('at every level a bot returns one of the legal actions, in every phase, unt
 });
 
 test('a bot is deterministic for a given seed', () => {
-  const levels: Difficulty[] = ['easy', 'normal', 'hard'];
+  const levels = [...DIFFICULTIES];
   assert.deepEqual(playGame(levels, 3, 7), playGame(levels, 3, 7));
   assert.notDeepEqual(playGame(levels, 3, 7).log, playGame(levels, 3, 8).log);
 });
@@ -181,7 +183,7 @@ test('a hard bot aims at the leader; a normal bot does not tell two opponents wh
 });
 
 test('with no card left to draw, bots play out the cards they would otherwise keep, and the game ends', () => {
-  const cards = ['veto-1', 'veto-2', 'seizure-1', 'raid-1', 'upgrade-1', 'veto-3', 'seizure-2', 'raid-2', 'toll-1', 'paris'];
+  const cards = ['veto-1', 'veto-2', 'seizure-1', 'raid-1', 'wild-any-1', 'veto-3', 'seizure-2', 'raid-2', 'toll-1', 'paris'];
   for (const level of DIFFICULTIES) assert.equal(playGame([level, level], 3, 1, cards).winner, null);
 });
 

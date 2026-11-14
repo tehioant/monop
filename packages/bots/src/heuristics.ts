@@ -8,6 +8,7 @@ import {
   type ActionId,
   type CardId,
   type CountryId,
+  type Phase,
   type Play,
   type PlayerId,
   type PlayerView,
@@ -95,9 +96,10 @@ function isVeto(card: CardId): boolean {
 }
 
 /**
- * Rates the legal actions of the player whose view this is: the higher the better. Ending the turn and
- * declining are 0, so anything rated below is left undone. Moving a wild city is rated above 0 only when the
- * table is worth more after it, so a bot cannot move one back and forth.
+ * Rates the legal actions of the player whose view this is: the higher the better, `-Infinity` for never.
+ * Declining is 0, and so is ending the turn within the hand limit: anything rated below is left undone.
+ * Moving a wild city is rated only when the table is worth more after it, so a bot cannot move one back and
+ * forth.
  */
 export function rate(view: PlayerView, depth: Depth): (action: Action) => number {
   const { viewer: me, phase, hand } = view;
@@ -143,6 +145,9 @@ export function rate(view: PlayerView, depth: Depth): (action: Action) => number
 
   const myStacks = view.players[me]!.table;
   const myBank = view.players[me]!.bank;
+  const hasComplete = myStacks.some((stack) => stack.complete);
+  const tollOf = (country?: CountryId) => myStacks.find((stack) => stack.country === country)!.toll;
+  const canDraw = view.deckSize > 0 || view.discardTop !== null;
   /** What giving up a banked card or a laid city costs. */
   const cost = (card: CardId) =>
     COIN * getCard(card).value + (myBank.includes(card) ? 0 : 1 - gain(moved(mine, card)));
@@ -152,11 +157,13 @@ export function rate(view: PlayerView, depth: Depth): (action: Action) => number
     // best[v]: the cheapest cards worth at least v.
     const best: ({ cost: number; cards: CardId[] } | undefined)[] = [{ cost: 0, cards: [] }];
     for (const card of payable) {
+      const price = cost(card);
+      const coin = getCard(card).value;
       for (let v = amount; v >= 1; v--) {
-        const rest = best[Math.max(0, v - getCard(card).value)];
+        const rest = best[Math.max(0, v - coin)];
         const known = best[v];
-        if (rest && !(known && known.cost <= rest.cost + cost(card))) {
-          best[v] = { cost: rest.cost + cost(card), cards: [...rest.cards, card] };
+        if (rest && (!known || rest.cost + price < known.cost)) {
+          best[v] = { cost: rest.cost + price, cards: [...rest.cards, card] };
         }
       }
     }
@@ -170,19 +177,20 @@ export function rate(view: PlayerView, depth: Depth): (action: Action) => number
   }, mine);
   const want = (id: CardId): number => {
     const card = getCard(id);
+    const laid = (country: CountryId) => gain(moved(planned, id, country), moved(planned, id));
     switch (card.kind) {
       case 'coin':
         return COIN * card.value;
       case 'city':
-        return 1 + gain(moved(planned, id, card.country), moved(planned, id));
+        return 1 + laid(card.country);
       case 'wild':
-        return 1.5 + Math.max(...card.countries.map((c) => gain(moved(planned, id, c), moved(planned, id))));
+        return 1.5 + Math.max(...card.countries.map(laid));
       case 'action':
         switch (card.action) {
           case 'toll':
             return KEEP.toll + 0.4 * Math.max(0, ...myStacks.map((stack) => stack.toll));
           case 'upgrade':
-            return KEEP.upgrade + (myStacks.some((stack) => stack.complete) ? 1.5 : 0);
+            return KEEP.upgrade + (hasComplete ? 1.5 : 0);
           case 'veto':
             return KEEP.veto + (depth === 2 ? 3 : 0);
           default:
@@ -196,15 +204,15 @@ export function rate(view: PlayerView, depth: Depth): (action: Action) => number
     switch (card.kind === 'action' && card.action) {
       case 'windfall':
         // First, so that the rest of the turn is chosen with the new cards in hand.
-        return view.deckSize > 0 || view.discardTop !== null ? 6 : -1;
+        return canDraw ? 6 : -1;
       case 'levy':
         return chargeAll(RULES.levyAmount) - 0.5;
       case 'debt':
         return charge(action.target!, RULES.debtAmount) - 0.5;
       case 'toll':
-        return chargeAll(myStacks.find((stack) => stack.country === action.country)!.toll) - 0.5;
+        return chargeAll(tollOf(action.country)) - 0.5;
       case 'upgrade':
-        return 1.5 + 0.1 * myStacks.find((stack) => stack.country === action.country)!.toll;
+        return 1.5 + 0.1 * tollOf(action.country);
       case 'raid':
       case 'exchange':
       case 'seizure': {
@@ -217,10 +225,8 @@ export function rate(view: PlayerView, depth: Depth): (action: Action) => number
     }
   };
 
-  /** In a `veto` phase: what the card at stake is worth stopping, or forcing through, less what a Veto is kept for. */
-  const veto = (): number => {
-    if (phase.kind !== 'veto') return 0;
-    const { effect, target } = phase;
+  /** What the card at stake is worth stopping, or forcing through, less what a Veto is kept for. */
+  const veto = ({ effect, target }: Extract<Phase, { kind: 'veto' }>): number => {
     let stake: number;
     if ('take' in effect) {
       const change = take(view.turn.player, effect.take);
@@ -234,13 +240,18 @@ export function rate(view: PlayerView, depth: Depth): (action: Action) => number
       !view.log.some((entry) => entry.type === 'play' && entry.player === me && isVeto(entry.card));
     if (depth === 1 || free || hand.filter(isVeto).length > 1) return stake - 1.2;
     // The last one is kept for a Seizure while there is a complete country to lose.
-    return stake - (myStacks.some((stack) => stack.complete) ? 6 : 2.5);
+    return stake - (hasComplete ? 6 : 2.5);
   };
 
-  // A card over the hand limit is better banked than discarded. And once no card is left to draw, a card kept
-  // in hand is kept for ever: if every player did that, the game would never end.
-  const drawsLeft = view.deckSize > 0 || view.discardTop !== null || view.market.length > 0;
-  const mustPlay = view.turn.playsLeft > 0 && (hand.length > RULES.handLimit || (!drawsLeft && hand.length > 0));
+  // Once no card is left to draw, a card kept in hand is kept for ever: if every player did that, the game
+  // would never end. So the hand is played out.
+  const mustPlay = !canDraw && view.market.length === 0 && hand.length > 0 && view.turn.playsLeft > 0;
+  /** What ending the turn costs: the cards over the hand limit, which will have to be discarded. */
+  const discards = hand
+    .map(want)
+    .sort((a, b) => a - b)
+    .slice(0, Math.max(0, hand.length - RULES.handLimit))
+    .reduce((sum, wanted) => sum + wanted, 0);
   const unsafe = depth === 2 && value(myBank) < SAFE_BANK;
   const paying = phase.kind === 'pay' && depth > 0 ? payment(phase.owed).cards : [];
 
@@ -252,26 +263,28 @@ export function rate(view: PlayerView, depth: Depth): (action: Action) => number
         return want(action.card);
       case 'lay': {
         const card = getCard(action.card);
-        return 1 + gain(moved(mine, card.id, card.kind === 'city' ? card.country : action.country));
+        return 1 + gain(moved(mine, action.card, card.kind === 'city' ? card.country : action.country));
       }
-      case 'reassign':
-        // A move that changes nothing must rate below ending the turn.
-        return gain(moved(mine, action.card, action.country)) - 0.01;
+      case 'reassign': {
+        // Free and unlimited: made only when the table is worth more after it, whatever the alternatives.
+        const better = gain(moved(mine, action.card, action.country));
+        return better > 0.01 ? better : -Infinity;
+      }
       case 'bank': {
         const card = getCard(action.card);
         const coin = COIN * card.value + (unsafe ? 2 : 0);
         if (card.kind === 'coin') return 0.5 + coin;
         // A city is laid, never banked; an action card is banked only when it is worth more as coin.
-        return card.kind === 'action' ? coin - want(card.id) : -WIN / 2;
+        return card.kind === 'action' ? coin - want(action.card) : -Infinity;
       }
       case 'play':
-        return phase.kind === 'veto' ? veto() : played(action);
+        return phase.kind === 'veto' ? veto(phase) : played(action);
       case 'pay':
         return paying.includes(action.card) ? 1 : -cost(action.card);
       case 'discard':
         return -want(action.card);
       case 'endTurn':
-        return mustPlay ? -WIN : 0;
+        return mustPlay ? -Infinity : -discards;
       default:
         return 0;
     }
