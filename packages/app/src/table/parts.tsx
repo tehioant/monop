@@ -3,7 +3,7 @@
 import type { CardId, PlayerView } from '@atlas/engine';
 import type { ReactNode } from 'react';
 import { Pressable, StyleSheet, Text, View, type ViewStyle } from 'react-native';
-import { cardInfo, countrySize, title } from './actions.ts';
+import { cardInfo, countryPerk, countrySize, title } from './actions.ts';
 import { colors, countryColor } from './theme.ts';
 
 type Stack = PlayerView['players'][number]['table'][number];
@@ -20,6 +20,7 @@ export const CARD_HEIGHT = 96;
 /** A card drawn from its data. */
 export function CardView({ id, selected, onPress }: Tappable) {
   const { name, kind, value, country } = cardInfo(id);
+  const perk = country && countryPerk(country);
   const band = country ? countryColor(country) : kind === 'coin' ? colors.coin : colors.action;
   return (
     <Pressable
@@ -42,27 +43,41 @@ export function CardView({ id, selected, onPress }: Tappable) {
       >
         {name}
       </Text>
+      {/* What the city's country gives once complete: visible before the city is laid. */}
+      {perk && <Text style={styles.cardPerk}>{perk.label}</Text>}
       <Text style={styles.cardValue}>{value}</Text>
     </Pressable>
   );
 }
 
-/** A country with its progress, and a line of `detail` if given. */
-export function CountryView({ stack, detail }: { stack: Stack; detail?: string }) {
+/**
+ * A country with its progress and its upgrades, and a line of `detail` if given. With `active` given, its perk
+ * too: marked as active for a holder it is in force for, plain otherwise.
+ */
+export function CountryView({ stack, detail, active }: { stack: Stack; detail?: string; active?: boolean }) {
   const progress = `${stack.cities.length}/${countrySize(stack.country)}`;
+  const upgrades = stack.upgrades.length;
+  const perk = active === undefined ? undefined : countryPerk(stack.country);
   return (
     <View style={[styles.country, { backgroundColor: countryColor(stack.country) }, stack.complete && styles.complete]}>
       <Text style={styles.countryName}>
         {title(stack.country)} {progress}
-        {stack.complete ? ' ✓' : ''}
+        {stack.complete ? ' ✓ complete' : ''}
+        {upgrades > 0 ? ` · ${upgrades} upgrade${upgrades > 1 ? 's' : ''}` : ''}
         {detail !== undefined && <Text style={styles.countryDetail}>{`  ${detail}`}</Text>}
       </Text>
+      {perk && <Text style={[styles.perk, active && styles.perkActive]}>{active ? `★ ${perk.label}` : perk.label}</Text>}
     </View>
   );
 }
 
 /** A card on the table, by name only. `color` outlines it: the country it is laid in. */
 export function Chip({ id, selected, onPress, color }: Tappable & { color?: string }) {
+  return <Choice label={cardInfo(id).name} picked={selected} onPress={onPress} color={color} />;
+}
+
+/** Something to pick, by its label. Dimmed and inert without `onPress`. */
+export function Choice({ label, picked, onPress, color }: { label: string; picked?: boolean; onPress?: () => void; color?: string }) {
   return (
     <Pressable
       onPress={onPress}
@@ -70,11 +85,11 @@ export function Chip({ id, selected, onPress, color }: Tappable & { color?: stri
       style={[
         styles.chip,
         color !== undefined && { borderColor: color },
-        selected && styles.chipSelected,
+        picked && styles.chipSelected,
         !onPress && styles.dimmed,
       ]}
     >
-      <Text style={styles.chipText}>{cardInfo(id).name}</Text>
+      <Text style={styles.chipText}>{label}</Text>
     </Pressable>
   );
 }
@@ -84,9 +99,9 @@ export function Panel({ highlighted, style, children }: { highlighted?: boolean;
   return <View style={[styles.panel, highlighted && styles.highlighted, style]}>{children}</View>;
 }
 
-export function Button({ label, onPress, quiet }: { label: string; onPress: () => void; quiet?: boolean }) {
+export function Button({ label, onPress, quiet, disabled }: { label: string; onPress: () => void; quiet?: boolean; disabled?: boolean }) {
   return (
-    <Pressable onPress={onPress} style={[styles.button, quiet && styles.buttonQuiet]}>
+    <Pressable onPress={onPress} disabled={disabled} style={[styles.button, quiet && styles.buttonQuiet, disabled && styles.dimmed]}>
       <Text style={[styles.buttonText, quiet && styles.buttonQuietText]}>{label}</Text>
     </Pressable>
   );
@@ -124,15 +139,31 @@ const styles = StyleSheet.create({
   cardBand: { alignSelf: 'stretch', paddingVertical: 3, paddingHorizontal: 2 },
   cardBandText: { color: '#fff', fontSize: 10, fontWeight: '700', textAlign: 'center' },
   cardName: { flex: 1, color: colors.ink, fontSize: 12, fontWeight: '600', textAlign: 'center', padding: 4 },
+  cardPerk: { color: colors.muted, fontSize: 9, fontWeight: '600' },
   cardValue: { color: colors.coin, fontSize: 13, fontWeight: '700', paddingBottom: 4 },
   country: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
     borderRadius: 6,
     paddingVertical: 4,
     paddingHorizontal: 8,
     borderWidth: 2,
     borderColor: 'transparent',
   },
-  complete: { borderColor: colors.ink },
+  complete: { borderColor: colors.ink, borderWidth: 3 },
+  perk: {
+    color: '#fff',
+    fontSize: 10,
+    fontWeight: '600',
+    borderRadius: 4,
+    borderWidth: 1,
+    borderColor: '#ffffff99',
+    paddingHorizontal: 4,
+    paddingVertical: 1,
+    overflow: 'hidden',
+  },
+  perkActive: { color: colors.ink, backgroundColor: colors.active, borderColor: colors.active, fontWeight: '800' },
   countryName: { color: '#fff', fontSize: 12, fontWeight: '700' },
   countryDetail: { fontWeight: '400' },
   chip: {

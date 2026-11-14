@@ -149,7 +149,7 @@ test('the payment prompt adds up the picked cards, and sends them only once they
   assert.equal(payPrompt(viewFor(state, 0), legalActions(state, 0), [], names), null);
 
   const none = at([]);
-  assert.equal(none.text, 'You owe Ann 5');
+  assert.equal(none.text, 'You owe 5 to Ann');
   assert.deepEqual([none.owed, none.total, none.actions], [5, 0, []]);
   assert.deepEqual(none.cards.map(({ key, label, country, picked }) => [key, label, country, picked]), [
     ['coin-5-1', 'Coin 5', undefined, false],
@@ -167,6 +167,7 @@ test('the payment prompt adds up the picked cards, and sends them only once they
   assert.deepEqual(over.actions, [{ type: 'pay', card: 'coin-1-1' }, { type: 'pay', card: 'london' }, { type: 'pay', card: 'coin-5-1' }]);
   assert.deepEqual(togglePay(at(['coin-5-1']), ['coin-5-1'], 'london'), ['coin-5-1']);
   assert.deepEqual(togglePay(over, picked, 'london'), ['coin-1-1', 'coin-5-1']);
+  assert.deepEqual(togglePay(none, [], 'veto-1'), []);
 
   // Sent in order, each is legal when its turn comes, and the last one settles the debt.
   const paid = act(state, ...over.actions);

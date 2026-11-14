@@ -11,6 +11,8 @@ export const colors = {
   accent: '#1d4ed8',
   coin: '#b7791f',
   action: '#374151',
+  /** A perk in force. */
+  active: '#fde68a',
 };
 
 /** One colour per country, in the order of the card data. All dark enough for white text. */

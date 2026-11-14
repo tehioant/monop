@@ -206,7 +206,7 @@ export function payPrompt(
   const total = bankTotal(chosen.map((action) => action.card));
   const enough = chosen.length > 0 && (total >= phase.owed || chosen.length === payable.length);
   return {
-    text: `You owe ${names[phase.receiver]} ${phase.owed}`,
+    text: `You owe ${phase.owed} to ${names[phase.receiver]}`,
     owed: phase.owed,
     total,
     cards: payable.map(({ card }) => {
@@ -228,7 +228,8 @@ export function payPrompt(
  */
 export function togglePay(prompt: PayPrompt, picked: readonly CardId[], card: CardId): CardId[] {
   if (picked.includes(card)) return picked.filter((id) => id !== card);
-  return prompt.total < prompt.owed ? [...picked, card] : [...picked];
+  const payable = prompt.cards.some((option) => option.key === card);
+  return payable && prompt.total < prompt.owed ? [...picked, card] : [...picked];
 }
 
 export interface VetoPrompt {
