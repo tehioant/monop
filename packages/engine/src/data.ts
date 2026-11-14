@@ -35,6 +35,20 @@ export const COUNTRIES = [
   { id: 'india', cityValue: 3, cities: ['mumbai', 'delhi', 'bengaluru', 'kolkata'], toll: [1, 3, 5, 7] },
 ] as const;
 
+/**
+ * Wild cities, one card each: laid as any one of its `countries` ('any' = every country), and counting as a city
+ * of the country it is laid in.
+ */
+export const WILD_CITIES = [
+  { id: 'wild-egypt-italy', value: 2, countries: ['egypt', 'italy'] },
+  { id: 'wild-australia-japan', value: 2, countries: ['australia', 'japan'] },
+  { id: 'wild-france-usa', value: 3, countries: ['france', 'usa'] },
+  { id: 'wild-uk-india', value: 3, countries: ['uk', 'india'] },
+  { id: 'wild-brazil-china', value: 3, countries: ['brazil', 'china'] },
+  { id: 'wild-any-1', value: 1, countries: 'any' },
+  { id: 'wild-any-2', value: 1, countries: 'any' },
+] as const;
+
 /** Coin cards: `count` copies of each `value`. */
 export const COINS = [
   { value: 1, count: 6 },

@@ -68,7 +68,10 @@ export type Action =
   | { type: 'draw' }
   /** Take a face-up Market card instead; the Market is refilled from the deck at once. */
   | { type: 'drawMarket'; card: CardId }
-  | { type: 'lay'; card: CardId }
+  /** `country` is given for a wild city, and only then: the country it is laid as. */
+  | { type: 'lay'; card: CardId; country?: CountryId }
+  /** Moves one of the player's laid wild cities to another of its countries. Free: uses no play. */
+  | { type: 'reassign'; card: CardId; country: CountryId }
   /**
    * Play an action card for its effect; the card then goes to the discard pile.
    * `target` is the chosen opponent, for the cards that need one (Debt).
