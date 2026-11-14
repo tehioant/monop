@@ -9,6 +9,10 @@ export const RULES = {
   drawsOnEmptyHand: 4,
   marketSize: 3,
   windfallDraws: 2,
+  /** What a Levy charges every opponent. */
+  levyAmount: 2,
+  /** What a Debt charges one chosen opponent. */
+  debtAmount: 5,
   playsPerTurn: 3,
   handLimit: 7,
 };
@@ -52,4 +56,8 @@ export const COINS = [
 ] as const;
 
 /** Action cards: `count` copies of each, worth `value` once banked. */
-export const ACTIONS = [{ id: 'windfall', value: 1, count: 4 }] as const;
+export const ACTIONS = [
+  { id: 'windfall', value: 1, count: 4 },
+  { id: 'levy', value: 2, count: 3 },
+  { id: 'debt', value: 3, count: 3 },
+] as const;

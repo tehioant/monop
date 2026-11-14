@@ -133,11 +133,12 @@ test('actions that are not listed are rejected', () => {
     fc.constantFrom<Action>({ type: 'draw' }, { type: 'endTurn' }),
     fc.record(
       {
-        type: fc.constantFrom('drawMarket', 'lay', 'reassign', 'play', 'bank', 'discard'),
+        type: fc.constantFrom('drawMarket', 'lay', 'reassign', 'play', 'pay', 'bank', 'discard'),
         card: fc.constantFrom(...ALL_CARDS),
         country: fc.constantFrom(...COUNTRIES.map((country) => country.id)),
+        target: fc.nat(5),
       },
-      { requiredKeys: ['type', 'card'], noNullPrototype: true },
+      { noNullPrototype: true, requiredKeys: ['type', 'card'] },
     ),
     fc.constantFrom<unknown>({ type: 'bank' }, { type: 'draw', card: 'paris' }, { type: 'seize' }, 'draw', null),
   ) as fc.Arbitrary<Action>;
