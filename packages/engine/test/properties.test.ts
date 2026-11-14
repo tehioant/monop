@@ -144,7 +144,7 @@ test('every listed legal action applies, and only the awaited player has any', (
 test('actions that are not listed are rejected', () => {
   const card = fc.constantFrom(...ALL_CARDS);
   const anyAction = fc.oneof(
-    fc.constantFrom<Action>({ type: 'draw' }, { type: 'endTurn' }),
+    fc.constantFrom<Action>({ type: 'draw' }, { type: 'endTurn' }, { type: 'decline' }),
     fc.record(
       {
         type: fc.constantFrom('drawMarket', 'lay', 'reassign', 'play', 'pay', 'bank', 'discard'),

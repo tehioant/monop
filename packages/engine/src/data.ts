@@ -71,4 +71,5 @@ export const ACTIONS = [
   { id: 'exchange', value: 3, count: 3 },
   { id: 'seizure', value: 5, count: 2 },
   { id: 'upgrade', value: 3, count: 3 },
+  { id: 'veto', value: 4, count: 3 },
 ] as const;
