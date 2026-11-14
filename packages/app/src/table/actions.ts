@@ -2,7 +2,17 @@
 // actions, log entries and prompts. Everything here works on the shape of the data, never on the rules, so
 // an action type or a phase the table has never heard of still gets a control and a readable label.
 
-import { CARDS, COUNTRIES, RULES, type Action, type CardId, type LogEntry, type PlayerView } from '@atlas/engine';
+import {
+  CARDS,
+  COUNTRIES,
+  RULES,
+  type Action,
+  type ActionId,
+  type CardId,
+  type LogEntry,
+  type PerkId,
+  type PlayerView,
+} from '@atlas/engine';
 
 /** What the table needs to draw a card, whatever its kind. */
 export interface CardInfo {
@@ -11,6 +21,8 @@ export interface CardInfo {
   value: number;
   /** Cities only. */
   country?: string;
+  /** Action cards only. */
+  action?: ActionId;
 }
 
 const cards = new Map<CardId, CardInfo>(
@@ -22,7 +34,7 @@ const cards = new Map<CardId, CardInfo>(
       const any = card.countries.length === COUNTRIES.length;
       return [id, { name: `Wild ${any ? 'Any' : card.countries.map(title).join('/')}`, kind, value }];
     }
-    return [id, { name: title('action' in card ? card.action : kind), kind, value }];
+    return [id, { name: title(card.action), kind, value, action: card.action }];
   }),
 );
 
@@ -48,6 +60,21 @@ export function countrySize(country: string): number {
   return countrySizes.get(country) ?? 0;
 }
 
+/** What a country gives the player who holds it complete: a short label for a card or a country, and the full text. */
+const PERKS: Record<PerkId, { label: string; text: string }> = {
+  extraDraw: { label: `Draw ${RULES.drawsWithPerk}`, text: `draw ${RULES.drawsWithPerk} cards at the start of your turn` },
+  extraPlay: { label: `Play ${RULES.playsWithPerk}`, text: `play up to ${RULES.playsWithPerk} cards a turn` },
+  vetoReturn: { label: 'Veto back', text: 'the first Veto you play returns to your hand' },
+};
+
+const countryPerks = new Map<string, PerkId>(COUNTRIES.map((country) => [country.id, country.perk]));
+
+/** The perk of a country, in words; undefined if unknown. */
+export function countryPerk(country: string): { label: string; text: string } | undefined {
+  const perk = countryPerks.get(country);
+  return perk && PERKS[perk];
+}
+
 /** A display name for an id: 'rio-de-janeiro' -> 'Rio De Janeiro', 'uk' -> 'UK'. */
 export function title(id: string): string {
   if (id.length <= 3) return id.toUpperCase();
@@ -55,7 +82,7 @@ export function title(id: string): string {
 }
 
 /** Words for a camelCase name: 'endTurn' -> 'End turn'. */
-function words(name: string): string {
+export function words(name: string): string {
   const spaced = name.replace(/[A-Z]/g, (letter) => ` ${letter.toLowerCase()}`);
   return spaced.charAt(0).toUpperCase() + spaced.slice(1);
 }
