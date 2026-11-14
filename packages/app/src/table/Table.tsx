@@ -7,7 +7,7 @@ import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import { actionLabel, bankTotal, cardInfo, completeCount, groupActions, logLine, promptText } from './actions.ts';
 import { Button, CARD_HEIGHT, CardView, Chip, CountryView, Panel, shared, type Tappable } from './parts.tsx';
 import { CardPanel, PayPanel, VetoPanel } from './Prompt.tsx';
-import { cardPrompt, payPrompt, togglePay, vetoPrompt, type Picks } from './prompts.ts';
+import { cardPrompt, payPrompt, togglePay, vetoPrompt, type PayPrompt, type Picks } from './prompts.ts';
 import { colors, countryColor } from './theme.ts';
 
 export interface TableProps {
@@ -42,6 +42,11 @@ export function Table({ view, legal, names, onAction }: TableProps) {
   const now = view.log.length;
   const { card: selected, picks, paying } = selection.at === now ? selection : NOTHING;
   const select = (change: Partial<Selection>) => setSelection({ card: selected, picks, paying, ...change, at: now });
+  /** Sends an action; what was picked for it has served. */
+  const send = (action: Action) => {
+    select(NOTHING);
+    onAction(action);
+  };
 
   const { byCard, general } = groupActions(view, legal);
   const selectedActions = selected === null ? undefined : byCard.get(selected);
@@ -59,9 +64,9 @@ export function Table({ view, legal, names, onAction }: TableProps) {
     setQueue(next ? queue.slice(1) : []);
     if (next) onAction(next);
   }, [now]);
-  const confirmPayment = ([first, ...rest]: Action[]) => {
-    setQueue(rest.flatMap((action) => ('card' in action ? [action.card] : [])));
-    if (first) onAction(first);
+  const confirmPayment = ([first, ...rest]: PayPrompt['actions']) => {
+    setQueue(rest.map((action) => action.card));
+    if (first) send(first);
   };
 
   /** Picks a card to pay with or puts it back; undefined for a card that cannot be added (or paid with at all). */
@@ -180,15 +185,15 @@ export function Table({ view, legal, names, onAction }: TableProps) {
             prompt={cardPrompt(view, selected, selectedActions, picks, names)}
             names={names}
             onPick={(slot, key) => select({ picks: { ...picks, [slot]: key } })}
-            onAction={onAction}
+            onAction={send}
             onCancel={() => select(NOTHING)}
           />
         ) : veto ? (
-          <VetoPanel prompt={veto} onAction={onAction} />
+          <VetoPanel prompt={veto} onAction={send} />
         ) : (
           <View style={styles.buttons}>
             {general.map((action, i) => (
-              <Button key={i} label={actionLabel(action, names)} onPress={() => onAction(action)} />
+              <Button key={i} label={actionLabel(action, names)} onPress={() => send(action)} />
             ))}
           </View>
         )}
@@ -217,6 +222,7 @@ const styles = StyleSheet.create({
   // As tall as a card, even when empty, so that nothing moves when the last card is played.
   hand: { flexGrow: 0, flexShrink: 0, height: CARD_HEIGHT + 16, paddingHorizontal: 12, paddingVertical: 8 },
   // Room for two rows of buttons, so that the hand does not move on most selections; a longer prompt pushes it up.
-  actions: { flexShrink: 0, minHeight: 96 },
+  // On a screen too short for it all, the choices of a prompt give way and scroll: its buttons stay in view.
+  actions: { flexShrink: 1, minHeight: 96 },
   buttons: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, paddingHorizontal: 12 },
 });

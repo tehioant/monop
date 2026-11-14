@@ -2,7 +2,7 @@
 // Like `actions.ts`, all of it is read off the view and the legal actions. A choice exists exactly when the
 // engine listed an action for it, and picking is the caller's state only: nothing is sent before a confirm.
 
-import { RULES, type Action, type ActionId, type CardId, type PlayerView } from '@atlas/engine';
+import { RULES, type Action, type ActionId, type CardId, type Effect, type PlayerView } from '@atlas/engine';
 import { actionLabel, bankTotal, cardInfo, countryPerk, countrySize, title, words } from './actions.ts';
 
 /** What each action card does, for the prompt of a selected card. A new action card fails to compile here. */
@@ -189,7 +189,7 @@ export interface PayPrompt {
    * The payments a confirm makes, one card each, in the order to send them: the next one once the game has
    * answered the last. Empty until the picked cards cover what is owed, or are all there is to pay with.
    */
-  actions: Action[];
+  actions: Extract<Action, { type: 'pay' }>[];
 }
 
 /** The payment prompt, while the viewer owes; null otherwise. `picked` are the cards chosen so far, in order. */
@@ -242,9 +242,7 @@ export interface VetoPrompt {
 }
 
 /** What the card at stake does to the viewer, its target. */
-function stake(view: PlayerView): string {
-  if (view.phase.kind !== 'veto') return '';
-  const { effect } = view.phase;
+function stake(effect: Effect): string {
   if (!('take' in effect)) return `you pay ${effect.amount}`;
   const { country, city, give, take } = effect.take;
   if (give !== undefined && take !== undefined) return `you get ${cardInfo(give).name} for your ${cardInfo(take).name}`;
@@ -267,8 +265,8 @@ export function vetoPrompt(view: PlayerView, legal: readonly Action[], names: re
   const text = !targeted
     ? `${names[phase.target]} answers your ${card} with a Veto. Play your own to force it through?`
     : phase.vetoes === 0
-      ? `${names[turn.player]} plays ${card}: ${stake(view)}. Cancel it with a Veto?`
-      : `${names[turn.player]} answers your Veto with a Veto: ${card} is back on, ${stake(view)}. Veto again?`;
+      ? `${names[turn.player]} plays ${card}: ${stake(phase.effect)}. Cancel it with a Veto?`
+      : `${names[turn.player]} answers your Veto with a Veto: ${card} is back on, ${stake(phase.effect)}. Veto again?`;
   return {
     text,
     veto: legal.find((action) => action.type === 'play'),

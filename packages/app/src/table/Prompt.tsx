@@ -127,10 +127,10 @@ function Panel({ title, children }: { title: string; children: ReactNode }) {
 }
 
 const styles = StyleSheet.create({
-  panel: { paddingHorizontal: 12, paddingBottom: 8, gap: 6 },
+  panel: { flexShrink: 1, paddingHorizontal: 12, paddingBottom: 8, gap: 6 },
   title: { color: colors.ink, fontSize: 13, fontWeight: '600' },
   // The choices scroll when they are many; the title and the buttons stay in view.
-  scroll: { flexGrow: 0, maxHeight: 150 },
+  scroll: { flexGrow: 0, flexShrink: 1, maxHeight: 220 },
   steps: { gap: 8 },
   step: { gap: 4 },
   group: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 6 },
