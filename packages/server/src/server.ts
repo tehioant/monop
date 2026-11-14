@@ -4,7 +4,7 @@ import websocket from '@fastify/websocket';
 import { createGame, type GameOptions, type GameState } from '@atlas/engine';
 import Fastify from 'fastify';
 import type { WebSocket } from 'ws';
-import { createAccount, findAccountName, openDatabase, type Sql } from './db.ts';
+import { createAccount, findAccount, finishGame, loadSnapshots, openDatabase, saveSnapshot, type Sql } from './db.ts';
 import { PROTOCOL_VERSION, type ServerMessage } from './protocol.ts';
 import { Rejection, Rooms, type Member } from './rooms.ts';
 
@@ -25,18 +25,40 @@ export interface Server {
 const MAX_NAME_LENGTH = 20;
 const MAX_MESSAGE_BYTES = 16 * 1024;
 
-/** Starts the game server: one WebSocket endpoint, `/ws`, speaking the protocol of `protocol.ts`. */
+/**
+ * Starts the game server: one WebSocket endpoint, `/ws`, speaking the protocol of `protocol.ts`.
+ * The games that were in progress when the previous server stopped are restored from their last snapshot.
+ */
 export async function startServer(options: ServerOptions): Promise<Server> {
   const { port, host } = options;
   const sql = await openDatabase(options.databaseUrl);
-  const rooms = new Rooms(options.newGame ?? ((gameOptions) => createGame(gameOptions, randomInt(2 ** 32))));
+
+  // Rooms are saved in the background, one write at a time, so that the writes reach the database in order.
+  let saved: Promise<unknown> = Promise.resolve();
+  const write = (query: () => Promise<void>): void => {
+    saved = saved.then(query).catch(console.error);
+  };
+  const rooms = new Rooms(
+    options.newGame ?? ((gameOptions) => createGame(gameOptions, randomInt(2 ** 32))),
+    {
+      save: (snapshot) => write(() => saveSnapshot(sql, snapshot)),
+      finish: (code, summary) => write(() => finishGame(sql, code, summary)),
+    },
+    await loadSnapshots(sql),
+  );
 
   const app = Fastify();
-  app.addHook('onClose', () => sql.end());
   await app.register(websocket, { options: { maxPayload: MAX_MESSAGE_BYTES } });
   app.get('/ws', { websocket: true }, (socket) => serve(socket, sql, rooms));
   await app.listen({ port, host });
-  return { port: (app.server.address() as AddressInfo).port, close: () => app.close() };
+  return {
+    port: (app.server.address() as AddressInfo).port,
+    async close() {
+      await app.close();
+      await saved;
+      await sql.end();
+    },
+  };
 }
 
 /** One client connection. Its messages are handled strictly one after the other. */
@@ -50,17 +72,18 @@ function serve(socket: WebSocket, sql: Sql, rooms: Rooms): void {
 
   const hello = async (token: unknown, name: unknown): Promise<void> => {
     if (member) throw new Rejection('bad_message', 'Already said hello');
-    let account: { token: string; name: string };
+    let account: { id: string; token: string; name: string };
     if (typeof token === 'string') {
-      const known = await findAccountName(sql, token);
-      if (known === undefined) throw new Rejection('invalid_token', 'Unknown token');
-      account = { token, name: known };
+      const known = await findAccount(sql, token);
+      if (!known) throw new Rejection('invalid_token', 'Unknown token');
+      account = { token, ...known };
     } else {
       const guest = typeof name === 'string' && name.trim() ? name.trim().slice(0, MAX_NAME_LENGTH) : 'Guest';
-      account = { token: await createAccount(sql, guest), name: guest };
+      account = { name: guest, ...(await createAccount(sql, guest)) };
     }
-    member = { name: account.name, send };
-    send({ type: 'welcome', ...account });
+    member = { account: account.id, name: account.name, send };
+    send({ type: 'welcome', token: account.token, name: account.name });
+    rooms.resume(member);
   };
 
   const handle = async (text: string): Promise<void> => {

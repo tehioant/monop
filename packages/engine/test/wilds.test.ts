@@ -3,7 +3,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { CARDS, COUNTRIES, createGame, legalActions, viewFor, type CardId } from '../src/index.ts';
-import { act, actor, completeCountries, drawAll, stack, turn } from './helpers.ts';
+import { act, actor, completeCountries, drawAll, seat, stack, turn } from './helpers.ts';
 
 test('card data: wild cities for two countries and for any country', () => {
   const countries = COUNTRIES.map((country) => country.id as string);
@@ -38,7 +38,7 @@ test('a wild city is laid as any one of the countries it allows', () => {
     { type: 'lay', card: 'wild-any-1', country: 'usa' },
   );
   const view = viewFor(game, 1);
-  assert.deepEqual(view.players[0]!.table, [
+  assert.deepEqual(seat(view, 0).table, [
     { country: 'italy', cities: ['wild-egypt-italy'], complete: false },
     { country: 'usa', cities: ['wild-any-1'], complete: false },
   ]);
@@ -72,7 +72,7 @@ test('the owner moves laid wild cities between their countries on their own turn
     { type: 'reassign', card: 'wild-egypt-italy', country: 'egypt' },
   );
   const view = viewFor(game, 1);
-  assert.deepEqual(view.players[0]!.table, [
+  assert.deepEqual(seat(view, 0).table, [
     { country: 'france', cities: ['paris', 'wild-any-1'], complete: false },
     { country: 'egypt', cities: ['wild-egypt-italy'], complete: false },
   ]);
@@ -86,7 +86,7 @@ test('the owner moves laid wild cities between their countries on their own turn
 test('wild cities count toward completing a country, but a country of wild cities only is not complete', () => {
   const deck = stack([['wild-egypt-italy', 'wild-any-1', 'cairo'], []]);
   let game = drawAll(createGame({ players: 2, countriesToWin: 3 }, 1, { deck }));
-  const egypt = () => viewFor(game, 1).players[0]!.table.find((s) => s.country === 'egypt');
+  const egypt = () => seat(viewFor(game, 1), 0).table.find((s) => s.country === 'egypt');
 
   // Egypt needs 2 cities.
   game = act(
@@ -150,14 +150,14 @@ test('a wild city paid to a player keeps its country, and its new owner is free 
   game = act(game, { type: 'pay', card: 'wild-egypt-italy' }, { type: 'pay', card: 'coin-5-1' });
   let view = viewFor(game, 0);
   assert.deepEqual(view.phase, { kind: 'play', player: 1 });
-  assert.deepEqual(view.players[1]!.table, [
+  assert.deepEqual(seat(view, 1).table, [
     { country: 'egypt', cities: ['cairo'], complete: false },
     { country: 'italy', cities: ['wild-egypt-italy'], complete: false },
   ]);
 
   game = act(game, { type: 'reassign', card: 'wild-egypt-italy', country: 'egypt' });
   view = viewFor(game, 0);
-  assert.deepEqual(view.players[1]!.table, [
+  assert.deepEqual(seat(view, 1).table, [
     { country: 'egypt', cities: ['cairo', 'wild-egypt-italy'], complete: true },
   ]);
   assert.equal(view.turn.playsLeft, 1);

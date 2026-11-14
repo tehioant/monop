@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { CARDS, COUNTRIES, createGame, legalActions, viewFor, type CardId } from '../src/index.ts';
-import { act, actor, ALL_CARDS, completeCountries, drawAll, playOut, stack } from './helpers.ts';
+import { act, actor, ALL_CARDS, completeCountries, drawAll, playOut, seat, stack } from './helpers.ts';
 
 const coins = CARDS.filter((card) => card.kind === 'coin').map((card) => card.id);
 
@@ -65,7 +65,7 @@ test('a turn draws 2 cards, then allows up to 3 plays: lay a city or bank any ca
 
   game = act(game, { type: 'lay', card: 'paris' }, { type: 'bank', card: 'cairo' }, { type: 'bank', card: 'coin-2-1' });
   view = viewFor(game, 1); // the opponent sees the table and the bank
-  assert.deepEqual(view.players[0], {
+  assert.deepEqual(seat(view, 0), {
     handSize: 4,
     bank: ['cairo', 'coin-2-1'],
     table: [{ country: 'france', cities: ['paris'], complete: false }],

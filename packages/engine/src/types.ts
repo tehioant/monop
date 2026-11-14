@@ -22,6 +22,8 @@ export interface GameSetup {
 export interface CountryStack {
   country: CountryId;
   cities: CardId[];
+  /** The upgrades attached to the country, each raising its toll. Only a complete country has any. */
+  upgrades: CardId[];
 }
 
 export interface PlayerState {
@@ -44,7 +46,20 @@ export type Phase =
    * `queue` lists the players charged next, in order; each will owe `amount`.
    */
   | { kind: 'pay'; player: PlayerId; receiver: PlayerId; owed: number; amount: number; queue: PlayerId[] }
+  /**
+   * An action card of the turn player is about to hit `target`, and `player` may answer with a Veto or decline.
+   * `target` is asked first, then the turn player and `target` by turns, each only while they hold a Veto.
+   * `vetoes` counts the Vetoes played so far: an odd number cancels the card for `target`, and for nobody else.
+   * `queue` lists the opponents the card hits next, in order.
+   */
+  | { kind: 'veto'; player: PlayerId; target: PlayerId; vetoes: number; effect: Effect; queue: PlayerId[] }
   | { kind: 'over'; winner: PlayerId | null };
+
+/**
+ * What an action card does to one opponent it hits: charges them `amount`, or takes from them what the Raid,
+ * Exchange or Seizure played as `take` names.
+ */
+export type Effect = { amount: number } | { take: Play };
 
 /** Plain JSON data. Treat as immutable: `applyAction` returns a new state. */
 export interface GameState {
@@ -73,15 +88,34 @@ export type Action =
   /** Moves one of the player's laid wild cities to another of its countries. Free: uses no play. */
   | { type: 'reassign'; card: CardId; country: CountryId }
   /**
-   * Play an action card for its effect; the card then goes to the discard pile.
-   * `target` is the chosen opponent, for the cards that need one (Debt).
+   * Play an action card for its effect; the card then goes to the discard pile, except an upgrade, which stays
+   * attached to its country.
+   * A Veto is played with no other field, and only in answer to a card: in a `veto` phase, never as a turn's play.
+   * The other fields say what the card is aimed at, and are present only for the cards that need them:
+   * `target` is the chosen opponent (Debt, Raid, Exchange, Seizure);
+   * `country` is the chosen country: one of the player's own for a Toll or an upgrade, the one a Seizure takes
+   * from `target`;
+   * `city` is the city a Raid takes from `target`;
+   * `give` and `take` are the cities an Exchange swaps, the player's own for one of `target`'s.
    */
-  | { type: 'play'; card: CardId; target?: PlayerId }
+  | {
+      type: 'play';
+      card: CardId;
+      target?: PlayerId;
+      country?: CountryId;
+      city?: CardId;
+      give?: CardId;
+      take?: CardId;
+    }
   | { type: 'bank'; card: CardId }
   /** Hands one banked card or laid city to the receiver of the payment in progress. */
   | { type: 'pay'; card: CardId }
+  /** Lets the card at stake in a `veto` phase go on, rather than answer it with a Veto. */
+  | { type: 'decline' }
   | { type: 'endTurn' }
   | { type: 'discard'; card: CardId };
+
+export type Play = Extract<Action, { type: 'play' }>;
 
 /**
  * What happened, in terms every player may see: an entry never names a card that is hidden from someone.
@@ -102,7 +136,8 @@ export interface PlayerView {
   players: {
     handSize: number;
     bank: CardId[];
-    table: (CountryStack & { complete: boolean })[];
+    /** `toll` is what a Toll played on the country would charge each opponent now, upgrades included. */
+    table: (CountryStack & { complete: boolean; toll: number })[];
   }[];
   deckSize: number;
   discardTop: CardId | null;

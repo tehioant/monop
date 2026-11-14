@@ -1,12 +1,14 @@
-import { CARDS, countrySize, getCard, type CardId, type CountryId } from './cards.ts';
+import { CARDS, countrySize, getCard, tollScale, type ActionId, type CardId, type CountryId } from './cards.ts';
 import { RULES } from './data.ts';
 import { shuffle } from './rng.ts';
 import type {
   Action,
   CountryStack,
+  Effect,
   GameOptions,
   GameSetup,
   GameState,
+  Play,
   PlayerId,
   PlayerState,
   PlayerView,
@@ -72,12 +74,7 @@ export function legalActions(state: GameState, player: PlayerId): Action[] {
           if (def.kind === 'wild') {
             for (const country of def.countries) actions.push({ type: 'lay', card, country });
           }
-          if (def.kind === 'action') {
-            // A Debt needs a target: one action per opponent.
-            if (def.action === 'debt') {
-              for (const target of opponents(state, player)) actions.push({ type: 'play', card, target });
-            } else actions.push({ type: 'play', card });
-          }
+          if (def.kind === 'action') actions.push(...plays(state, player, card, def.action));
           actions.push({ type: 'bank', card });
         }
       }
@@ -98,6 +95,8 @@ export function legalActions(state: GameState, player: PlayerId): Action[] {
       return hand.map((card) => ({ type: 'discard', card }));
     case 'pay':
       return tableCards(state.players[player]!).map((card) => ({ type: 'pay', card }));
+    case 'veto':
+      return [...hand.filter(isVeto).map((card): Action => ({ type: 'play', card })), { type: 'decline' }];
   }
 }
 
@@ -108,8 +107,8 @@ export function applyAction(state: GameState, player: PlayerId, action: Action):
   }
   const next = clone(state);
   const me = next.players[player]!;
-  /** A charge set off by the action. It resolves once the action is logged, so that its payments are logged after it. */
-  let due: { receiver: PlayerId; debtors: readonly PlayerId[]; amount: number } | undefined;
+  /** What the action sets off. It runs once the action is logged, so that the payments it makes are logged after it. */
+  let after = () => {};
   switch (action.type) {
     case 'draw':
       me.hand.push(drawCard(next)!);
@@ -133,15 +132,15 @@ export function applyAction(state: GameState, player: PlayerId, action: Action):
       break;
     }
     case 'reassign':
-      remove(me.table.find((stack) => stack.cities.includes(action.card))!.cities, action.card);
-      me.table = me.table.filter((stack) => stack.cities.length > 0);
+      removeCity(me, action.card);
       addCity(me, action.card, action.country);
       break;
     case 'play': {
       const card = getCard(action.card);
       if (card.kind !== 'action') throw new Error(`Not an action card: ${card.id}`);
       remove(me.hand, card.id);
-      next.turn.playsLeft--;
+      // A Veto answers a card: it is not one of the turn's plays.
+      if (card.action !== 'veto') next.turn.playsLeft--;
       switch (card.action) {
         case 'windfall':
           // Extra draws, from the deck only.
@@ -151,22 +150,42 @@ export function applyAction(state: GameState, player: PlayerId, action: Action):
           }
           break;
         case 'levy':
-          due = { receiver: player, debtors: opponents(next, player), amount: RULES.levyAmount };
+          after = () => hit(next, { amount: RULES.levyAmount }, opponents(next, player));
           break;
         case 'debt':
-          due = { receiver: player, debtors: [action.target!], amount: RULES.debtAmount };
+          after = () => hit(next, { amount: RULES.debtAmount }, [action.target!]);
+          break;
+        case 'toll': {
+          const amount = tollAmount(me.table.find((stack) => stack.country === action.country)!);
+          after = () => hit(next, { amount }, opponents(next, player));
+          break;
+        }
+        case 'raid':
+        case 'exchange':
+        case 'seizure':
+          after = () => hit(next, { take: action }, [action.target!]);
+          break;
+        case 'upgrade':
+          me.table.find((stack) => stack.country === action.country)!.upgrades.push(card.id);
+          break;
+        case 'veto':
+          after = () => answer(next, true);
           break;
       }
-      next.discard.push(card.id); // after the effect: a Windfall cannot draw itself back
+      // After the effect: a Windfall cannot draw itself back. An upgrade stays on the table instead.
+      if (card.action !== 'upgrade') next.discard.push(card.id);
       break;
     }
+    case 'decline':
+      after = () => answer(next, false);
+      break;
     case 'pay': {
       const { phase } = next;
       if (phase.kind !== 'pay') throw new Error('No payment in progress');
       transfer(next, player, phase.receiver, action.card);
       phase.owed -= getCard(action.card).value;
       // No change is given: the payment is settled as soon as the amount is covered.
-      if (phase.owed <= 0) due = { receiver: phase.receiver, debtors: phase.queue, amount: phase.amount };
+      if (phase.owed <= 0) after = () => hit(next, { amount: phase.amount }, phase.queue);
       break;
     }
     case 'bank':
@@ -184,7 +203,7 @@ export function applyAction(state: GameState, player: PlayerId, action: Action):
       break;
   }
   next.log.push({ ...action, player });
-  if (due) charge(next, due.receiver, due.debtors, due.amount);
+  after();
   checkGameOver(next);
   return next;
 }
@@ -199,7 +218,7 @@ export function viewFor(state: GameState, player: PlayerId): PlayerView {
     players: state.players.map((p) => ({
       handSize: p.hand.length,
       bank: p.bank,
-      table: p.table.map((stack) => ({ ...stack, complete: isComplete(stack) })),
+      table: p.table.map((stack) => ({ ...stack, complete: isComplete(stack), toll: tollAmount(stack) })),
     })),
     deckSize: state.deck.length,
     discardTop: state.discard.at(-1) ?? null,
@@ -208,6 +227,49 @@ export function viewFor(state: GameState, player: PlayerId): PlayerView {
     phase: state.phase,
     log: state.log,
   };
+}
+
+/**
+ * The ways to play one action card: a single action for a card that needs no target, else one action per
+ * valid target, so none at all when there is nothing to aim it at.
+ */
+function plays(state: GameState, player: PlayerId, card: CardId, action: ActionId): Action[] {
+  const others = opponents(state, player).map((target) => ({ target, them: state.players[target]! }));
+  switch (action) {
+    case 'debt':
+      return others.map(({ target }) => ({ type: 'play', card, target }));
+    case 'toll':
+      // Played on a country the player holds a city in.
+      return state.players[player]!.table.map(({ country }) => ({ type: 'play', card, country }));
+    case 'raid':
+      return others.flatMap(({ target, them }) =>
+        looseCities(them).map((city): Action => ({ type: 'play', card, target, city })),
+      );
+    case 'exchange': {
+      const mine = looseCities(state.players[player]!);
+      return others.flatMap(({ target, them }) =>
+        mine.flatMap((give) => looseCities(them).map((take): Action => ({ type: 'play', card, target, give, take }))),
+      );
+    }
+    case 'seizure':
+      return others.flatMap(({ target, them }) =>
+        them.table.filter(isComplete).map((stack): Action => ({ type: 'play', card, target, country: stack.country })),
+      );
+    case 'upgrade':
+      // Attached to a complete country of the player's own.
+      return state.players[player]!.table
+        .filter(isComplete)
+        .map(({ country }): Action => ({ type: 'play', card, country }));
+    case 'veto':
+      return []; // only ever an answer, in a `veto` phase
+    default:
+      return [{ type: 'play', card }];
+  }
+}
+
+/** The cities a Raid or an Exchange may touch: those in incomplete countries. */
+function looseCities(player: PlayerState): CardId[] {
+  return player.table.flatMap((stack) => (isComplete(stack) ? [] : stack.cities));
 }
 
 function startTurn(state: GameState, player: PlayerId): void {
@@ -232,24 +294,93 @@ function opponents(state: GameState, player: PlayerId): PlayerId[] {
 }
 
 /**
- * Makes each of `debtors` pay `amount` to `receiver`, one after the other, then hands the game back to the
- * turn player. A debtor whose table is worth more than the amount chooses what to pay with in a `pay` phase.
+ * Applies the effect of the turn player's action card to each of `targets`, one after the other, then hands the
+ * game back to the turn player. A target who holds a Veto is first asked for it in a `veto` phase, unless
+ * `answered` says that the first target has just been through that.
+ *
+ * A charged target whose table is worth more than the amount chooses what to pay with in a `pay` phase.
  * Any other has no choice to make: their whole table is paid at once, and they owe nothing more.
  */
-function charge(state: GameState, receiver: PlayerId, debtors: readonly PlayerId[], amount: number): void {
-  for (const [i, debtor] of debtors.entries()) {
-    if (findWinner(state) >= 0) return; // a received city ended the game: nobody else pays
-    const cards = tableCards(state.players[debtor]!);
+function hit(state: GameState, effect: Effect, targets: readonly PlayerId[], answered = false): void {
+  const receiver = state.turn.player;
+  for (const [i, target] of targets.entries()) {
+    if (findWinner(state) >= 0) return; // a received city ended the game: nobody else is hit
+    const queue = targets.slice(i + 1);
+    if (!(answered && i === 0) && state.players[target]!.hand.some(isVeto)) {
+      state.phase = { kind: 'veto', player: target, target, vetoes: 0, effect, queue };
+      return;
+    }
+    if ('take' in effect) {
+      take(state, effect.take);
+      continue;
+    }
+    const { amount } = effect;
+    const player = state.players[target]!;
+    // Attached upgrades count, after the cities: they are in the bank once their country has lost a city.
+    const cards = [...tableCards(player), ...player.table.flatMap((stack) => stack.upgrades)];
     if (cards.reduce((sum, card) => sum + getCard(card).value, 0) > amount) {
-      state.phase = { kind: 'pay', player: debtor, receiver, owed: amount, amount, queue: debtors.slice(i + 1) };
+      state.phase = { kind: 'pay', player: target, receiver, owed: amount, amount, queue };
       return;
     }
     for (const card of cards) {
-      state.log.push({ type: 'pay', card, player: debtor });
-      transfer(state, debtor, receiver, card);
+      state.log.push({ type: 'pay', card, player: target });
+      transfer(state, target, receiver, card);
     }
   }
-  state.phase = { kind: 'play', player: state.turn.player };
+  state.phase = { kind: 'play', player: receiver };
+}
+
+/**
+ * The awaited player has answered the card at stake in the `veto` phase: with a Veto, or by declining.
+ * A Veto hands the question to the other side, if they hold one to answer with. Otherwise the chain ends,
+ * and the card goes on to its next targets, after hitting this one unless the last word was a Veto against it.
+ */
+function answer(state: GameState, vetoed: boolean): void {
+  const { phase } = state;
+  if (phase.kind !== 'veto') throw new Error('No card to answer');
+  const vetoes = phase.vetoes + Number(vetoed);
+  const other = phase.player === phase.target ? state.turn.player : phase.target;
+  if (vetoed && state.players[other]!.hand.some(isVeto)) {
+    state.phase = { ...phase, player: other, vetoes };
+    return;
+  }
+  // Each Veto cancels the one before it, so an odd number of them stops the card.
+  const stopped = vetoes % 2 === 1;
+  hit(state, phase.effect, stopped ? phase.queue : [phase.target, ...phase.queue], !stopped);
+}
+
+function isVeto(card: CardId): boolean {
+  const def = getCard(card);
+  return def.kind === 'action' && def.action === 'veto';
+}
+
+/** The turn player's Raid, Exchange or Seizure, played as `action`, takes what it names from its target. */
+function take(state: GameState, action: Play): void {
+  const card = getCard(action.card);
+  const player = state.turn.player;
+  const target = action.target!;
+  switch (card.kind === 'action' && card.action) {
+    case 'raid':
+      transfer(state, target, player, action.city!);
+      break;
+    case 'exchange':
+      transfer(state, target, player, action.take!);
+      transfer(state, player, target, action.give!);
+      break;
+    case 'seizure': {
+      // The country changes hands as one stack, upgrades included. It joins the cities the taker already has
+      // there, if any (possible with wild cities only).
+      const me = state.players[player]!;
+      const { table } = state.players[target]!;
+      const [seized] = table.splice(table.findIndex((stack) => stack.country === action.country), 1);
+      const mine = me.table.find((stack) => stack.country === action.country);
+      if (mine) {
+        mine.cities.push(...seized!.cities);
+        mine.upgrades.push(...seized!.upgrades);
+      } else me.table.push(seized!);
+      break;
+    }
+  }
 }
 
 /** What a player can pay with: their banked cards and laid cities, never their hand. */
@@ -259,7 +390,8 @@ function tableCards(player: PlayerState): CardId[] {
 
 /**
  * Moves a card between two tables: a banked card to the bank, a laid city to its country. A wild city stays in
- * the country it was laid as; its new owner, whose turn it is, is free to move it once the payment is settled.
+ * the country it was laid as; its new owner is free to move it in their own play phase: at once for the player
+ * whose turn it is (a payment received, a Raid, an Exchange), on their next turn for the target of an Exchange.
  */
 function transfer(state: GameState, from: PlayerId, to: PlayerId, card: CardId): void {
   const payer = state.players[from]!;
@@ -269,17 +401,26 @@ function transfer(state: GameState, from: PlayerId, to: PlayerId, card: CardId):
     receiver.bank.push(card);
     return;
   }
-  const stack = payer.table.find((s) => s.cities.includes(card))!;
-  remove(stack.cities, card);
-  if (stack.cities.length === 0) payer.table.splice(payer.table.indexOf(stack), 1);
-  addCity(receiver, card, stack.country);
+  addCity(receiver, card, removeCity(payer, card));
 }
 
 /** Lays a city on a player's table, in the given country: its own, or for a wild city one of those it allows. */
 function addCity(player: PlayerState, city: CardId, country: CountryId): void {
   let stack = player.table.find((s) => s.country === country);
-  if (!stack) player.table.push((stack = { country, cities: [] }));
+  if (!stack) player.table.push((stack = { country, cities: [], upgrades: [] }));
   stack.cities.push(city);
+}
+
+/**
+ * Takes a laid city off a player's table and returns the country it was in. A country that is no longer
+ * complete loses its upgrades: they move to the player's bank, as coin.
+ */
+function removeCity(player: PlayerState, city: CardId): CountryId {
+  const stack = player.table.find((s) => s.cities.includes(city))!;
+  remove(stack.cities, city);
+  if (!isComplete(stack)) player.bank.push(...stack.upgrades.splice(0));
+  if (stack.cities.length === 0) player.table.splice(player.table.indexOf(stack), 1);
+  return stack.country;
 }
 
 /** One of the turn's draws is done; after the last one the plays begin. */
@@ -305,6 +446,17 @@ function isComplete(stack: CountryStack): boolean {
   );
 }
 
+/**
+ * What a Toll on this country charges each opponent: the amount on the country's toll scale for the holder's
+ * progress in it, plus its upgrades. The only place the amount is worked out.
+ */
+function tollAmount(stack: CountryStack): number {
+  const scale = tollScale(stack.country);
+  // The top of the scale is for a complete country only, however many cities the stack holds.
+  const level = isComplete(stack) ? scale.length : Math.min(stack.cities.length, scale.length - 1);
+  return scale[level - 1]! + stack.upgrades.length * RULES.upgradeToll;
+}
+
 /** Runs after every state change: a win ends the game at once; so does running out of cards to draw and play. */
 function checkGameOver(state: GameState): void {
   const winner = findWinner(state);
@@ -321,9 +473,14 @@ function checkGameOver(state: GameState): void {
   }
 }
 
-/** The player who controls enough complete countries, or -1. */
+/**
+ * The player who controls enough complete countries, or -1. When one action gets two players there
+ * (an Exchange), the one whose turn it is wins.
+ */
 function findWinner(state: GameState): PlayerId {
-  return state.players.findIndex((p) => p.table.filter(isComplete).length >= state.options.countriesToWin);
+  const wins = (p: PlayerState) => p.table.filter(isComplete).length >= state.options.countriesToWin;
+  const { player } = state.turn;
+  return wins(state.players[player]!) ? player : state.players.findIndex(wins);
 }
 
 function endGame(state: GameState, winner: PlayerId | null): void {
@@ -356,7 +513,11 @@ function clone(state: GameState): GameState {
       (p): PlayerState => ({
         hand: [...p.hand],
         bank: [...p.bank],
-        table: p.table.map((stack) => ({ country: stack.country, cities: [...stack.cities] })),
+        table: p.table.map((stack) => ({
+          country: stack.country,
+          cities: [...stack.cities],
+          upgrades: [...stack.upgrades],
+        })),
       }),
     ),
     turn: { ...state.turn },

@@ -38,6 +38,15 @@ export function turn(state: GameState, ...plays: Action[]): GameState {
   return act(drawAll(state), ...plays, { type: 'endTurn' });
 }
 
+/**
+ * A player's part of the view as most scenarios compare it: countries without what upgrades add to them
+ * (`upgrades` and `toll`, covered in upgrades.test.ts).
+ */
+export function seat(view: PlayerView, player: PlayerId) {
+  const { table, ...rest } = view.players[player]!;
+  return { ...rest, table: table.map(({ country, cities, complete }) => ({ country, cities, complete })) };
+}
+
 export function completeCountries(view: PlayerView, player: PlayerId): number {
   return view.players[player]!.table.filter((stack) => stack.complete).length;
 }

@@ -40,11 +40,14 @@ function randomGame(config: GameConfig, g: fc.GeneratorValue, visit: (state: Gam
   const end = playOut(
     createGame(options, seed),
     (legal) => {
-      // Moving a wild city is free, so all such moves weigh as one choice: otherwise they crowd out the rest.
-      const moves = legal.filter((a) => a.type === 'reassign');
-      const others = legal.filter((a) => a.type !== 'reassign');
-      const choices = moves.length > 0 ? [...others, moves[g(fc.nat, moves.length - 1)]!] : others;
-      const action = choices[g(fc.nat, choices.length - 1)]!; // an index is much cheaper to generate than constantFrom
+      // Free wild city moves, and the targets of one action card, can be many: all the moves weigh as one choice,
+      // and so do all the ways to play one card. Otherwise they crowd out the rest (a card with many targets is
+      // hardly ever banked) and games run close to `playOut`'s bound.
+      const choices = [
+        ...Map.groupBy(legal, (a) => (a.type === 'reassign' ? a.type : a.type === 'play' ? a.card : a)).values(),
+      ];
+      const group = choices[g(fc.nat, choices.length - 1)]!; // an index is much cheaper to generate than constantFrom
+      const action = group.length > 1 ? group[g(fc.nat, group.length - 1)]! : group[0]!;
       actions.push(action);
       return action;
     },
@@ -68,18 +71,26 @@ function deepFreeze<T>(value: T): T {
 /** Where every card is, as far as the views tell: the deck is whatever is in none of these zones. */
 function zones(state: GameState) {
   const view = viewFor(state, 0);
-  // The discard pile is what was discarded since the last reshuffle.
+  // The discard pile is what was discarded since the last reshuffle. A played upgrade stays on the table.
   let discarded: CardId[] = [];
   for (const entry of view.log) {
     if (entry.type === 'reshuffle') discarded = [];
-    else if (entry.type === 'discard' || entry.type === 'play') discarded.push(entry.card);
+    else if (entry.type === 'discard' || (entry.type === 'play' && !isUpgrade(entry.card))) discarded.push(entry.card);
   }
   return {
     view,
     hands: view.players.map((_, player) => viewFor(state, player).hand),
-    tables: view.players.flatMap((p) => [...p.bank, ...p.table.flatMap((stack) => stack.cities)]),
+    tables: view.players.flatMap((p) => [
+      ...p.bank,
+      ...p.table.flatMap((stack) => [...stack.cities, ...stack.upgrades]),
+    ]),
     discarded,
   };
+}
+
+function isUpgrade(id: CardId): boolean {
+  const card = getCard(id);
+  return card.kind === 'action' && card.action === 'upgrade';
 }
 
 const cardIds = new Set(ALL_CARDS);
@@ -91,7 +102,7 @@ function cardsIn(value: unknown): CardId[] {
   return [];
 }
 
-test('every card is in exactly one zone, and every laid city in a country it belongs to', () => {
+test('every card is in exactly one zone, every laid city in a country it belongs to, upgrades on complete countries', () => {
   forAllGames((config, g) => {
     randomGame(config, g, (state) => {
       const { view, hands, tables, discarded } = zones(state);
@@ -104,12 +115,14 @@ test('every card is in exactly one zone, and every laid city in a country it bel
         hands.map((hand) => hand.length),
       );
       assert.equal(view.discardTop, discarded.at(-1) ?? null);
-      for (const { country, cities } of view.players.flatMap((p) => p.table)) {
+      for (const { country, cities, upgrades, complete } of view.players.flatMap((p) => p.table)) {
         for (const card of cities.map(getCard)) {
           assert.ok(
             card.kind === 'wild' ? card.countries.includes(country) : card.kind === 'city' && card.country === country,
           );
         }
+        assert.ok(upgrades.every(isUpgrade));
+        assert.ok(complete || upgrades.length === 0, 'an incomplete country kept an upgrade');
       }
     });
   });
@@ -129,14 +142,19 @@ test('every listed legal action applies, and only the awaited player has any', (
 });
 
 test('actions that are not listed are rejected', () => {
+  const card = fc.constantFrom(...ALL_CARDS);
   const anyAction = fc.oneof(
-    fc.constantFrom<Action>({ type: 'draw' }, { type: 'endTurn' }),
+    fc.constantFrom<Action>({ type: 'draw' }, { type: 'endTurn' }, { type: 'decline' }),
     fc.record(
       {
         type: fc.constantFrom('drawMarket', 'lay', 'reassign', 'play', 'pay', 'bank', 'discard'),
-        card: fc.constantFrom(...ALL_CARDS),
+        card,
         country: fc.constantFrom(...COUNTRIES.map((country) => country.id)),
         target: fc.nat(5),
+        // What a Raid or an Exchange is aimed at (a Seizure uses `country`).
+        city: card,
+        give: card,
+        take: card,
       },
       { noNullPrototype: true, requiredKeys: ['type', 'card'] },
     ),
@@ -162,7 +180,9 @@ test('games terminate: won exactly when someone completes enough countries, else
       const leaders = view.players.flatMap((_, player) =>
         completeCountries(view, player) >= config.countriesToWin ? [player] : [],
       );
-      assert.deepEqual(leaders, view.phase.kind === 'over' && view.phase.winner !== null ? [view.phase.winner] : []);
+      // An exchange can complete enough countries for both players at once: the one whose turn it is wins.
+      const expected = leaders.includes(view.turn.player) ? view.turn.player : (leaders[0] ?? null);
+      assert.equal(view.phase.kind === 'over' ? view.phase.winner : null, expected);
     });
     // Without a winner, the game only ends when nobody has a card left to draw or play.
     const view = viewFor(end, 0);
