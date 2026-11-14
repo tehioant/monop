@@ -3,7 +3,7 @@ import { isDeepStrictEqual } from 'node:util';
 import { applyAction, legalActions, RULES, viewFor, type GameOptions, type GameState } from '@atlas/engine';
 import type { ErrorCode, ServerMessage } from './protocol.ts';
 
-/** A connected player: a display name and a way to reach them. */
+/** A player's connection: a display name and a way to reach them. `send` does nothing once the connection is gone. */
 export interface Member {
   name: string;
   send(message: ServerMessage): void;

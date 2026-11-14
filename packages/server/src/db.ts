@@ -1,4 +1,4 @@
-import { createHash, randomBytes } from 'node:crypto';
+import { hash, randomBytes } from 'node:crypto';
 import postgres from 'postgres';
 
 export type Sql = postgres.Sql;
@@ -27,16 +27,16 @@ export async function openDatabase(url: string): Promise<Sql> {
 /** Creates a guest account and returns its token. Only a hash of the token is stored. */
 export async function createAccount(sql: Sql, name: string): Promise<string> {
   const token = randomBytes(32).toString('base64url');
-  await sql`insert into accounts (token_hash, name) values (${hash(token)}, ${name})`;
+  await sql`insert into accounts (token_hash, name) values (${hashOf(token)}, ${name})`;
   return token;
 }
 
 /** The display name of the account identified by `token`, if there is one. */
 export async function findAccountName(sql: Sql, token: string): Promise<string | undefined> {
-  const [account] = await sql<{ name: string }[]>`select name from accounts where token_hash = ${hash(token)}`;
+  const [account] = await sql<{ name: string }[]>`select name from accounts where token_hash = ${hashOf(token)}`;
   return account?.name;
 }
 
-function hash(token: string): string {
-  return createHash('sha256').update(token).digest('hex');
+function hashOf(token: string): string {
+  return hash('sha256', token);
 }

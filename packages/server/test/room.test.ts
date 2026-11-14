@@ -164,7 +164,7 @@ test('illegal, out-of-turn and stale intents are rejected without changing the g
 
   friend.send({ type: 'intent', stateVersion, action }); // not the player the game is waiting on
   assert.equal((await friend.next('error')).code, 'illegal_action');
-  host.sendRaw({ v, type: 'intent', stateVersion, action: { type: 'bank', card: winning.at(-1) } }); // not in hand
+  host.sendRaw({ v, type: 'intent', stateVersion, action: { ...action, more: true } }); // not exactly a legal action
   assert.equal((await host.next('error')).code, 'illegal_action');
   host.send({ type: 'intent', stateVersion: stateVersion - 1, action });
   assert.equal((await host.next('error')).code, 'stale');

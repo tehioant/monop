@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { randomBytes } from 'node:crypto';
 import postgres from 'postgres';
 import { LOCAL_DATABASE_URL, type Sql } from '../src/db.ts';
-import { PROTOCOL_VERSION, type ClientMessage, type ServerMessage } from '../src/protocol.ts';
+import { PROTOCOL_VERSION, type ClientMessage, type ServerMessage, type Versioned } from '../src/protocol.ts';
 import { startServer, type ServerOptions } from '../src/server.ts';
 
 export interface TestServer {
@@ -34,7 +34,7 @@ export async function startTestServer(options: Pick<ServerOptions, 'newGame'> = 
   }
   const databaseUrl = new URL(adminUrl);
   databaseUrl.pathname = `/${name}`;
-  const server = await startServer({ ...options, databaseUrl: databaseUrl.href, port: 0 });
+  const server = await startServer({ ...options, databaseUrl: databaseUrl.href, port: 0, host: '127.0.0.1' });
   const db = postgres(databaseUrl.href, { max: 1 });
   return {
     url: `ws://127.0.0.1:${server.port}/ws`,
@@ -47,7 +47,7 @@ export async function startTestServer(options: Pick<ServerOptions, 'newGame'> = 
   };
 }
 
-type Received<Type extends ServerMessage['type']> = Extract<ServerMessage, { type: Type }> & { v: number };
+type Received<Type extends ServerMessage['type']> = Versioned<Extract<ServerMessage, { type: Type }>>;
 
 /** A scripted client: sends messages and reads what the server sends back, strictly in order. */
 export class Client {

@@ -11,8 +11,8 @@ import { Rejection, Rooms, type Member } from './rooms.ts';
 export interface ServerOptions {
   databaseUrl: string;
   /** 0 picks a free port. */
-  port?: number;
-  host?: string;
+  port: number;
+  host: string;
   /** How a room's game is created. Defaults to a randomly seeded game; scripted games pass their own. */
   newGame?: (options: GameOptions) => GameState;
 }
@@ -27,7 +27,7 @@ const MAX_MESSAGE_BYTES = 16 * 1024;
 
 /** Starts the game server: one WebSocket endpoint, `/ws`, speaking the protocol of `protocol.ts`. */
 export async function startServer(options: ServerOptions): Promise<Server> {
-  const { port = 3000, host = '127.0.0.1' } = options;
+  const { port, host } = options;
   const sql = await openDatabase(options.databaseUrl);
   const rooms = new Rooms(options.newGame ?? ((gameOptions) => createGame(gameOptions, randomInt(2 ** 32))));
 
