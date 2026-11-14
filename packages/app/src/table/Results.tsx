@@ -2,6 +2,7 @@
 
 import type { PlayerView } from '@atlas/engine';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
+import { cardInfo } from './actions.ts';
 import { CountryView } from './parts.tsx';
 import { colors } from './theme.ts';
 
@@ -20,7 +21,9 @@ export function Results({ view, names }: { view: PlayerView; names: readonly str
           {player.table.length === 0 && <Text style={styles.small}>No countries</Text>}
           <View style={styles.wrap}>
             {player.table.map((stack) => (
-              <CountryView key={stack.country} stack={stack} detailed />
+              <CountryView key={stack.country} stack={stack}>
+                <Text style={styles.cities}>{stack.cities.map((id) => cardInfo(id).name).join(', ')}</Text>
+              </CountryView>
             ))}
           </View>
         </View>
@@ -43,5 +46,6 @@ const styles = StyleSheet.create({
   },
   winner: { borderColor: colors.accent },
   name: { color: colors.ink, fontSize: 15, fontWeight: '700' },
+  cities: { color: '#fff', fontSize: 12 },
   wrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
 });

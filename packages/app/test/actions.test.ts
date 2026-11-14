@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { createGame, legalActions, viewFor, type Action, type LogEntry, type PlayerView } from '@atlas/engine';
+import { createGame, viewFor, type Action, type PlayerView } from '@atlas/engine';
 import { actionLabel, groupActions, logLine, promptText } from '../src/table/actions.ts';
 
 const names = ['You', 'Bot 1', 'Bot 2'];
@@ -15,6 +15,9 @@ test('actions are labelled from their type and card', () => {
   assert.equal(label({ type: 'lay', card: 'paris' }), 'Lay Paris');
   assert.equal(label({ type: 'bank', card: 'coin-2-1' }), 'Bank Coin 2');
   assert.equal(label({ type: 'play', card: 'windfall-1' }), 'Play Windfall');
+  assert.equal(label({ type: 'play', card: 'debt-1', target: 2 }), 'Play Debt (target: Bot 2)');
+  assert.equal(label({ type: 'lay', card: 'wild-egypt-italy', country: 'italy' }), 'Lay Wild Egypt/Italy (country: Italy)');
+  assert.equal(label({ type: 'reassign', card: 'wild-any-1', country: 'uk' }), 'Reassign Wild Any (country: UK)');
   assert.equal(label({ type: 'endTurn' }), 'End turn');
 });
 
@@ -30,7 +33,7 @@ test('log entries name the player, when there is one', () => {
   assert.equal(logLine({ type: 'reshuffle' }, names), 'Reshuffle');
   assert.equal(logLine({ type: 'gameOver', winner: 0 }, names), 'Game over (winner: You)');
   assert.equal(logLine({ type: 'gameOver', winner: null }, names), 'Game over (winner: none)');
-  assert.equal(logLine(unknown<LogEntry>({ type: 'pay', card: 'coin-5-1', player: 2 }), names), 'Bot 2: Pay Coin 5');
+  assert.equal(logLine({ type: 'pay', card: 'coin-5-1', player: 2 }, names), 'Bot 2: Pay Coin 5');
 });
 
 test('the prompt says who the game waits on, and for what', () => {
@@ -44,13 +47,25 @@ test('the prompt says who the game waits on, and for what', () => {
 });
 
 test('every legal action is offered once: on its card if the viewer can tap it, else as a button', () => {
-  const state = createGame({ players: 2, countriesToWin: 3 }, 1);
-  const view = viewFor(state, 0);
-  const pay = unknown<Action>({ type: 'pay', card: 'not-in-hand-or-market' });
-  const legal = [...legalActions(state, 0), { type: 'bank', card: view.hand[0]! } as const, pay];
+  const dealt = viewFor(createGame({ players: 2, countriesToWin: 3 }, 1), 0);
+  const mine = { handSize: 1, bank: ['coin-1-1'], table: [{ country: 'egypt', cities: ['cairo'], complete: false }] };
+  const view = { ...dealt, hand: ['paris'], market: ['tokyo'], players: [mine, dealt.players[1]!] };
+  const legal = [
+    { type: 'lay', card: 'paris' },
+    { type: 'bank', card: 'paris' },
+    { type: 'drawMarket', card: 'tokyo' },
+    { type: 'pay', card: 'coin-1-1' },
+    { type: 'pay', card: 'cairo' },
+    { type: 'pay', card: 'a-card-the-table-does-not-draw' },
+    { type: 'endTurn' },
+  ] satisfies Action[];
 
   const { byCard, general } = groupActions(view, legal);
-  assert.deepEqual(general, [{ type: 'draw' }, pay]);
-  assert.deepEqual([...byCard.keys()], [...view.market, view.hand[0]]);
-  assert.equal([...byCard.values()].flat().length + general.length, legal.length);
+  assert.deepEqual([...byCard], [
+    ['paris', [legal[0], legal[1]]],
+    ['tokyo', [legal[2]]],
+    ['coin-1-1', [legal[3]]],
+    ['cairo', [legal[4]]],
+  ]);
+  assert.deepEqual(general, [legal[5], legal[6]]);
 });

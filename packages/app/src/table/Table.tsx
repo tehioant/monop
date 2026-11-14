@@ -5,7 +5,7 @@ import type { Action, CardId, PlayerView } from '@atlas/engine';
 import { useState } from 'react';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import { actionLabel, bankTotal, cardInfo, groupActions, logLine, promptText } from './actions.ts';
-import { Button, CardView, CountryView } from './parts.tsx';
+import { Button, CardView, Chip, CountryView } from './parts.tsx';
 import { colors } from './theme.ts';
 
 export interface TableProps {
@@ -33,14 +33,12 @@ export function Table({ view, legal, names, onAction }: TableProps) {
     setSelected(null);
     onAction(action);
   };
-  const card = (id: CardId) => (
-    <CardView
-      key={id}
-      id={id}
-      selected={selectedActions !== undefined && id === selected}
-      onPress={byCard.has(id) ? () => setSelected(id === selected ? null : id) : undefined}
-    />
-  );
+  /** A card of the viewer's or of the Market: it can be tapped exactly when it has a legal action. */
+  const tappable = (id: CardId) => ({
+    id,
+    selected: selectedActions !== undefined && id === selected,
+    onPress: byCard.has(id) ? () => setSelected(id === selected ? null : id) : undefined,
+  });
 
   return (
     <View style={styles.table}>
@@ -52,6 +50,15 @@ export function Table({ view, legal, names, onAction }: TableProps) {
           </Text>
         </View>
 
+        <View style={styles.panel}>
+          <Text style={styles.small}>Market</Text>
+          <View style={styles.cards}>
+            {view.market.map((id) => (
+              <CardView key={id} {...tappable(id)} />
+            ))}
+          </View>
+        </View>
+
         {opponents.map((seat) => {
           const player = view.players[seat]!;
           return (
@@ -59,51 +66,59 @@ export function Table({ view, legal, names, onAction }: TableProps) {
               <View style={styles.row}>
                 <Text style={styles.name}>{names[seat]}</Text>
                 <Text style={styles.small}>
-                  Hand {player.handSize} · Bank {bankTotal(player.bank)} · {summary(view, seat)}
+                  Hand {player.handSize} · Bank {bankTotal(player.bank)} · {countries(view, seat)}
                 </Text>
               </View>
-              <View style={styles.wrap}>
-                {player.table.map((stack) => (
-                  <CountryView key={stack.country} stack={stack} />
-                ))}
-              </View>
+              {player.table.length > 0 && (
+                <View style={styles.wrap}>
+                  {player.table.map((stack) => (
+                    <CountryView key={stack.country} stack={stack} />
+                  ))}
+                </View>
+              )}
             </View>
           );
         })}
 
-        <View style={styles.panel}>
-          <Text style={styles.small}>Market</Text>
-          <View style={styles.cards}>{view.market.map(card)}</View>
-        </View>
+        {view.log.slice(-LOG_LINES).map((entry, i) => (
+          <Text key={i} style={styles.small} numberOfLines={1}>
+            {logLine(entry, names)}
+          </Text>
+        ))}
+      </ScrollView>
 
-        {view.log.length > 0 && (
-          <View style={styles.panel}>
-            {view.log.slice(-LOG_LINES).map((entry, i) => (
-              <Text key={i} style={styles.small} numberOfLines={1}>
-                {logLine(entry, names)}
-              </Text>
+      <View style={[styles.panel, styles.mine, view.viewer === waitingOn && styles.active]}>
+        <View style={styles.row}>
+          <Text style={styles.name}>{names[view.viewer]}</Text>
+          <Text style={styles.small}>
+            Bank {bankTotal(me.bank)} · {countries(view, view.viewer)}
+          </Text>
+        </View>
+        {me.table.length > 0 && (
+          <View style={styles.wrap}>
+            {me.table.map((stack) => (
+              <CountryView key={stack.country} stack={stack}>
+                {stack.cities.map((id) => (
+                  <Chip key={id} {...tappable(id)} />
+                ))}
+              </CountryView>
             ))}
           </View>
         )}
-
-        <View style={[styles.panel, view.viewer === waitingOn && styles.active]}>
-          <View style={styles.row}>
-            <Text style={styles.name}>{names[view.viewer]}</Text>
-            <Text style={styles.small}>
-              Bank {bankTotal(me.bank)} · {summary(view, view.viewer)}
-            </Text>
-          </View>
+        {me.bank.length > 0 && (
           <View style={styles.wrap}>
-            {me.table.map((stack) => (
-              <CountryView key={stack.country} stack={stack} detailed />
+            {me.bank.map((id) => (
+              <Chip key={id} {...tappable(id)} />
             ))}
           </View>
-        </View>
-      </ScrollView>
+        )}
+      </View>
 
       <Text style={styles.prompt}>{promptText(view, names)}</Text>
       <ScrollView horizontal style={styles.hand} contentContainerStyle={styles.cards}>
-        {view.hand.map(card)}
+        {view.hand.map((id) => (
+          <CardView key={id} {...tappable(id)} />
+        ))}
       </ScrollView>
       <ScrollView style={styles.actions} contentContainerStyle={styles.wrap}>
         {(selectedActions ?? general).map((action, i) => (
@@ -115,14 +130,14 @@ export function Table({ view, legal, names, onAction }: TableProps) {
   );
 }
 
-function summary(view: PlayerView, seat: number): string {
+function countries(view: PlayerView, seat: number): string {
   const complete = view.players[seat]!.table.filter((stack) => stack.complete).length;
   return `Countries ${complete}/${view.options.countriesToWin}`;
 }
 
 const styles = StyleSheet.create({
   table: { flex: 1, backgroundColor: colors.background },
-  board: { padding: 12, gap: 8 },
+  board: { paddingHorizontal: 12, paddingBottom: 8, gap: 8 },
   row: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline', gap: 8 },
   wrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
   cards: { flexDirection: 'row', gap: 6 },
@@ -134,6 +149,7 @@ const styles = StyleSheet.create({
     padding: 8,
     gap: 6,
   },
+  mine: { marginHorizontal: 12 },
   active: { borderColor: colors.accent },
   target: { color: colors.ink, fontSize: 16, fontWeight: '700' },
   name: { color: colors.ink, fontSize: 15, fontWeight: '700' },

@@ -1,6 +1,7 @@
-// The pieces the table and the results screen are drawn from: a card, a country, a button.
+// The pieces the table and the results screen are drawn from.
 
 import type { CardId, PlayerView } from '@atlas/engine';
+import type { ReactNode } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { cardInfo, countrySize, title } from './actions.ts';
 import { colors, countryColor } from './theme.ts';
@@ -31,8 +32,8 @@ export function CardView({ id, selected, onPress }: { id: CardId; selected?: boo
   );
 }
 
-/** A country with its progress; `detailed` lists the cities laid in it. */
-export function CountryView({ stack, detailed }: { stack: Stack; detailed?: boolean }) {
+/** A country with its progress. The cities laid in it, if they are to be shown, are the children. */
+export function CountryView({ stack, children }: { stack: Stack; children?: ReactNode }) {
   const progress = `${stack.cities.length}/${countrySize(stack.country)}`;
   return (
     <View style={[styles.country, { backgroundColor: countryColor(stack.country) }, stack.complete && styles.complete]}>
@@ -40,8 +41,21 @@ export function CountryView({ stack, detailed }: { stack: Stack; detailed?: bool
         {title(stack.country)} {progress}
         {stack.complete ? ' ✓' : ''}
       </Text>
-      {detailed && <Text style={styles.countryCities}>{stack.cities.map((id) => cardInfo(id).name).join(', ')}</Text>}
+      {children}
     </View>
+  );
+}
+
+/** A card on the table, by name only. Dimmed and inert without `onPress`. */
+export function Chip({ id, selected, onPress }: { id: CardId; selected?: boolean; onPress?: () => void }) {
+  return (
+    <Pressable
+      onPress={onPress}
+      disabled={!onPress}
+      style={[styles.chip, selected && styles.chipSelected, !onPress && styles.dimmed]}
+    >
+      <Text style={styles.chipText}>{cardInfo(id).name}</Text>
+    </Pressable>
   );
 }
 
@@ -70,10 +84,29 @@ const styles = StyleSheet.create({
   cardBandText: { color: '#fff', fontSize: 10, fontWeight: '700', textAlign: 'center' },
   cardName: { flex: 1, color: colors.ink, fontSize: 12, fontWeight: '600', textAlign: 'center', padding: 4 },
   cardValue: { color: colors.coin, fontSize: 13, fontWeight: '700', paddingBottom: 4 },
-  country: { borderRadius: 6, paddingVertical: 4, paddingHorizontal: 8, borderWidth: 2, borderColor: 'transparent' },
+  country: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    alignItems: 'center',
+    gap: 4,
+    borderRadius: 6,
+    paddingVertical: 4,
+    paddingHorizontal: 8,
+    borderWidth: 2,
+    borderColor: 'transparent',
+  },
   complete: { borderColor: colors.ink },
   countryName: { color: '#fff', fontSize: 12, fontWeight: '700' },
-  countryCities: { color: '#fff', fontSize: 11 },
+  chip: {
+    backgroundColor: colors.surface,
+    borderRadius: 5,
+    borderWidth: 2,
+    borderColor: colors.line,
+    paddingVertical: 2,
+    paddingHorizontal: 6,
+  },
+  chipSelected: { borderColor: colors.accent },
+  chipText: { color: colors.ink, fontSize: 11, fontWeight: '600' },
   button: { backgroundColor: colors.accent, borderRadius: 8, paddingVertical: 10, paddingHorizontal: 14 },
   buttonText: { color: '#fff', fontSize: 15, fontWeight: '600', textAlign: 'center' },
   buttonQuiet: { backgroundColor: 'transparent', borderWidth: 1, borderColor: colors.line },

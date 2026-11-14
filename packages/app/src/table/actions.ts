@@ -18,6 +18,10 @@ const cards = new Map<CardId, CardInfo>(
     const { id, kind, value } = card;
     if (kind === 'city') return [id, { name: title(id), kind, value, country: card.country }];
     if (kind === 'coin') return [id, { name: `Coin ${value}`, kind, value }];
+    if (kind === 'wild') {
+      const any = card.countries.length === COUNTRIES.length;
+      return [id, { name: `Wild ${any ? 'Any' : card.countries.map(title).join('/')}`, kind, value }];
+    }
     return [id, { name: title('action' in card ? card.action : kind), kind, value }];
   }),
 );
@@ -95,7 +99,7 @@ export function promptText(view: PlayerView, names: readonly string[]): string {
 }
 
 export interface ActionGroups {
-  /** Actions that use a card the viewer can tap: one in their hand or in the Market. */
+  /** Actions that use a card the viewer can tap: in their hand, in the Market, in their bank or laid by them. */
   byCard: Map<CardId, Action[]>;
   /** Every other action, offered as a plain button. */
   general: Action[];
@@ -103,7 +107,8 @@ export interface ActionGroups {
 
 /** Splits the legal actions by the control that offers them. Every action lands in exactly one place. */
 export function groupActions(view: PlayerView, legal: readonly Action[]): ActionGroups {
-  const tappable = new Set([...view.hand, ...view.market]);
+  const me = view.players[view.viewer]!;
+  const tappable = new Set([...view.hand, ...view.market, ...me.bank, ...me.table.flatMap((stack) => stack.cities)]);
   const groups: ActionGroups = { byCard: new Map(), general: [] };
   for (const action of legal) {
     const card = 'card' in action && tappable.has(action.card) ? action.card : undefined;
