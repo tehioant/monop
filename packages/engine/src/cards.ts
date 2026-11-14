@@ -5,6 +5,7 @@ import { ACTIONS, COINS, COUNTRIES, WILD_CITIES } from './data.ts';
 export type CardId = string;
 export type CountryId = string;
 export type ActionId = (typeof ACTIONS)[number]['id'];
+export type PerkId = (typeof COUNTRIES)[number]['perk'];
 
 /** Every card has a coin `value`: what it is worth once banked. */
 export type Card =
@@ -38,6 +39,7 @@ export const CARDS: readonly Card[] = [
 const cardsById = new Map(CARDS.map((card) => [card.id, card]));
 const countrySizes = new Map<CountryId, number>(COUNTRIES.map((country) => [country.id, country.cities.length]));
 const tollScales = new Map<CountryId, readonly number[]>(COUNTRIES.map((country) => [country.id, country.toll]));
+const countryPerks = new Map<CountryId, PerkId>(COUNTRIES.map((country) => [country.id, country.perk]));
 
 export function getCard(id: CardId): Card {
   const card = cardsById.get(id);
@@ -57,4 +59,11 @@ export function tollScale(country: CountryId): readonly number[] {
   const scale = tollScales.get(country);
   if (!scale) throw new Error(`Unknown country: ${country}`);
   return scale;
+}
+
+/** The perk a country gives the player who holds it complete. */
+export function countryPerk(country: CountryId): PerkId {
+  const perk = countryPerks.get(country);
+  if (!perk) throw new Error(`Unknown country: ${country}`);
+  return perk;
 }

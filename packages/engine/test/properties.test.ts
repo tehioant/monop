@@ -76,6 +76,7 @@ function zones(state: GameState) {
   for (const entry of view.log) {
     if (entry.type === 'reshuffle') discarded = [];
     else if (entry.type === 'discard' || entry.type === 'play') discarded.push(entry.card);
+    else if (entry.type === 'return') discarded.pop(); // the Veto just played is back in its player's hand
   }
   return {
     view,
@@ -113,6 +114,13 @@ test('every card is in exactly one zone, and every laid city in a country it bel
             card.kind === 'wild' ? card.countries.includes(country) : card.kind === 'city' && card.country === country,
           );
         }
+      }
+      // A country's perk is active for exactly the players who hold it complete.
+      for (const { country, activeFor } of view.perks) {
+        const holders = view.players.flatMap((p, player) =>
+          p.table.some((stack) => stack.country === country && stack.complete) ? [player] : [],
+        );
+        assert.deepEqual(activeFor, holders);
       }
     });
   });
@@ -199,9 +207,13 @@ test('a view never shows a card from another hand or from the deck', () => {
           [],
         );
         // Log entries are checked when they appear: what they name was public at that time (a card taken
-        // from the Market) or is public now.
+        // from the Market, a Veto played and then returned to its player's hand) or is public now.
+        const fresh = log.slice(logged);
+        const returned = fresh.flatMap((entry) => (entry.type === 'return' ? [entry.card] : []));
         assert.deepEqual(
-          cardsIn(log.slice(logged)).filter((card) => !known.has(card) && !marketBefore.includes(card)),
+          cardsIn(fresh).filter(
+            (card) => !known.has(card) && !marketBefore.includes(card) && !returned.includes(card),
+          ),
           [],
         );
       }

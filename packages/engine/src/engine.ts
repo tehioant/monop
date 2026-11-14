@@ -1,5 +1,15 @@
-import { CARDS, countrySize, getCard, tollScale, type ActionId, type CardId, type CountryId } from './cards.ts';
-import { RULES } from './data.ts';
+import {
+  CARDS,
+  countryPerk,
+  countrySize,
+  getCard,
+  tollScale,
+  type ActionId,
+  type CardId,
+  type CountryId,
+  type PerkId,
+} from './cards.ts';
+import { COUNTRIES, RULES } from './data.ts';
 import { shuffle } from './rng.ts';
 import type {
   Action,
@@ -47,7 +57,7 @@ export function createGame(options: GameOptions, seed: number, setup: GameSetup 
       table: [],
     })),
     market: deck.splice(0, RULES.marketSize), // dealt after the hands
-    turn: { player: 0, playsLeft: 0 },
+    turn: { player: 0, played: 0 },
     phase: { kind: 'play', player: 0 },
     log: [],
   };
@@ -67,7 +77,7 @@ export function legalActions(state: GameState, player: PlayerId): Action[] {
     }
     case 'play': {
       const actions: Action[] = [];
-      if (state.turn.playsLeft > 0) {
+      if (playsLeft(state) > 0) {
         for (const card of hand) {
           const def = getCard(card);
           if (def.kind === 'city') actions.push({ type: 'lay', card });
@@ -128,7 +138,7 @@ export function applyAction(state: GameState, player: PlayerId, action: Action):
       if (!country) throw new Error(`No country to lay ${card.id} in`);
       remove(me.hand, card.id);
       addCity(me, card.id, country);
-      next.turn.playsLeft--;
+      next.turn.played++;
       break;
     }
     case 'reassign':
@@ -141,7 +151,8 @@ export function applyAction(state: GameState, player: PlayerId, action: Action):
       if (card.kind !== 'action') throw new Error(`Not an action card: ${card.id}`);
       remove(me.hand, card.id);
       // A Veto answers a card: it is not one of the turn's plays.
-      if (card.action !== 'veto') next.turn.playsLeft--;
+      if (card.action !== 'veto') next.turn.played++;
+      let returns = false;
       switch (card.action) {
         case 'windfall':
           // Extra draws, from the deck only.
@@ -167,10 +178,18 @@ export function applyAction(state: GameState, player: PlayerId, action: Action):
           after = () => hit(next, { take: action }, [action.target!]);
           break;
         case 'veto':
-          after = () => answer(next, true);
+          // Perk: the first Veto a player plays in the game goes back to their hand.
+          returns =
+            hasPerk(me, 'vetoReturn') &&
+            !next.log.some((entry) => entry.type === 'play' && entry.player === player && isVeto(entry.card));
+          after = () => {
+            if (returns) next.log.push({ type: 'return', card: card.id, player });
+            answer(next, true);
+          };
           break;
       }
-      next.discard.push(card.id); // after the effect: a Windfall cannot draw itself back
+      // After the effect: a Windfall cannot draw itself back.
+      (returns ? me.hand : next.discard).push(card.id);
       break;
     }
     case 'decline':
@@ -188,7 +207,7 @@ export function applyAction(state: GameState, player: PlayerId, action: Action):
     case 'bank':
       remove(me.hand, action.card);
       me.bank.push(action.card);
-      next.turn.playsLeft--;
+      next.turn.played++;
       break;
     case 'endTurn':
       finishTurn(next);
@@ -208,19 +227,26 @@ export function applyAction(state: GameState, player: PlayerId, action: Action):
 export function viewFor(state: GameState, player: PlayerId): PlayerView {
   const me = state.players[player];
   if (!me) throw new RangeError(`No such player: ${player}`);
+  const players = state.players.map((p) => ({
+    handSize: p.hand.length,
+    bank: p.bank,
+    table: p.table.map((stack) => ({ ...stack, complete: isComplete(stack) })),
+  }));
   return {
     viewer: player,
     options: state.options,
     hand: me.hand,
-    players: state.players.map((p) => ({
-      handSize: p.hand.length,
-      bank: p.bank,
-      table: p.table.map((stack) => ({ ...stack, complete: isComplete(stack) })),
-    })),
+    players,
     deckSize: state.deck.length,
     discardTop: state.discard.at(-1) ?? null,
     market: state.market,
-    turn: state.turn,
+    // A perk is active for the players who hold its country complete.
+    perks: COUNTRIES.map(({ id, perk }) => ({
+      country: id,
+      perk,
+      activeFor: players.flatMap((p, seat) => (p.table.some((s) => s.country === id && s.complete) ? [seat] : [])),
+    })),
+    turn: { player: state.turn.player, playsLeft: playsLeft(state) },
     phase: state.phase,
     log: state.log,
   };
@@ -265,11 +291,28 @@ function looseCities(player: PlayerState): CardId[] {
 }
 
 function startTurn(state: GameState, player: PlayerId): void {
-  state.turn = { player, playsLeft: RULES.playsPerTurn };
-  const wanted = state.players[player]!.hand.length === 0 ? RULES.drawsOnEmptyHand : RULES.drawsPerTurn;
+  state.turn = { player, played: 0 };
+  const me = state.players[player]!;
+  const usual = hasPerk(me, 'extraDraw') ? RULES.drawsWithPerk : RULES.drawsPerTurn;
+  const wanted = me.hand.length === 0 ? RULES.drawsOnEmptyHand : usual;
   // Every draw takes one card out of these three zones, so the count stays right for the whole draw phase.
   const draws = Math.min(wanted, state.deck.length + state.discard.length + state.market.length);
   state.phase = draws > 0 ? { kind: 'draw', player, remaining: draws } : { kind: 'play', player };
+}
+
+/**
+ * How many more cards the turn player may play. Worked out from the plays made, as the number allowed changes
+ * as soon as the perk is gained or lost, in the middle of a turn too.
+ */
+function playsLeft(state: GameState): number {
+  const { player, played } = state.turn;
+  const allowed = hasPerk(state.players[player]!, 'extraPlay') ? RULES.playsWithPerk : RULES.playsPerTurn;
+  return Math.max(0, allowed - played);
+}
+
+/** A perk is active for a player only while they hold a complete country that gives it. */
+function hasPerk(player: PlayerState, perk: PerkId): boolean {
+  return player.table.some((stack) => isComplete(stack) && countryPerk(stack.country) === perk);
 }
 
 /** The turn passes to the next seat once its player is down to the hand limit. */

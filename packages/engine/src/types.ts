@@ -1,4 +1,4 @@
-import type { CardId, CountryId } from './cards.ts';
+import type { CardId, CountryId, PerkId } from './cards.ts';
 
 /** A player is identified by their seat: 0 to players - 1. Seat 0 plays first. */
 export type PlayerId = number;
@@ -70,8 +70,11 @@ export interface GameState {
   /** Face-up cards a turn's draws may be taken from. Refilled from the deck; short only when the cards run out. */
   market: CardId[];
   players: PlayerState[];
-  /** Whose turn it is; survives interrupts, unlike `phase.player`. */
-  turn: { player: PlayerId; playsLeft: number };
+  /**
+   * Whose turn it is, and the plays they have made in it; survives interrupts, unlike `phase.player`.
+   * The plays left are not kept: the number allowed can change during the turn (the `extraPlay` perk).
+   */
+  turn: { player: PlayerId; played: number };
   phase: Phase;
   log: LogEntry[];
 }
@@ -121,6 +124,8 @@ export type LogEntry =
   | (Action & { player: PlayerId })
   /** The deck ran out: the discard pile was shuffled into a new deck. Logged before the action that needed a card. */
   | { type: 'reshuffle' }
+  /** The Veto `player` has just played went back to their hand, not to the discard pile (the `vetoReturn` perk). */
+  | { type: 'return'; card: CardId; player: PlayerId }
   | { type: 'gameOver'; winner: PlayerId | null };
 
 /** Everything one player may know, and nothing else. Safe to send to that player. */
@@ -137,7 +142,13 @@ export interface PlayerView {
   deckSize: number;
   discardTop: CardId | null;
   market: CardId[];
-  turn: GameState['turn'];
+  /**
+   * Every country's perk, in card data order, and the players it is active for: those who hold the country
+   * complete, for as long as they do. (Two players can, with wild cities.)
+   */
+  perks: { country: CountryId; perk: PerkId; activeFor: PlayerId[] }[];
+  /** Whose turn it is, and how many more cards they may play in it. */
+  turn: { player: PlayerId; playsLeft: number };
   /** The pending prompt: who must act, and how. */
   phase: Phase;
   log: LogEntry[];

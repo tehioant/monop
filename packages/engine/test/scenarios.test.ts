@@ -228,18 +228,17 @@ test('with the deck and the discard pile both empty, a player draws what is avai
 for (const countriesToWin of [3, 5]) {
   test(`the game ends as soon as a player completes ${countriesToWin} countries`, () => {
     // Seat 0 is fed the cities of the smallest countries and lays them all; seat 1 only gets coins and passes.
-    const cities: CardId[] = [...COUNTRIES]
+    // The deck is stacked for 2 draws a turn: so none of the countries whose perk is an extra draw.
+    const cities: CardId[] = COUNTRIES.filter((country) => country.perk !== 'extraDraw')
       .sort((a, b) => a.cities.length - b.cities.length)
       .slice(0, countriesToWin)
       .flatMap((country) => country.cities);
-    // Seat 0 starts with the first 5 cities; each round it draws the next 2, and seat 1 draws 2 coins.
-    const spareCoins = [...coins];
-    const draws: CardId[] = [];
-    for (let i = 5; i < cities.length; i += 2) {
-      const mine = cities.slice(i, i + 2);
-      draws.push(...mine, ...spareCoins.splice(0, 4 - mine.length));
-    }
-    const deck = stack([cities.slice(0, 5), []], draws);
+    // Seat 0 starts with the first 4 cities and a coin it keeps, so that its hand is never empty (an empty hand
+    // draws more). Each round it draws the next 2 cities, and seat 1 draws 2 coins.
+    const [kept, ...spareCoins] = coins;
+    const draws = cities.slice(4, 6);
+    for (let i = 6; i < cities.length; i += 2) draws.push(...spareCoins.splice(0, 2), ...cities.slice(i, i + 2));
+    const deck = stack([[...cities.slice(0, 4), kept!], []], draws);
 
     const game = playOut(
       createGame({ players: 2, countriesToWin }, 1, { deck }),
