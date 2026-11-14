@@ -19,13 +19,19 @@ export type ClientMessage =
   | { type: 'intent'; stateVersion: number; action: Action };
 
 export type ServerMessage =
-  /** Answer to `hello`. The client keeps `token` and sends it in later hellos. */
+  /**
+   * Answer to `hello`. The client keeps `token` and sends it in later hellos. If the account holds a seat in a
+   * game in progress and nobody is connected to that seat, the client is put back in it: a `room` and a `state`
+   * follow.
+   */
   | { type: 'welcome'; token: string; name: string }
   /** The lobby, sent to everyone in it whenever it changes. `players` is in seat order; seat 0 is the host. */
   | { type: 'room'; code: string; countriesToWin: number; players: { name: string }[]; you: PlayerId }
   /**
    * The game as the receiving player may see it, sent to every player when the game starts and after every
-   * applied intent. `stateVersion` starts at 1 and grows by 1 each time.
+   * applied intent. `stateVersion` starts at 1 and grows by 1 each time. After a server restart the game is back
+   * at the start of the turn in progress, so the `state` that follows a `welcome` may have a lower `stateVersion`
+   * than the last one received: it replaces whatever the client knew.
    */
   | { type: 'state'; stateVersion: number; view: PlayerView; legalActions: Action[] }
   /** The client's last message was refused and changed nothing. */

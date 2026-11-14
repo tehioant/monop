@@ -2,16 +2,40 @@
 
 import assert from 'node:assert/strict';
 import { randomBytes } from 'node:crypto';
+import { CARDS, COUNTRIES, createGame, RULES, type CardId, type GameOptions, type GameState } from '@atlas/engine';
 import postgres from 'postgres';
 import { LOCAL_DATABASE_URL, type Sql } from '../src/db.ts';
 import { PROTOCOL_VERSION, type ClientMessage, type ServerMessage, type Versioned } from '../src/protocol.ts';
 import { startServer, type ServerOptions } from '../src/server.ts';
 
+// The stacked deck of the scripted games (hands by seat, then the Market, then the draws): seat 0 starts with
+// cities of the three smallest countries and draws the missing ones first, so it can win a 3-country game in a
+// few turns.
+const winning: CardId[] = [...COUNTRIES]
+  .sort((a, b) => a.cities.length - b.cities.length)
+  .slice(0, 3)
+  .flatMap((country) => country.cities);
+const others = CARDS.map((card) => card.id).filter((card) => !winning.includes(card));
+const dealt = RULES.startingHand + RULES.marketSize;
+export const deck = [
+  ...winning.slice(0, RULES.startingHand),
+  ...others.slice(0, dealt),
+  ...winning.slice(RULES.startingHand),
+  ...others.slice(dealt),
+];
+/** A game dealt from `deck`, for `startTestServer({ newGame })`. */
+export const newGame = (options: GameOptions): GameState => createGame(options, 1, { deck });
+
 export interface TestServer {
-  /** The WebSocket endpoint. */
-  url: string;
+  /** The WebSocket endpoint. It changes when the server restarts. */
+  readonly url: string;
   /** The server's database, for the few facts the protocol cannot show. */
   db: Sql;
+  /**
+   * Stops the server and starts a new one on the same database, as restarting its process would.
+   * Every connection is lost, and everything the server had to write is in the database.
+   */
+  restart(): Promise<void>;
   close(): Promise<void>;
 }
 
@@ -34,11 +58,18 @@ export async function startTestServer(options: Pick<ServerOptions, 'newGame'> = 
   }
   const databaseUrl = new URL(adminUrl);
   databaseUrl.pathname = `/${name}`;
-  const server = await startServer({ ...options, databaseUrl: databaseUrl.href, port: 0, host: '127.0.0.1' });
+  const start = () => startServer({ ...options, databaseUrl: databaseUrl.href, port: 0, host: '127.0.0.1' });
+  let server = await start();
   const db = postgres(databaseUrl.href, { max: 1 });
   return {
-    url: `ws://127.0.0.1:${server.port}/ws`,
+    get url() {
+      return `ws://127.0.0.1:${server.port}/ws`;
+    },
     db,
+    async restart() {
+      await server.close();
+      server = await start();
+    },
     async close() {
       await Promise.all([server.close(), db.end()]);
       await admin.unsafe(`drop database ${name}`);
