@@ -33,6 +33,11 @@ export function drawAll(state: GameState): GameState {
   return state;
 }
 
+/** Plays a whole turn of the awaited player: draws, makes the given plays, ends the turn. */
+export function turn(state: GameState, ...plays: Action[]): GameState {
+  return act(drawAll(state), ...plays, { type: 'endTurn' });
+}
+
 export function completeCountries(view: PlayerView, player: PlayerId): number {
   return view.players[player]!.table.filter((stack) => stack.complete).length;
 }

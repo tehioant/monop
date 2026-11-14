@@ -6,7 +6,9 @@ import { isDeepStrictEqual } from 'node:util';
 import fc from 'fast-check';
 import {
   applyAction,
+  COUNTRIES,
   createGame,
+  getCard,
   IllegalActionError,
   legalActions,
   RULES,
@@ -38,7 +40,11 @@ function randomGame(config: GameConfig, g: fc.GeneratorValue, visit: (state: Gam
   const end = playOut(
     createGame(options, seed),
     (legal) => {
-      const action = legal[g(fc.nat, legal.length - 1)]!; // an index is much cheaper to generate than constantFrom
+      // Moving a wild city is free, so all such moves weigh as one choice: otherwise they crowd out the rest.
+      const moves = legal.filter((a) => a.type === 'reassign');
+      const others = legal.filter((a) => a.type !== 'reassign');
+      const choices = moves.length > 0 ? [...others, moves[g(fc.nat, moves.length - 1)]!] : others;
+      const action = choices[g(fc.nat, choices.length - 1)]!; // an index is much cheaper to generate than constantFrom
       actions.push(action);
       return action;
     },
@@ -85,7 +91,7 @@ function cardsIn(value: unknown): CardId[] {
   return [];
 }
 
-test('every card is in exactly one zone', () => {
+test('every card is in exactly one zone, and every laid city in a country it belongs to', () => {
   forAllGames((config, g) => {
     randomGame(config, g, (state) => {
       const { view, hands, tables, discarded } = zones(state);
@@ -98,6 +104,13 @@ test('every card is in exactly one zone', () => {
         hands.map((hand) => hand.length),
       );
       assert.equal(view.discardTop, discarded.at(-1) ?? null);
+      for (const { country, cities } of view.players.flatMap((p) => p.table)) {
+        for (const card of cities.map(getCard)) {
+          assert.ok(
+            card.kind === 'wild' ? card.countries.includes(country) : card.kind === 'city' && card.country === country,
+          );
+        }
+      }
     });
   });
 });
@@ -119,8 +132,13 @@ test('actions that are not listed are rejected', () => {
   const anyAction = fc.oneof(
     fc.constantFrom<Action>({ type: 'draw' }, { type: 'endTurn' }),
     fc.record(
-      { type: fc.constantFrom('drawMarket', 'lay', 'play', 'bank', 'discard'), card: fc.constantFrom(...ALL_CARDS) },
-      { noNullPrototype: true },
+      {
+        type: fc.constantFrom('drawMarket', 'lay', 'reassign', 'play', 'pay', 'bank', 'discard'),
+        card: fc.constantFrom(...ALL_CARDS),
+        country: fc.constantFrom(...COUNTRIES.map((country) => country.id)),
+        target: fc.nat(5),
+      },
+      { noNullPrototype: true, requiredKeys: ['type', 'card'] },
     ),
     fc.constantFrom<unknown>({ type: 'bank' }, { type: 'draw', card: 'paris' }, { type: 'seize' }, 'draw', null),
   ) as fc.Arbitrary<Action>;

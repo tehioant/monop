@@ -39,6 +39,11 @@ export type Phase =
   | { kind: 'draw'; player: PlayerId; remaining: number }
   | { kind: 'play'; player: PlayerId }
   | { kind: 'discard'; player: PlayerId }
+  /**
+   * `player` still owes `owed` coin to `receiver` and pays it card by card from their bank and laid cities.
+   * `queue` lists the players charged next, in order; each will owe `amount`.
+   */
+  | { kind: 'pay'; player: PlayerId; receiver: PlayerId; owed: number; amount: number; queue: PlayerId[] }
   | { kind: 'over'; winner: PlayerId | null };
 
 /** Plain JSON data. Treat as immutable: `applyAction` returns a new state. */
@@ -63,10 +68,18 @@ export type Action =
   | { type: 'draw' }
   /** Take a face-up Market card instead; the Market is refilled from the deck at once. */
   | { type: 'drawMarket'; card: CardId }
-  | { type: 'lay'; card: CardId }
-  /** Play an action card for its effect; the card then goes to the discard pile. */
-  | { type: 'play'; card: CardId }
+  /** `country` is given for a wild city, and only then: the country it is laid as. */
+  | { type: 'lay'; card: CardId; country?: CountryId }
+  /** Moves one of the player's laid wild cities to another of its countries. Free: uses no play. */
+  | { type: 'reassign'; card: CardId; country: CountryId }
+  /**
+   * Play an action card for its effect; the card then goes to the discard pile.
+   * `target` is the chosen opponent, for the cards that need one (Debt).
+   */
+  | { type: 'play'; card: CardId; target?: PlayerId }
   | { type: 'bank'; card: CardId }
+  /** Hands one banked card or laid city to the receiver of the payment in progress. */
+  | { type: 'pay'; card: CardId }
   | { type: 'endTurn' }
   | { type: 'discard'; card: CardId };
 

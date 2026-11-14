@@ -9,6 +9,10 @@ export const RULES = {
   drawsOnEmptyHand: 4,
   marketSize: 3,
   windfallDraws: 2,
+  /** What a Levy charges every opponent. */
+  levyAmount: 2,
+  /** What a Debt charges one chosen opponent. */
+  debtAmount: 5,
   playsPerTurn: 3,
   handLimit: 7,
 };
@@ -27,6 +31,20 @@ export const COUNTRIES = [
   { id: 'india', cityValue: 3, cities: ['mumbai', 'delhi', 'bengaluru', 'kolkata'] },
 ] as const;
 
+/**
+ * Wild cities, one card each: laid as any one of its `countries` ('any' = every country), and counting as a city
+ * of the country it is laid in.
+ */
+export const WILD_CITIES = [
+  { id: 'wild-egypt-italy', value: 2, countries: ['egypt', 'italy'] },
+  { id: 'wild-australia-japan', value: 2, countries: ['australia', 'japan'] },
+  { id: 'wild-france-usa', value: 3, countries: ['france', 'usa'] },
+  { id: 'wild-uk-india', value: 3, countries: ['uk', 'india'] },
+  { id: 'wild-brazil-china', value: 3, countries: ['brazil', 'china'] },
+  { id: 'wild-any-1', value: 1, countries: 'any' },
+  { id: 'wild-any-2', value: 1, countries: 'any' },
+] as const;
+
 /** Coin cards: `count` copies of each `value`. */
 export const COINS = [
   { value: 1, count: 6 },
@@ -38,4 +56,8 @@ export const COINS = [
 ] as const;
 
 /** Action cards: `count` copies of each, worth `value` once banked. */
-export const ACTIONS = [{ id: 'windfall', value: 1, count: 4 }] as const;
+export const ACTIONS = [
+  { id: 'windfall', value: 1, count: 4 },
+  { id: 'levy', value: 2, count: 3 },
+  { id: 'debt', value: 3, count: 3 },
+] as const;
