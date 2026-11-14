@@ -60,6 +60,12 @@ export type Action =
   | { type: 'draw' }
   | { type: 'lay'; card: CardId }
   | { type: 'bank'; card: CardId }
+  /** Take `city` from an incomplete country of `target`. */
+  | { type: 'raid'; card: CardId; target: PlayerId; city: CardId }
+  /** Swap own city `give` for `take` of `target`; both come from incomplete countries. */
+  | { type: 'exchange'; card: CardId; target: PlayerId; give: CardId; take: CardId }
+  /** Take the complete `country` of `target`, whole. */
+  | { type: 'seizure'; card: CardId; target: PlayerId; country: CountryId }
   | { type: 'endTurn' }
   | { type: 'discard'; card: CardId };
 

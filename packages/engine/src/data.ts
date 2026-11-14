@@ -23,6 +23,13 @@ export const COUNTRIES = [
   { id: 'india', cityValue: 3, cities: ['mumbai', 'delhi', 'bengaluru', 'kolkata'] },
 ] as const;
 
+/** Action cards: `count` copies of each, worth `value` coin when banked. */
+export const ACTIONS = [
+  { id: 'raid', value: 3, count: 3 },
+  { id: 'exchange', value: 3, count: 3 },
+  { id: 'seizure', value: 5, count: 2 },
+] as const;
+
 /** Coin cards: `count` copies of each `value`. */
 export const COINS = [
   { value: 1, count: 6 },

@@ -6,6 +6,7 @@ import { isDeepStrictEqual } from 'node:util';
 import fc from 'fast-check';
 import {
   applyAction,
+  COUNTRIES,
   createGame,
   IllegalActionError,
   legalActions,
@@ -59,6 +60,9 @@ function deepFreeze<T>(value: T): T {
   return value;
 }
 
+/** Log entries whose `card` went to the discard pile. */
+const DISCARDING = new Set(['discard', 'raid', 'exchange', 'seizure']);
+
 /** Where every card is, as far as the views tell: the deck is whatever is in none of these zones. */
 function zones(state: GameState) {
   const view = viewFor(state, 0);
@@ -66,7 +70,8 @@ function zones(state: GameState) {
     view,
     hands: view.players.map((_, player) => viewFor(state, player).hand),
     tables: view.players.flatMap((p) => [...p.bank, ...p.table.flatMap((stack) => stack.cities)]),
-    discarded: view.log.flatMap((entry) => (entry.type === 'discard' ? [entry.card] : [])),
+    // Discarded from hand, or played as an action.
+    discarded: view.log.flatMap((entry) => (DISCARDING.has(entry.type) && 'card' in entry ? [entry.card] : [])),
   };
 }
 
@@ -110,12 +115,15 @@ test('every listed legal action applies, and only the awaited player has any', (
 });
 
 test('actions that are not listed are rejected', () => {
+  const card = fc.constantFrom(...ALL_CARDS);
+  const target = fc.nat(RULES.playerCounts.at(-1)!);
+  const country = fc.constantFrom(...COUNTRIES.map((c) => c.id));
   const anyAction = fc.oneof(
     fc.constantFrom<Action>({ type: 'draw' }, { type: 'endTurn' }),
-    fc.record(
-      { type: fc.constantFrom('lay', 'bank', 'discard'), card: fc.constantFrom(...ALL_CARDS) },
-      { noNullPrototype: true },
-    ),
+    fc.record({ type: fc.constantFrom('lay', 'bank', 'discard'), card }, { noNullPrototype: true }),
+    fc.record({ type: fc.constant('raid'), card, target, city: card }, { noNullPrototype: true }),
+    fc.record({ type: fc.constant('exchange'), card, target, give: card, take: card }, { noNullPrototype: true }),
+    fc.record({ type: fc.constant('seizure'), card, target, country }, { noNullPrototype: true }),
     fc.constantFrom<unknown>({ type: 'bank' }, { type: 'draw', card: 'paris' }, { type: 'seize' }, 'draw', null),
   ) as fc.Arbitrary<Action>;
 
@@ -138,7 +146,9 @@ test('games terminate: won exactly when someone completes enough countries, else
       const leaders = view.players.flatMap((_, player) =>
         completeCountries(view, player) >= config.countriesToWin ? [player] : [],
       );
-      assert.deepEqual(leaders, view.phase.kind === 'over' && view.phase.winner !== null ? [view.phase.winner] : []);
+      // An exchange can complete enough countries for both players at once: one of them wins.
+      const winner = view.phase.kind === 'over' ? view.phase.winner : null;
+      assert.ok(winner === null ? leaders.length === 0 : leaders.includes(winner));
     });
     // Without a winner, the game only ends when nobody has a card left to play.
     const view = viewFor(end, 0);

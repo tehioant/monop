@@ -1,4 +1,4 @@
-import { CARDS, countrySize, getCard, type CardId } from './cards.ts';
+import { CARDS, countrySize, getCard, type ActionKind, type CardId } from './cards.ts';
 import { RULES } from './data.ts';
 import { shuffle } from './rng.ts';
 import type {
@@ -63,7 +63,9 @@ export function legalActions(state: GameState, player: PlayerId): Action[] {
       const actions: Action[] = [];
       if (state.turn.playsLeft > 0) {
         for (const card of hand) {
-          if (getCard(card).kind === 'city') actions.push({ type: 'lay', card });
+          const def = getCard(card);
+          if (def.kind === 'city') actions.push({ type: 'lay', card });
+          if (def.kind === 'action') actions.push(...takes(state, player, card, def.action));
           actions.push({ type: 'bank', card });
         }
       }
@@ -89,14 +91,29 @@ export function applyAction(state: GameState, player: PlayerId, action: Action):
       if (phase.kind === 'draw' && --phase.remaining === 0) next.phase = { kind: 'play', player };
       break;
     }
-    case 'lay': {
-      const card = getCard(action.card);
-      if (card.kind !== 'city') throw new Error(`Not a city: ${card.id}`);
-      remove(me.hand, card.id);
-      let stack = me.table.find((s) => s.country === card.country);
-      if (!stack) me.table.push((stack = { country: card.country, cities: [] }));
-      stack.cities.push(card.id);
+    case 'lay':
+      remove(me.hand, action.card);
+      addCity(me, action.card);
       next.turn.playsLeft--;
+      break;
+    case 'raid':
+      playCard(next, action.card);
+      moveCity(next.players[action.target]!, me, action.city);
+      break;
+    case 'exchange': {
+      const them = next.players[action.target]!;
+      playCard(next, action.card);
+      moveCity(them, me, action.take);
+      moveCity(me, them, action.give);
+      break;
+    }
+    case 'seizure': {
+      const them = next.players[action.target]!;
+      playCard(next, action.card);
+      // The stack moves as it is, so whatever is attached to the country goes with it.
+      const stack = them.table.find((s) => s.country === action.country)!;
+      remove(them.table, stack);
+      me.table.push(stack);
       break;
     }
     case 'bank':
@@ -138,6 +155,59 @@ export function viewFor(state: GameState, player: PlayerId): PlayerView {
   };
 }
 
+/** The plays of one Raid, Exchange or Seizure card: one action per valid target, none if there is no target. */
+function takes(state: GameState, player: PlayerId, card: CardId, kind: ActionKind): Action[] {
+  const actions: Action[] = [];
+  state.players.forEach((them, target) => {
+    if (target === player) return;
+    switch (kind) {
+      case 'raid':
+        for (const city of looseCities(them)) actions.push({ type: 'raid', card, target, city });
+        break;
+      case 'exchange':
+        for (const give of looseCities(state.players[player]!)) {
+          for (const take of looseCities(them)) actions.push({ type: 'exchange', card, target, give, take });
+        }
+        break;
+      case 'seizure':
+        for (const stack of them.table) {
+          if (isComplete(stack)) actions.push({ type: 'seizure', card, target, country: stack.country });
+        }
+        break;
+    }
+  });
+  return actions;
+}
+
+/** The cities a Raid or an Exchange may touch: those in incomplete countries. */
+function looseCities(player: PlayerState): CardId[] {
+  return player.table.flatMap((stack) => (isComplete(stack) ? [] : stack.cities));
+}
+
+/** The turn player plays an action card from hand: it costs a play and goes to the discard pile. */
+function playCard(state: GameState, card: CardId): void {
+  remove(state.players[state.turn.player]!.hand, card);
+  state.discard.push(card);
+  state.turn.playsLeft--;
+}
+
+/** Puts a city into its country on the player's table. */
+function addCity(player: PlayerState, city: CardId): void {
+  const card = getCard(city);
+  if (card.kind !== 'city') throw new Error(`Not a city: ${city}`);
+  let stack = player.table.find((s) => s.country === card.country);
+  if (!stack) player.table.push((stack = { country: card.country, cities: [] }));
+  stack.cities.push(city);
+}
+
+/** Moves a laid city from one player's table into the other's countries. */
+function moveCity(from: PlayerState, to: PlayerState, city: CardId): void {
+  const stack = from.table.find((s) => s.cities.includes(city))!;
+  remove(stack.cities, city);
+  if (stack.cities.length === 0) remove(from.table, stack);
+  addCity(to, city);
+}
+
 function startTurn(state: GameState, player: PlayerId): void {
   state.turn = { player, playsLeft: RULES.playsPerTurn };
   const draws = Math.min(RULES.drawsPerTurn, state.deck.length);
@@ -155,11 +225,14 @@ function isComplete(stack: CountryStack): boolean {
   return stack.cities.length === countrySize(stack.country);
 }
 
-/** Runs after every state change: a win ends the game at once; so does running out of cards to play. */
+/**
+ * Runs after every state change: a win ends the game at once; so does running out of cards to play.
+ * When one action completes enough countries for two players, the one whose turn it is wins.
+ */
 function checkGameOver(state: GameState): void {
-  const winner = state.players.findIndex(
-    (p) => p.table.filter(isComplete).length >= state.options.countriesToWin,
-  );
+  const wins = (p: PlayerState) => p.table.filter(isComplete).length >= state.options.countriesToWin;
+  const { player } = state.turn;
+  const winner = wins(state.players[player]!) ? player : state.players.findIndex(wins);
   if (winner >= 0) endGame(state, winner);
   else if (state.deck.length === 0 && state.players.every((p) => p.hand.length === 0)) endGame(state, null);
 }
@@ -178,8 +251,8 @@ function sameAction(legal: Action, action: unknown): boolean {
   );
 }
 
-function remove(cards: CardId[], card: CardId): void {
-  cards.splice(cards.indexOf(card), 1);
+function remove<T>(items: T[], item: T): void {
+  items.splice(items.indexOf(item), 1);
 }
 
 /** A copy that `applyAction` may mutate: everything is copied except log entries, which never change. */
