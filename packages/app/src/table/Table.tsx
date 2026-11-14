@@ -18,7 +18,7 @@ export interface TableProps {
   onAction: (action: Action) => void;
 }
 
-const LOG_LINES = 3;
+const LOG_ENTRIES = 4;
 
 export function Table({ view, legal, names, onAction }: TableProps) {
   const [selected, setSelected] = useState<CardId | null>(null);
@@ -50,20 +50,23 @@ export function Table({ view, legal, names, onAction }: TableProps) {
           </Text>
         </View>
 
-        <View style={styles.panel}>
-          <Text style={styles.small}>Market</Text>
-          <View style={styles.cards}>
-            {view.market.map((id) => (
-              <CardView key={id} {...tappable(id)} />
+        <View style={styles.middle}>
+          <View style={styles.panel}>
+            <Text style={styles.small}>Market</Text>
+            <View style={styles.cards}>
+              {view.market.map((id) => (
+                <CardView key={id} {...tappable(id)} />
+              ))}
+            </View>
+          </View>
+          <View style={styles.log}>
+            {view.log.slice(-LOG_ENTRIES).map((entry, i) => (
+              <Text key={i} style={styles.small} numberOfLines={2}>
+                {logLine(entry, names)}
+              </Text>
             ))}
           </View>
         </View>
-
-        {view.log.slice(-LOG_LINES).map((entry, i) => (
-          <Text key={i} style={styles.small} numberOfLines={1}>
-            {logLine(entry, names)}
-          </Text>
-        ))}
 
         {opponents.map((seat) => {
           const player = view.players[seat]!;
@@ -143,6 +146,9 @@ const styles = StyleSheet.create({
   board: { paddingHorizontal: 12, paddingBottom: 8, gap: 8 },
   row: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline', gap: 8 },
   wrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
+  middle: { flexDirection: 'row', gap: 8 },
+  // The latest entries, beside the Market and no taller than it.
+  log: { flex: 1, justifyContent: 'flex-end', gap: 2, overflow: 'hidden' },
   cards: { flexDirection: 'row', gap: 6 },
   panel: {
     backgroundColor: colors.surface,
@@ -158,7 +164,8 @@ const styles = StyleSheet.create({
   name: { color: colors.ink, fontSize: 15, fontWeight: '700' },
   small: { color: colors.muted, fontSize: 12 },
   prompt: { color: colors.ink, fontSize: 14, fontWeight: '600', paddingHorizontal: 12, paddingTop: 8 },
-  hand: { flexGrow: 0, flexShrink: 0, paddingHorizontal: 12, paddingVertical: 8 },
+  // As tall as a card, even when empty, so that nothing moves when the last card is played.
+  hand: { flexGrow: 0, flexShrink: 0, height: 112, paddingHorizontal: 12, paddingVertical: 8 },
   // Room for two rows, so that the hand does not move on most selections; more rows push it up, then scroll.
   actions: { flexGrow: 0, flexShrink: 0, minHeight: 96, maxHeight: 200, paddingHorizontal: 12 },
 });

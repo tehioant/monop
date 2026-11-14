@@ -21,9 +21,11 @@ export function Results({ view, names }: { view: PlayerView; names: readonly str
           {player.table.length === 0 && <Text style={styles.small}>No countries</Text>}
           <View style={styles.wrap}>
             {player.table.map((stack) => (
-              <CountryView key={stack.country} stack={stack}>
-                <Text style={styles.cities}>{stack.cities.map((id) => cardInfo(id).name).join(', ')}</Text>
-              </CountryView>
+              <CountryView
+                key={stack.country}
+                stack={stack}
+                detail={stack.cities.map((id) => cardInfo(id).name).join(', ')}
+              />
             ))}
           </View>
         </View>
@@ -46,6 +48,5 @@ const styles = StyleSheet.create({
   },
   winner: { borderColor: colors.accent },
   name: { color: colors.ink, fontSize: 15, fontWeight: '700' },
-  cities: { color: '#fff', fontSize: 12 },
   wrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
 });

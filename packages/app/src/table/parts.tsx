@@ -38,14 +38,15 @@ export function CardView({ id, selected, onPress }: { id: CardId; selected?: boo
   );
 }
 
-/** A country with its progress. The cities laid in it, if they are to be shown, are the children. */
-export function CountryView({ stack, children }: { stack: Stack; children?: ReactNode }) {
+/** A country with its progress, then what the caller adds: a line of `detail`, or children. */
+export function CountryView({ stack, detail, children }: { stack: Stack; detail?: string; children?: ReactNode }) {
   const progress = `${stack.cities.length}/${countrySize(stack.country)}`;
   return (
     <View style={[styles.country, { backgroundColor: countryColor(stack.country) }, stack.complete && styles.complete]}>
       <Text style={styles.countryName}>
         {title(stack.country)} {progress}
         {stack.complete ? ' ✓' : ''}
+        {detail !== undefined && <Text style={styles.countryDetail}>{`  ${detail}`}</Text>}
       </Text>
       {children}
     </View>
@@ -103,6 +104,7 @@ const styles = StyleSheet.create({
   },
   complete: { borderColor: colors.ink },
   countryName: { color: '#fff', fontSize: 12, fontWeight: '700' },
+  countryDetail: { fontWeight: '400' },
   chip: {
     backgroundColor: colors.surface,
     borderRadius: 5,
