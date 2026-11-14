@@ -13,10 +13,10 @@ import {
   viewFor,
   type Action,
   type CardId,
+  type GameOptions,
   type GameState,
-  type PlayerId,
 } from '../src/index.ts';
-import { ALL_CARDS, completeCountries, playOut } from './helpers.ts';
+import { act, ALL_CARDS, completeCountries, playOut } from './helpers.ts';
 
 // A fixed seed: every run plays the same games, so a failure is reproducible.
 const RUNS = { seed: 1, numRuns: 40 };
@@ -26,7 +26,7 @@ const gameConfig = fc.record({
   countriesToWin: fc.constantFrom(...RULES.countriesToWin),
   seed: fc.integer(),
 });
-type GameConfig = typeof gameConfig extends fc.Arbitrary<infer T> ? T : never;
+type GameConfig = GameOptions & { seed: number };
 
 /**
  * Plays one game of random legal actions to its end. `visit` sees every state reached.
@@ -34,12 +34,12 @@ type GameConfig = typeof gameConfig extends fc.Arbitrary<infer T> ? T : never;
  */
 function randomGame(config: GameConfig, g: fc.GeneratorValue, visit: (state: GameState) => void = () => {}) {
   const { seed, ...options } = config;
-  const actions: [PlayerId, Action][] = [];
+  const actions: Action[] = [];
   const end = playOut(
     createGame(options, seed),
-    (legal, player) => {
-      const action = legal[g(fc.nat, legal.length - 1)]!;
-      actions.push([player, action]);
+    (legal) => {
+      const action = legal[g(fc.nat, legal.length - 1)]!; // an index is much cheaper to generate than constantFrom
+      actions.push(action);
       return action;
     },
     (state) => visit(deepFreeze(state)),
@@ -172,7 +172,6 @@ test('a view never shows a card from another hand or from the deck', () => {
 test('the same seed and actions give the same game', () => {
   forAllGames((config, g) => {
     const { options, seed, actions, end } = randomGame(config, g);
-    const replay = actions.reduce((state, [player, action]) => applyAction(state, player, action), createGame(options, seed));
-    assert.deepEqual(replay, end);
+    assert.deepEqual(act(createGame(options, seed), ...actions), end);
   });
 });

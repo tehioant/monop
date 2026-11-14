@@ -63,14 +63,11 @@ export type Action =
   | { type: 'endTurn' }
   | { type: 'discard'; card: CardId };
 
-/** What happened, in terms every player may see: an entry never names a card that is hidden from someone. */
-export type LogEntry =
-  | { type: 'draw'; player: PlayerId }
-  | { type: 'lay'; player: PlayerId; card: CardId }
-  | { type: 'bank'; player: PlayerId; card: CardId }
-  | { type: 'endTurn'; player: PlayerId }
-  | { type: 'discard'; player: PlayerId; card: CardId }
-  | { type: 'gameOver'; winner: PlayerId | null };
+/**
+ * What happened, in terms every player may see: an entry never names a card that is hidden from someone.
+ * So far every action is public as it is; one that carries a hidden choice needs its own entry.
+ */
+export type LogEntry = (Action & { player: PlayerId }) | { type: 'gameOver'; winner: PlayerId | null };
 
 /** Everything one player may know, and nothing else. Safe to send to that player. */
 export interface PlayerView {

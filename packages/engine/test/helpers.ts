@@ -43,14 +43,13 @@ export function completeCountries(view: PlayerView, player: PlayerId): number {
  */
 export function playOut(
   state: GameState,
-  choose: (legal: Action[], player: PlayerId) => Action,
+  choose: (legal: Action[]) => Action,
   visit: (state: GameState) => void = () => {},
 ): GameState {
   for (let step = 0; step < 1000; step++) {
     visit(state);
     if (viewFor(state, 0).phase.kind === 'over') return state;
-    const player = actor(state);
-    state = applyAction(state, player, choose(legalActions(state, player), player));
+    state = act(state, choose(legalActions(state, actor(state))));
   }
   throw new Error('The game did not end within 1000 actions');
 }

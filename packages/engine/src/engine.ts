@@ -105,13 +105,12 @@ export function applyAction(state: GameState, player: PlayerId, action: Action):
       next.turn.playsLeft--;
       break;
     case 'endTurn':
-      if (me.hand.length > RULES.handLimit) next.phase = { kind: 'discard', player };
-      else startTurn(next, nextPlayer(next, player));
+      finishTurn(next);
       break;
     case 'discard':
       remove(me.hand, action.card);
       next.discard.push(action.card);
-      if (me.hand.length <= RULES.handLimit) startTurn(next, nextPlayer(next, player));
+      finishTurn(next);
       break;
   }
   next.log.push({ ...action, player });
@@ -145,8 +144,11 @@ function startTurn(state: GameState, player: PlayerId): void {
   state.phase = draws > 0 ? { kind: 'draw', player, remaining: draws } : { kind: 'play', player };
 }
 
-function nextPlayer(state: GameState, player: PlayerId): PlayerId {
-  return (player + 1) % state.players.length;
+/** The turn passes to the next seat once its player is down to the hand limit. */
+function finishTurn(state: GameState): void {
+  const { player } = state.turn;
+  if (state.players[player]!.hand.length > RULES.handLimit) state.phase = { kind: 'discard', player };
+  else startTurn(state, (player + 1) % state.players.length);
 }
 
 function isComplete(stack: CountryStack): boolean {
@@ -155,14 +157,11 @@ function isComplete(stack: CountryStack): boolean {
 
 /** Runs after every state change: a win ends the game at once; so does running out of cards to play. */
 function checkGameOver(state: GameState): void {
-  const seats = state.players.length;
-  for (let i = 0; i < seats; i++) {
-    const player = (state.turn.player + i) % seats;
-    if (state.players[player]!.table.filter(isComplete).length >= state.options.countriesToWin) {
-      return endGame(state, player);
-    }
-  }
-  if (state.deck.length === 0 && state.players.every((p) => p.hand.length === 0)) endGame(state, null);
+  const winner = state.players.findIndex(
+    (p) => p.table.filter(isComplete).length >= state.options.countriesToWin,
+  );
+  if (winner >= 0) endGame(state, winner);
+  else if (state.deck.length === 0 && state.players.every((p) => p.hand.length === 0)) endGame(state, null);
 }
 
 function endGame(state: GameState, winner: PlayerId | null): void {
