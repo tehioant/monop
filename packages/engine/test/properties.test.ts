@@ -6,7 +6,9 @@ import { isDeepStrictEqual } from 'node:util';
 import fc from 'fast-check';
 import {
   applyAction,
+  COUNTRIES,
   createGame,
+  getCard,
   IllegalActionError,
   legalActions,
   RULES,
@@ -38,7 +40,14 @@ function randomGame(config: GameConfig, g: fc.GeneratorValue, visit: (state: Gam
   const end = playOut(
     createGame(options, seed),
     (legal) => {
-      const action = legal[g(fc.nat, legal.length - 1)]!; // an index is much cheaper to generate than constantFrom
+      // Free wild city moves, and the targets of one action card, can be many: all the moves weigh as one choice,
+      // and so do all the ways to play one card. Otherwise they crowd out the rest (a card with many targets is
+      // hardly ever banked) and games run close to `playOut`'s bound.
+      const choices = [
+        ...Map.groupBy(legal, (a) => (a.type === 'reassign' ? a.type : a.type === 'play' ? a.card : a)).values(),
+      ];
+      const group = choices[g(fc.nat, choices.length - 1)]!; // an index is much cheaper to generate than constantFrom
+      const action = group.length > 1 ? group[g(fc.nat, group.length - 1)]! : group[0]!;
       actions.push(action);
       return action;
     },
@@ -85,7 +94,7 @@ function cardsIn(value: unknown): CardId[] {
   return [];
 }
 
-test('every card is in exactly one zone', () => {
+test('every card is in exactly one zone, and every laid city in a country it belongs to', () => {
   forAllGames((config, g) => {
     randomGame(config, g, (state) => {
       const { view, hands, tables, discarded } = zones(state);
@@ -98,6 +107,13 @@ test('every card is in exactly one zone', () => {
         hands.map((hand) => hand.length),
       );
       assert.equal(view.discardTop, discarded.at(-1) ?? null);
+      for (const { country, cities } of view.players.flatMap((p) => p.table)) {
+        for (const card of cities.map(getCard)) {
+          assert.ok(
+            card.kind === 'wild' ? card.countries.includes(country) : card.kind === 'city' && card.country === country,
+          );
+        }
+      }
     });
   });
 });
@@ -116,13 +132,19 @@ test('every listed legal action applies, and only the awaited player has any', (
 });
 
 test('actions that are not listed are rejected', () => {
+  const card = fc.constantFrom(...ALL_CARDS);
   const anyAction = fc.oneof(
     fc.constantFrom<Action>({ type: 'draw' }, { type: 'endTurn' }),
     fc.record(
       {
-        type: fc.constantFrom('drawMarket', 'lay', 'play', 'pay', 'bank', 'discard'),
-        card: fc.constantFrom(...ALL_CARDS),
+        type: fc.constantFrom('drawMarket', 'lay', 'reassign', 'play', 'pay', 'bank', 'discard'),
+        card,
+        country: fc.constantFrom(...COUNTRIES.map((country) => country.id)),
         target: fc.nat(5),
+        // What a Raid or an Exchange is aimed at (a Seizure uses `country`).
+        city: card,
+        give: card,
+        take: card,
       },
       { noNullPrototype: true, requiredKeys: ['type', 'card'] },
     ),
@@ -148,7 +170,9 @@ test('games terminate: won exactly when someone completes enough countries, else
       const leaders = view.players.flatMap((_, player) =>
         completeCountries(view, player) >= config.countriesToWin ? [player] : [],
       );
-      assert.deepEqual(leaders, view.phase.kind === 'over' && view.phase.winner !== null ? [view.phase.winner] : []);
+      // An exchange can complete enough countries for both players at once: the one whose turn it is wins.
+      const expected = leaders.includes(view.turn.player) ? view.turn.player : (leaders[0] ?? null);
+      assert.equal(view.phase.kind === 'over' ? view.phase.winner : null, expected);
     });
     // Without a winner, the game only ends when nobody has a card left to draw or play.
     const view = viewFor(end, 0);
