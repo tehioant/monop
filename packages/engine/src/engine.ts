@@ -44,6 +44,7 @@ export function createGame(options: GameOptions, seed: number, setup: GameSetup 
       bank: [],
       table: [],
     })),
+    market: deck.splice(0, RULES.marketSize), // dealt after the hands
     turn: { player: 0, playsLeft: 0 },
     phase: { kind: 'play', player: 0 },
     log: [],
@@ -57,13 +58,23 @@ export function legalActions(state: GameState, player: PlayerId): Action[] {
   if (phase.kind === 'over' || phase.player !== player) return [];
   const { hand } = state.players[player]!;
   switch (phase.kind) {
-    case 'draw':
-      return [{ type: 'draw' }];
+    case 'draw': {
+      const actions: Action[] = state.deck.length + state.discard.length > 0 ? [{ type: 'draw' }] : [];
+      for (const card of state.market) actions.push({ type: 'drawMarket', card });
+      return actions;
+    }
     case 'play': {
       const actions: Action[] = [];
       if (state.turn.playsLeft > 0) {
         for (const card of hand) {
-          if (getCard(card).kind === 'city') actions.push({ type: 'lay', card });
+          const def = getCard(card);
+          if (def.kind === 'city') actions.push({ type: 'lay', card });
+          if (def.kind === 'action') {
+            // A Debt needs a target: one action per opponent.
+            if (def.action === 'debt') {
+              for (const target of opponents(state, player)) actions.push({ type: 'play', card, target });
+            } else actions.push({ type: 'play', card });
+          }
           actions.push({ type: 'bank', card });
         }
       }
@@ -72,6 +83,8 @@ export function legalActions(state: GameState, player: PlayerId): Action[] {
     }
     case 'discard':
       return hand.map((card) => ({ type: 'discard', card }));
+    case 'pay':
+      return tableCards(state.players[player]!).map((card) => ({ type: 'pay', card }));
   }
 }
 
@@ -82,21 +95,56 @@ export function applyAction(state: GameState, player: PlayerId, action: Action):
   }
   const next = clone(state);
   const me = next.players[player]!;
+  /** A charge set off by the action. It resolves once the action is logged, so that its payments are logged after it. */
+  let due: { receiver: PlayerId; debtors: readonly PlayerId[]; amount: number } | undefined;
   switch (action.type) {
-    case 'draw': {
-      me.hand.push(next.deck.shift()!);
-      const { phase } = next;
-      if (phase.kind === 'draw' && --phase.remaining === 0) next.phase = { kind: 'play', player };
+    case 'draw':
+      me.hand.push(drawCard(next)!);
+      countDraw(next);
+      break;
+    case 'drawMarket': {
+      remove(next.market, action.card);
+      me.hand.push(action.card);
+      const refill = drawCard(next);
+      if (refill) next.market.push(refill);
+      countDraw(next);
       break;
     }
-    case 'lay': {
-      const card = getCard(action.card);
-      if (card.kind !== 'city') throw new Error(`Not a city: ${card.id}`);
-      remove(me.hand, card.id);
-      let stack = me.table.find((s) => s.country === card.country);
-      if (!stack) me.table.push((stack = { country: card.country, cities: [] }));
-      stack.cities.push(card.id);
+    case 'lay':
+      remove(me.hand, action.card);
+      addCity(me, action.card);
       next.turn.playsLeft--;
+      break;
+    case 'play': {
+      const card = getCard(action.card);
+      if (card.kind !== 'action') throw new Error(`Not an action card: ${card.id}`);
+      remove(me.hand, card.id);
+      next.turn.playsLeft--;
+      switch (card.action) {
+        case 'windfall':
+          // Extra draws, from the deck only.
+          for (let i = 0; i < RULES.windfallDraws; i++) {
+            const drawn = drawCard(next);
+            if (drawn) me.hand.push(drawn);
+          }
+          break;
+        case 'levy':
+          due = { receiver: player, debtors: opponents(next, player), amount: RULES.levyAmount };
+          break;
+        case 'debt':
+          due = { receiver: player, debtors: [action.target!], amount: RULES.debtAmount };
+          break;
+      }
+      next.discard.push(card.id); // after the effect: a Windfall cannot draw itself back
+      break;
+    }
+    case 'pay': {
+      const { phase } = next;
+      if (phase.kind !== 'pay') throw new Error('No payment in progress');
+      transfer(next, player, phase.receiver, action.card);
+      phase.owed -= getCard(action.card).value;
+      // No change is given: the payment is settled as soon as the amount is covered.
+      if (phase.owed <= 0) due = { receiver: phase.receiver, debtors: phase.queue, amount: phase.amount };
       break;
     }
     case 'bank':
@@ -114,6 +162,7 @@ export function applyAction(state: GameState, player: PlayerId, action: Action):
       break;
   }
   next.log.push({ ...action, player });
+  if (due) charge(next, due.receiver, due.debtors, due.amount);
   checkGameOver(next);
   return next;
 }
@@ -132,6 +181,7 @@ export function viewFor(state: GameState, player: PlayerId): PlayerView {
     })),
     deckSize: state.deck.length,
     discardTop: state.discard.at(-1) ?? null,
+    market: state.market,
     turn: state.turn,
     phase: state.phase,
     log: state.log,
@@ -140,7 +190,9 @@ export function viewFor(state: GameState, player: PlayerId): PlayerView {
 
 function startTurn(state: GameState, player: PlayerId): void {
   state.turn = { player, playsLeft: RULES.playsPerTurn };
-  const draws = Math.min(RULES.drawsPerTurn, state.deck.length);
+  const wanted = state.players[player]!.hand.length === 0 ? RULES.drawsOnEmptyHand : RULES.drawsPerTurn;
+  // Every draw takes one card out of these three zones, so the count stays right for the whole draw phase.
+  const draws = Math.min(wanted, state.deck.length + state.discard.length + state.market.length);
   state.phase = draws > 0 ? { kind: 'draw', player, remaining: draws } : { kind: 'play', player };
 }
 
@@ -151,17 +203,101 @@ function finishTurn(state: GameState): void {
   else startTurn(state, (player + 1) % state.players.length);
 }
 
+/** The other players, in turn order starting after `player`. */
+function opponents(state: GameState, player: PlayerId): PlayerId[] {
+  const seats = state.players.length;
+  return Array.from({ length: seats - 1 }, (_, i) => (player + 1 + i) % seats);
+}
+
+/**
+ * Makes each of `debtors` pay `amount` to `receiver`, one after the other, then hands the game back to the
+ * turn player. A debtor whose table is worth more than the amount chooses what to pay with in a `pay` phase.
+ * Any other has no choice to make: their whole table is paid at once, and they owe nothing more.
+ */
+function charge(state: GameState, receiver: PlayerId, debtors: readonly PlayerId[], amount: number): void {
+  for (const [i, debtor] of debtors.entries()) {
+    if (findWinner(state) >= 0) return; // a received city ended the game: nobody else pays
+    const cards = tableCards(state.players[debtor]!);
+    if (cards.reduce((sum, card) => sum + getCard(card).value, 0) > amount) {
+      state.phase = { kind: 'pay', player: debtor, receiver, owed: amount, amount, queue: debtors.slice(i + 1) };
+      return;
+    }
+    for (const card of cards) {
+      state.log.push({ type: 'pay', card, player: debtor });
+      transfer(state, debtor, receiver, card);
+    }
+  }
+  state.phase = { kind: 'play', player: state.turn.player };
+}
+
+/** What a player can pay with: their banked cards and laid cities, never their hand. */
+function tableCards(player: PlayerState): CardId[] {
+  return [...player.bank, ...player.table.flatMap((stack) => stack.cities)];
+}
+
+/** Moves a card between two tables: a banked card to the bank, a laid city to its country. */
+function transfer(state: GameState, from: PlayerId, to: PlayerId, card: CardId): void {
+  const payer = state.players[from]!;
+  const receiver = state.players[to]!;
+  if (payer.bank.includes(card)) {
+    remove(payer.bank, card);
+    receiver.bank.push(card);
+    return;
+  }
+  const stack = payer.table.find((s) => s.cities.includes(card))!;
+  remove(stack.cities, card);
+  if (stack.cities.length === 0) payer.table.splice(payer.table.indexOf(stack), 1);
+  addCity(receiver, card);
+}
+
+/** Lays a city on a player's table, in its country. */
+function addCity(player: PlayerState, city: CardId): void {
+  const card = getCard(city);
+  if (card.kind !== 'city') throw new Error(`Not a city: ${city}`);
+  let stack = player.table.find((s) => s.country === card.country);
+  if (!stack) player.table.push((stack = { country: card.country, cities: [] }));
+  stack.cities.push(city);
+}
+
+/** One of the turn's draws is done; after the last one the plays begin. */
+function countDraw(state: GameState): void {
+  const { phase } = state;
+  if (phase.kind === 'draw' && --phase.remaining === 0) state.phase = { kind: 'play', player: phase.player };
+}
+
+/** Takes the top card of the deck. An empty deck is first rebuilt by shuffling the discard pile. */
+function drawCard(state: GameState): CardId | undefined {
+  if (state.deck.length === 0 && state.discard.length > 0) {
+    ({ items: state.deck, rng: state.rng } = shuffle(state.discard, state.rng));
+    state.discard = [];
+    state.log.push({ type: 'reshuffle' });
+  }
+  return state.deck.shift();
+}
+
 function isComplete(stack: CountryStack): boolean {
   return stack.cities.length === countrySize(stack.country);
 }
 
-/** Runs after every state change: a win ends the game at once; so does running out of cards to play. */
+/** Runs after every state change: a win ends the game at once; so does running out of cards to draw and play. */
 function checkGameOver(state: GameState): void {
-  const winner = state.players.findIndex(
-    (p) => p.table.filter(isComplete).length >= state.options.countriesToWin,
-  );
+  const winner = findWinner(state);
   if (winner >= 0) endGame(state, winner);
-  else if (state.deck.length === 0 && state.players.every((p) => p.hand.length === 0)) endGame(state, null);
+  // Only between plays: an interrupt in progress (a payment) is settled first, as it can still produce a winner.
+  else if (
+    state.phase.kind === 'play' &&
+    state.deck.length === 0 &&
+    state.discard.length === 0 &&
+    state.market.length === 0 &&
+    state.players.every((p) => p.hand.length === 0)
+  ) {
+    endGame(state, null);
+  }
+}
+
+/** The player who controls enough complete countries, or -1. */
+function findWinner(state: GameState): PlayerId {
+  return state.players.findIndex((p) => p.table.filter(isComplete).length >= state.options.countriesToWin);
 }
 
 function endGame(state: GameState, winner: PlayerId | null): void {
@@ -189,6 +325,7 @@ function clone(state: GameState): GameState {
     rng: state.rng,
     deck: [...state.deck],
     discard: [...state.discard],
+    market: [...state.market],
     players: state.players.map(
       (p): PlayerState => ({
         hand: [...p.hand],

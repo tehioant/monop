@@ -13,18 +13,20 @@ import {
 import { PROTOCOL_VERSION as v } from '../src/protocol.ts';
 import { Client, startTestServer, type TestServer } from './helpers.ts';
 
-// Every game of this file is dealt from the same stacked deck: seat 0 starts with cities of the three smallest
-// countries and draws the missing ones first, so it can win a 3-country game in a few turns.
+// Every game of this file is dealt from the same stacked deck (hands by seat, then the Market, then the draws):
+// seat 0 starts with cities of the three smallest countries and draws the missing ones first, so it can win a
+// 3-country game in a few turns.
 const winning: CardId[] = [...COUNTRIES]
   .sort((a, b) => a.cities.length - b.cities.length)
   .slice(0, 3)
   .flatMap((country) => country.cities);
 const others = CARDS.map((card) => card.id).filter((card) => !winning.includes(card));
+const dealt = RULES.startingHand + RULES.marketSize;
 const deck = [
   ...winning.slice(0, RULES.startingHand),
-  ...others.slice(0, RULES.startingHand),
+  ...others.slice(0, dealt),
   ...winning.slice(RULES.startingHand),
-  ...others.slice(RULES.startingHand),
+  ...others.slice(dealt),
 ];
 const newGame = (options: GameOptions) => createGame(options, 1, { deck });
 

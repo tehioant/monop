@@ -5,6 +5,14 @@ export const RULES = {
   countriesToWin: [3, 5] as readonly number[],
   startingHand: 5,
   drawsPerTurn: 2,
+  /** Draws for a player who starts their turn with an empty hand. */
+  drawsOnEmptyHand: 4,
+  marketSize: 3,
+  windfallDraws: 2,
+  /** What a Levy charges every opponent. */
+  levyAmount: 2,
+  /** What a Debt charges one chosen opponent. */
+  debtAmount: 5,
   playsPerTurn: 3,
   handLimit: 7,
 };
@@ -31,4 +39,11 @@ export const COINS = [
   { value: 4, count: 3 },
   { value: 5, count: 2 },
   { value: 10, count: 1 },
+] as const;
+
+/** Action cards: `count` copies of each, worth `value` once banked. */
+export const ACTIONS = [
+  { id: 'windfall', value: 1, count: 4 },
+  { id: 'levy', value: 2, count: 3 },
+  { id: 'debt', value: 3, count: 3 },
 ] as const;
