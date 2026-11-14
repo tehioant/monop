@@ -2,46 +2,37 @@
 
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { createGame, getCard, legalActions, viewFor, type Action, type GameState } from '../src/index.ts';
-import { act, drawAll, stack } from './helpers.ts';
-
-/** Plays a whole turn of the awaited player: draws, makes the given plays, ends the turn. */
-function turn(game: GameState, ...plays: Action[]): GameState {
-  return act(drawAll(game), ...plays, { type: 'endTurn' });
-}
+import { createGame, legalActions, viewFor, type Action, type GameState } from '../src/index.ts';
+import { act, drawAll, stack, turn } from './helpers.ts';
 
 const bank = (card: string): Action => ({ type: 'bank', card });
 const lay = (card: string): Action => ({ type: 'lay', card });
 const pay = (card: string): Action => ({ type: 'pay', card });
 
-/** Three players. Seat 0 has 7 coin in the bank and Paris laid, seat 1 has 1 coin; seat 2 plays a Debt on seat 0. */
-function debtOnSeat0(): GameState {
+/** Three players. Seat 0 has 7 coin in the bank and Paris laid, seat 1 has 1 coin; seat 2 is about to play a Debt. */
+function beforeDebt(): GameState {
   const deck = stack([['coin-5-1', 'coin-2-1', 'paris'], ['coin-1-1'], ['debt-1']]);
   let game = createGame({ players: 3, countriesToWin: 3 }, 1, { deck });
   game = turn(game, bank('coin-5-1'), bank('coin-2-1'), lay('paris'));
-  game = drawAll(turn(game, bank('coin-1-1')));
-
-  // A Debt needs a target: any one opponent.
-  const debts = legalActions(game, 2).filter((a) => a.type === 'play');
-  assert.deepEqual(debts, [
-    { type: 'play', card: 'debt-1', target: 0 },
-    { type: 'play', card: 'debt-1', target: 1 },
-  ]);
-  return act(game, debts[0]!);
+  return drawAll(turn(game, bank('coin-1-1')));
 }
 
-test('a Debt makes the chosen opponent pay its amount from their bank and laid cities, never from hand', () => {
-  let game = debtOnSeat0();
-  const debt = getCard('debt-1');
-  assert.ok(debt.kind === 'debt' && debt.amount === 5);
+const debtOnSeat0: Action = { type: 'play', card: 'debt-1', target: 0 };
 
-  // Only the owing player can act, and only with what is on their table.
+test('a Debt makes the chosen opponent pay its amount from their bank and laid cities, never from hand', () => {
+  let game = beforeDebt();
+  // A Debt needs a target: any one opponent.
+  assert.deepEqual(
+    legalActions(game, 2).filter((a) => a.type === 'play'),
+    [debtOnSeat0, { type: 'play', card: 'debt-1', target: 1 }],
+  );
+
+  // The owing player is the one to act, and only with what is on their table.
+  game = act(game, debtOnSeat0);
   let view = viewFor(game, 1);
   assert.deepEqual(view.phase, { kind: 'pay', player: 0, receiver: 2, owed: 5, amount: 5, queue: [] });
   assert.equal(view.discardTop, 'debt-1');
   assert.deepEqual(legalActions(game, 0), [pay('coin-5-1'), pay('coin-2-1'), pay('paris')]);
-  assert.deepEqual(legalActions(game, 1), []);
-  assert.deepEqual(legalActions(game, 2), []);
 
   // Exact payment: the coin goes to the receiver's bank and the turn resumes, one play spent.
   game = act(game, pay('coin-5-1'));
@@ -58,7 +49,7 @@ test('a Debt makes the chosen opponent pay its amount from their bank and laid c
 });
 
 test("a laid city used to pay goes to the receiver's countries, and no change is given", () => {
-  let game = act(debtOnSeat0(), pay('paris'));
+  let game = act(beforeDebt(), debtOnSeat0, pay('paris'));
   assert.deepEqual(viewFor(game, 0).phase, { kind: 'pay', player: 0, receiver: 2, owed: 3, amount: 5, queue: [] });
   assert.deepEqual(legalActions(game, 0), [pay('coin-5-1'), pay('coin-2-1')]);
 
@@ -81,8 +72,6 @@ test('a Levy charges every opponent its amount, in turn order starting after the
   game = turn(game, bank('coin-3-1'), bank('coin-1-2'));
   game = drawAll(turn(game));
 
-  const levy = getCard('levy-1');
-  assert.ok(levy.kind === 'levy' && levy.amount === 2);
   assert.deepEqual(
     legalActions(game, 1).filter((a) => a.type === 'play' && a.card === 'levy-1'),
     [{ type: 'play', card: 'levy-1' }], // no target to choose

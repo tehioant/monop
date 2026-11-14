@@ -55,7 +55,7 @@ export function createGame(options: GameOptions, seed: number, setup: GameSetup 
 export function legalActions(state: GameState, player: PlayerId): Action[] {
   const { phase } = state;
   if (phase.kind === 'over' || phase.player !== player) return [];
-  const { hand, bank, table } = state.players[player]!;
+  const { hand } = state.players[player]!;
   switch (phase.kind) {
     case 'draw':
       return [{ type: 'draw' }];
@@ -78,7 +78,7 @@ export function legalActions(state: GameState, player: PlayerId): Action[] {
     case 'discard':
       return hand.map((card) => ({ type: 'discard', card }));
     case 'pay':
-      return [...bank, ...table.flatMap((stack) => stack.cities)].map((card) => ({ type: 'pay', card }));
+      return tableCards(state.players[player]!).map((card) => ({ type: 'pay', card }));
   }
 }
 
@@ -185,8 +185,7 @@ function opponents(state: GameState, player: PlayerId): PlayerId[] {
 function charge(state: GameState, receiver: PlayerId, debtors: readonly PlayerId[], amount: number): void {
   for (const [i, debtor] of debtors.entries()) {
     if (findWinner(state) >= 0) return; // a received city ended the game: nobody else pays
-    const { bank, table } = state.players[debtor]!;
-    const cards = [...bank, ...table.flatMap((stack) => stack.cities)];
+    const cards = tableCards(state.players[debtor]!);
     if (cards.reduce((sum, card) => sum + getCard(card).value, 0) > amount) {
       state.phase = { kind: 'pay', player: debtor, receiver, owed: amount, amount, queue: debtors.slice(i + 1) };
       return;
@@ -197,6 +196,11 @@ function charge(state: GameState, receiver: PlayerId, debtors: readonly PlayerId
     }
   }
   state.phase = { kind: 'play', player: state.turn.player };
+}
+
+/** What a player can pay with: their banked cards and laid cities, never their hand. */
+function tableCards(player: PlayerState): CardId[] {
+  return [...player.bank, ...player.table.flatMap((stack) => stack.cities)];
 }
 
 /** Moves a card between two tables: a banked card to the bank, a laid city to its country. */
@@ -231,8 +235,8 @@ function isComplete(stack: CountryStack): boolean {
 function checkGameOver(state: GameState): void {
   const winner = findWinner(state);
   if (winner >= 0) endGame(state, winner);
-  // A payment in progress is settled first: it can still produce a winner.
-  else if (state.phase.kind !== 'pay' && state.deck.length === 0 && state.players.every((p) => p.hand.length === 0)) {
+  // Only between plays: an interrupt in progress (a payment) is settled first, as it can still produce a winner.
+  else if (state.phase.kind === 'play' && state.deck.length === 0 && state.players.every((p) => p.hand.length === 0)) {
     endGame(state, null);
   }
 }
