@@ -4,9 +4,11 @@ import { shuffle } from './rng.ts';
 import type {
   Action,
   CountryStack,
+  Effect,
   GameOptions,
   GameSetup,
   GameState,
+  Play,
   PlayerId,
   PlayerState,
   PlayerView,
@@ -93,6 +95,8 @@ export function legalActions(state: GameState, player: PlayerId): Action[] {
       return hand.map((card) => ({ type: 'discard', card }));
     case 'pay':
       return tableCards(state.players[player]!).map((card) => ({ type: 'pay', card }));
+    case 'veto':
+      return [...hand.filter(isVeto).map((card): Action => ({ type: 'play', card })), { type: 'decline' }];
   }
 }
 
@@ -103,8 +107,8 @@ export function applyAction(state: GameState, player: PlayerId, action: Action):
   }
   const next = clone(state);
   const me = next.players[player]!;
-  /** A charge set off by the action. It resolves once the action is logged, so that its payments are logged after it. */
-  let due: { receiver: PlayerId; debtors: readonly PlayerId[]; amount: number } | undefined;
+  /** What the action sets off. It runs once the action is logged, so that the payments it makes are logged after it. */
+  let after = () => {};
   switch (action.type) {
     case 'draw':
       me.hand.push(drawCard(next)!);
@@ -136,7 +140,8 @@ export function applyAction(state: GameState, player: PlayerId, action: Action):
       const card = getCard(action.card);
       if (card.kind !== 'action') throw new Error(`Not an action card: ${card.id}`);
       remove(me.hand, card.id);
-      next.turn.playsLeft--;
+      // A Veto answers a card: it is not one of the turn's plays.
+      if (card.action !== 'veto') next.turn.playsLeft--;
       switch (card.action) {
         case 'windfall':
           // Extra draws, from the deck only.
@@ -146,44 +151,38 @@ export function applyAction(state: GameState, player: PlayerId, action: Action):
           }
           break;
         case 'levy':
-          due = { receiver: player, debtors: opponents(next, player), amount: RULES.levyAmount };
+          after = () => hit(next, { amount: RULES.levyAmount }, opponents(next, player));
           break;
         case 'debt':
-          due = { receiver: player, debtors: [action.target!], amount: RULES.debtAmount };
+          after = () => hit(next, { amount: RULES.debtAmount }, [action.target!]);
           break;
         case 'toll': {
           const amount = tollAmount(me.table.find((stack) => stack.country === action.country)!);
-          due = { receiver: player, debtors: opponents(next, player), amount };
+          after = () => hit(next, { amount }, opponents(next, player));
           break;
         }
         case 'raid':
-          transfer(next, action.target!, player, action.city!);
-          break;
         case 'exchange':
-          transfer(next, action.target!, player, action.take!);
-          transfer(next, player, action.target!, action.give!);
+        case 'seizure':
+          after = () => hit(next, { take: action }, [action.target!]);
           break;
-        case 'seizure': {
-          // The country changes hands as one stack. It joins the cities the taker already has there, if any
-          // (possible with wild cities only).
-          const { table } = next.players[action.target!]!;
-          const [seized] = table.splice(table.findIndex((stack) => stack.country === action.country), 1);
-          const mine = me.table.find((stack) => stack.country === action.country);
-          if (mine) mine.cities.push(...seized!.cities);
-          else me.table.push(seized!);
+        case 'veto':
+          after = () => answer(next, true);
           break;
-        }
       }
       next.discard.push(card.id); // after the effect: a Windfall cannot draw itself back
       break;
     }
+    case 'decline':
+      after = () => answer(next, false);
+      break;
     case 'pay': {
       const { phase } = next;
       if (phase.kind !== 'pay') throw new Error('No payment in progress');
       transfer(next, player, phase.receiver, action.card);
       phase.owed -= getCard(action.card).value;
       // No change is given: the payment is settled as soon as the amount is covered.
-      if (phase.owed <= 0) due = { receiver: phase.receiver, debtors: phase.queue, amount: phase.amount };
+      if (phase.owed <= 0) after = () => hit(next, { amount: phase.amount }, phase.queue);
       break;
     }
     case 'bank':
@@ -201,7 +200,7 @@ export function applyAction(state: GameState, player: PlayerId, action: Action):
       break;
   }
   next.log.push({ ...action, player });
-  if (due) charge(next, due.receiver, due.debtors, due.amount);
+  after();
   checkGameOver(next);
   return next;
 }
@@ -253,6 +252,8 @@ function plays(state: GameState, player: PlayerId, card: CardId, action: ActionI
       return others.flatMap(({ target, them }) =>
         them.table.filter(isComplete).map((stack): Action => ({ type: 'play', card, target, country: stack.country })),
       );
+    case 'veto':
+      return []; // only ever an answer, in a `veto` phase
     default:
       return [{ type: 'play', card }];
   }
@@ -285,24 +286,83 @@ function opponents(state: GameState, player: PlayerId): PlayerId[] {
 }
 
 /**
- * Makes each of `debtors` pay `amount` to `receiver`, one after the other, then hands the game back to the
- * turn player. A debtor whose table is worth more than the amount chooses what to pay with in a `pay` phase.
+ * Applies the effect of the turn player's action card to each of `targets`, one after the other, then hands the
+ * game back to the turn player. A target who holds a Veto is first asked for it in a `veto` phase, unless
+ * `answered` says that the first target has just been through that.
+ *
+ * A charged target whose table is worth more than the amount chooses what to pay with in a `pay` phase.
  * Any other has no choice to make: their whole table is paid at once, and they owe nothing more.
  */
-function charge(state: GameState, receiver: PlayerId, debtors: readonly PlayerId[], amount: number): void {
-  for (const [i, debtor] of debtors.entries()) {
-    if (findWinner(state) >= 0) return; // a received city ended the game: nobody else pays
-    const cards = tableCards(state.players[debtor]!);
+function hit(state: GameState, effect: Effect, targets: readonly PlayerId[], answered = false): void {
+  const receiver = state.turn.player;
+  for (const [i, target] of targets.entries()) {
+    if (findWinner(state) >= 0) return; // a received city ended the game: nobody else is hit
+    const queue = targets.slice(i + 1);
+    if (!(answered && i === 0) && state.players[target]!.hand.some(isVeto)) {
+      state.phase = { kind: 'veto', player: target, target, vetoes: 0, effect, queue };
+      return;
+    }
+    if ('take' in effect) {
+      take(state, effect.take);
+      continue;
+    }
+    const { amount } = effect;
+    const cards = tableCards(state.players[target]!);
     if (cards.reduce((sum, card) => sum + getCard(card).value, 0) > amount) {
-      state.phase = { kind: 'pay', player: debtor, receiver, owed: amount, amount, queue: debtors.slice(i + 1) };
+      state.phase = { kind: 'pay', player: target, receiver, owed: amount, amount, queue };
       return;
     }
     for (const card of cards) {
-      state.log.push({ type: 'pay', card, player: debtor });
-      transfer(state, debtor, receiver, card);
+      state.log.push({ type: 'pay', card, player: target });
+      transfer(state, target, receiver, card);
     }
   }
-  state.phase = { kind: 'play', player: state.turn.player };
+  state.phase = { kind: 'play', player: receiver };
+}
+
+/**
+ * The awaited player has answered the card at stake in the `veto` phase: with a Veto, or by declining.
+ * A Veto hands the question to the other side, if they hold one to answer with. Otherwise the chain ends,
+ * and the card goes on to its next targets, after hitting this one unless the last word was a Veto against it.
+ */
+function answer(state: GameState, vetoed: boolean): void {
+  const { phase } = state;
+  if (phase.kind !== 'veto') throw new Error('No card to answer');
+  const vetoes = phase.vetoes + Number(vetoed);
+  const other = phase.player === phase.target ? state.turn.player : phase.target;
+  if (vetoed && state.players[other]!.hand.some(isVeto)) {
+    state.phase = { ...phase, player: other, vetoes };
+    return;
+  }
+  // Each Veto cancels the one before it, so an odd number of them stops the card.
+  const stopped = vetoes % 2 === 1;
+  hit(state, phase.effect, stopped ? phase.queue : [phase.target, ...phase.queue], !stopped);
+}
+
+function isVeto(card: CardId): boolean {
+  const def = getCard(card);
+  return def.kind === 'action' && def.action === 'veto';
+}
+
+/** The turn player's Raid, Exchange or Seizure, played as `action`, takes what it names from its target. */
+function take(state: GameState, action: Play): void {
+  const player = state.turn.player;
+  const target = action.target!;
+  if (action.city) {
+    transfer(state, target, player, action.city); // a Raid
+  } else if (action.take) {
+    transfer(state, target, player, action.take); // an Exchange
+    transfer(state, player, target, action.give!);
+  } else {
+    // A Seizure: the country changes hands as one stack. It joins the cities the taker already has there, if any
+    // (possible with wild cities only).
+    const me = state.players[player]!;
+    const { table } = state.players[target]!;
+    const [seized] = table.splice(table.findIndex((stack) => stack.country === action.country), 1);
+    const mine = me.table.find((stack) => stack.country === action.country);
+    if (mine) mine.cities.push(...seized!.cities);
+    else me.table.push(seized!);
+  }
 }
 
 /** What a player can pay with: their banked cards and laid cities, never their hand. */
