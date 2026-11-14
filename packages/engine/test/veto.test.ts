@@ -96,8 +96,9 @@ test('Vetoes answer each other until one side declines or has none left: an odd 
   const chain = { kind: 'veto', target: 0, effect: { take: seizure }, queue: [] };
 
   // No Veto: the Seizure goes through.
-  assert.equal(holder(act(game, decline)), 1);
-  assert.deepEqual(viewFor(act(game, decline), 0).log.slice(-2), [
+  const taken = act(game, decline);
+  assert.equal(holder(taken), 1);
+  assert.deepEqual(viewFor(taken, 0).log.slice(-2), [
     { ...seizure, player: 1 },
     { type: 'decline', player: 0 },
   ]);

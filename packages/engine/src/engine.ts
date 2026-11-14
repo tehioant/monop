@@ -346,22 +346,28 @@ function isVeto(card: CardId): boolean {
 
 /** The turn player's Raid, Exchange or Seizure, played as `action`, takes what it names from its target. */
 function take(state: GameState, action: Play): void {
+  const card = getCard(action.card);
   const player = state.turn.player;
   const target = action.target!;
-  if (action.city) {
-    transfer(state, target, player, action.city); // a Raid
-  } else if (action.take) {
-    transfer(state, target, player, action.take); // an Exchange
-    transfer(state, player, target, action.give!);
-  } else {
-    // A Seizure: the country changes hands as one stack. It joins the cities the taker already has there, if any
-    // (possible with wild cities only).
-    const me = state.players[player]!;
-    const { table } = state.players[target]!;
-    const [seized] = table.splice(table.findIndex((stack) => stack.country === action.country), 1);
-    const mine = me.table.find((stack) => stack.country === action.country);
-    if (mine) mine.cities.push(...seized!.cities);
-    else me.table.push(seized!);
+  switch (card.kind === 'action' && card.action) {
+    case 'raid':
+      transfer(state, target, player, action.city!);
+      break;
+    case 'exchange':
+      transfer(state, target, player, action.take!);
+      transfer(state, player, target, action.give!);
+      break;
+    case 'seizure': {
+      // The country changes hands as one stack. It joins the cities the taker already has there, if any
+      // (possible with wild cities only).
+      const me = state.players[player]!;
+      const { table } = state.players[target]!;
+      const [seized] = table.splice(table.findIndex((stack) => stack.country === action.country), 1);
+      const mine = me.table.find((stack) => stack.country === action.country);
+      if (mine) mine.cities.push(...seized!.cities);
+      else me.table.push(seized!);
+      break;
+    }
   }
 }
 
