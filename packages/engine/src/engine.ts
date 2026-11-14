@@ -1,4 +1,4 @@
-import { CARDS, countrySize, getCard, type CardId } from './cards.ts';
+import { CARDS, countrySize, getCard, type CardId, type CountryId } from './cards.ts';
 import { RULES } from './data.ts';
 import { shuffle } from './rng.ts';
 import type {
@@ -62,9 +62,23 @@ export function legalActions(state: GameState, player: PlayerId): Action[] {
     case 'play': {
       const actions: Action[] = [];
       if (state.turn.playsLeft > 0) {
-        for (const card of hand) {
-          if (getCard(card).kind === 'city') actions.push({ type: 'lay', card });
-          actions.push({ type: 'bank', card });
+        for (const id of hand) {
+          const card = getCard(id);
+          if (card.kind === 'city') actions.push({ type: 'lay', card: id });
+          if (card.kind === 'wild') {
+            for (const country of card.countries) actions.push({ type: 'lay', card: id, country });
+          }
+          actions.push({ type: 'bank', card: id });
+        }
+      }
+      // The owner's laid wild cities can move to any other country they allow, without using a play.
+      for (const stack of state.players[player]!.table) {
+        for (const id of stack.cities) {
+          const card = getCard(id);
+          if (card.kind !== 'wild') continue;
+          for (const country of card.countries) {
+            if (country !== stack.country) actions.push({ type: 'reassign', card: id, country });
+          }
         }
       }
       actions.push({ type: 'endTurn' });
@@ -91,14 +105,20 @@ export function applyAction(state: GameState, player: PlayerId, action: Action):
     }
     case 'lay': {
       const card = getCard(action.card);
-      if (card.kind !== 'city') throw new Error(`Not a city: ${card.id}`);
+      const country = card.kind === 'city' ? card.country : action.country;
+      if (!country) throw new Error(`No country to lay ${card.id} in`);
       remove(me.hand, card.id);
-      let stack = me.table.find((s) => s.country === card.country);
-      if (!stack) me.table.push((stack = { country: card.country, cities: [] }));
-      stack.cities.push(card.id);
+      layCity(me, card.id, country);
       next.turn.playsLeft--;
       break;
     }
+    case 'reassign':
+      for (const stack of me.table) {
+        if (stack.cities.includes(action.card)) remove(stack.cities, action.card);
+      }
+      me.table = me.table.filter((stack) => stack.cities.length > 0);
+      layCity(me, action.card, action.country);
+      break;
     case 'bank':
       remove(me.hand, action.card);
       me.bank.push(action.card);
@@ -151,8 +171,17 @@ function finishTurn(state: GameState): void {
   else startTurn(state, (player + 1) % state.players.length);
 }
 
+function layCity(player: PlayerState, card: CardId, country: CountryId): void {
+  let stack = player.table.find((s) => s.country === country);
+  if (!stack) player.table.push((stack = { country, cities: [] }));
+  stack.cities.push(card);
+}
+
+/** Wild cities count toward the size, but a country needs at least one city of its own. */
 function isComplete(stack: CountryStack): boolean {
-  return stack.cities.length === countrySize(stack.country);
+  return (
+    stack.cities.length >= countrySize(stack.country) && stack.cities.some((card) => getCard(card).kind === 'city')
+  );
 }
 
 /** Runs after every state change: a win ends the game at once; so does running out of cards to play. */

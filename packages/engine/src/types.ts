@@ -58,7 +58,10 @@ export interface GameState {
 
 export type Action =
   | { type: 'draw' }
-  | { type: 'lay'; card: CardId }
+  /** `country` is given for a wild city, and only then: the country it is laid as. */
+  | { type: 'lay'; card: CardId; country?: CountryId }
+  /** Moves one of the player's laid wild cities to another of its countries. Free: uses no play. */
+  | { type: 'reassign'; card: CardId; country: CountryId }
   | { type: 'bank'; card: CardId }
   | { type: 'endTurn' }
   | { type: 'discard'; card: CardId };
