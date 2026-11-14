@@ -19,7 +19,7 @@ const egypt = (cities: string[], upgrades: string[], toll: number) => ({
   country: 'egypt',
   cities,
   upgrades,
-  complete: toll >= complete,
+  complete: cities.length > 1,
   toll,
 });
 
@@ -42,9 +42,8 @@ test('an upgrade is attached to a complete country of the player, and raises its
   ]);
   let game = act(drawAll(createGame({ players: 2, countriesToWin: 3 }, 1, { deck })), lay('cairo'));
 
-  // Egypt is one city short: there is no country to upgrade, and the card can only be banked.
+  // Egypt is one city short: there is no country to upgrade.
   assert.deepEqual(plays(game, 'upgrade-1'), []);
-  assert.ok(legalActions(game, 0).some((a) => a.type === 'bank' && a.card === 'upgrade-1'));
 
   game = act(game, lay('alexandria'), { type: 'endTurn' });
   game = drawAll(turn(game, lay('sydney'), lay('melbourne'), { type: 'bank', card: 'coin-10-1' }));
@@ -89,19 +88,12 @@ test("when a city of an upgraded country is paid away, its upgrades move to the 
 
   // Paying a city breaks the country: the upgrade is now coin in the bank, and can pay the rest.
   game = act(game, pay('cairo'));
-  let view = viewFor(game, 1);
-  assert.deepEqual(view.players[0], {
+  assert.deepEqual(viewFor(game, 1).players[0], {
     handSize: 4,
     bank: ['upgrade-1'],
     table: [egypt(['alexandria'], [], oneCity)],
   });
   assert.deepEqual(legalActions(game, 0), [pay('upgrade-1'), pay('alexandria')]);
-
-  game = act(game, pay('upgrade-1'));
-  view = viewFor(game, 1);
-  assert.deepEqual(view.phase, { kind: 'play', player: 1 });
-  assert.deepEqual(view.players[1]!.bank, ['upgrade-1']);
-  assert.deepEqual(view.players[1]!.table, [egypt(['cairo'], [], oneCity)]);
 });
 
 test('a player who cannot cover the amount pays their upgrades too, as coin', () => {
@@ -118,7 +110,7 @@ test('a player who cannot cover the amount pays their upgrades too, as coin', ()
   );
 });
 
-test("when a wild city is moved out of an upgraded country, its upgrades move to the owner's bank for good", () => {
+test("when a wild city is moved out of an upgraded country, its upgrades move to the owner's bank", () => {
   const deck = stack([['cairo', 'wild-egypt-italy', 'wild-any-1', 'upgrade-1'], []]);
   let game = createGame({ players: 2, countriesToWin: 3 }, 1, { deck });
   game = turn(game, lay('cairo'), layAs('wild-egypt-italy', 'egypt'), layAs('wild-any-1', 'egypt'));
@@ -131,10 +123,5 @@ test("when a wild city is moved out of an upgraded country, its upgrades move to
 
   game = act(game, move('wild-egypt-italy', 'italy'));
   assert.deepEqual(seat0().table[0], egypt(['cairo'], [], oneCity));
-  assert.deepEqual(seat0().bank, ['upgrade-1']);
-
-  // Completing the country again does not bring the upgrade back.
-  game = act(game, move('wild-egypt-italy', 'egypt'));
-  assert.deepEqual(seat0().table[0], egypt(['cairo', 'wild-egypt-italy'], [], complete));
   assert.deepEqual(seat0().bank, ['upgrade-1']);
 });

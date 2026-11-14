@@ -317,10 +317,7 @@ function charge(state: GameState, receiver: PlayerId, debtors: readonly PlayerId
   state.phase = { kind: 'play', player: state.turn.player };
 }
 
-/**
- * What a player can pay with: their banked cards and laid cities, never their hand. An attached upgrade is
- * paid from the bank, where it goes when a city of its country is paid.
- */
+/** What a player can pay with: their banked cards and laid cities, never their hand. */
 function tableCards(player: PlayerState): CardId[] {
   return [...player.bank, ...player.table.flatMap((stack) => stack.cities)];
 }
@@ -450,13 +447,11 @@ function clone(state: GameState): GameState {
       (p): PlayerState => ({
         hand: [...p.hand],
         bank: [...p.bank],
-        table: p.table.map(
-          (stack): CountryStack => ({
-            country: stack.country,
-            cities: [...stack.cities],
-            upgrades: [...stack.upgrades],
-          }),
-        ),
+        table: p.table.map((stack) => ({
+          country: stack.country,
+          cities: [...stack.cities],
+          upgrades: [...stack.upgrades],
+        })),
       }),
     ),
     turn: { ...state.turn },
