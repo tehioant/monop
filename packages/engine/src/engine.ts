@@ -44,6 +44,7 @@ export function createGame(options: GameOptions, seed: number, setup: GameSetup 
       bank: [],
       table: [],
     })),
+    market: deck.splice(0, RULES.marketSize), // dealt after the hands
     turn: { player: 0, playsLeft: 0 },
     phase: { kind: 'play', player: 0 },
     log: [],
@@ -57,27 +58,31 @@ export function legalActions(state: GameState, player: PlayerId): Action[] {
   if (phase.kind === 'over' || phase.player !== player) return [];
   const { hand, table } = state.players[player]!;
   switch (phase.kind) {
-    case 'draw':
-      return [{ type: 'draw' }];
+    case 'draw': {
+      const actions: Action[] = state.deck.length + state.discard.length > 0 ? [{ type: 'draw' }] : [];
+      for (const card of state.market) actions.push({ type: 'drawMarket', card });
+      return actions;
+    }
     case 'play': {
       const actions: Action[] = [];
       if (state.turn.playsLeft > 0) {
-        for (const id of hand) {
-          const card = getCard(id);
-          if (card.kind === 'city') actions.push({ type: 'lay', card: id });
-          if (card.kind === 'wild') {
-            for (const country of card.countries) actions.push({ type: 'lay', card: id, country });
+        for (const card of hand) {
+          const def = getCard(card);
+          if (def.kind === 'city') actions.push({ type: 'lay', card });
+          if (def.kind === 'wild') {
+            for (const country of def.countries) actions.push({ type: 'lay', card, country });
           }
-          actions.push({ type: 'bank', card: id });
+          if (def.kind === 'action') actions.push({ type: 'play', card });
+          actions.push({ type: 'bank', card });
         }
       }
       // The owner's laid wild cities can move to any other country they allow, without using a play.
       for (const stack of table) {
-        for (const id of stack.cities) {
-          const card = getCard(id);
-          if (card.kind !== 'wild') continue;
-          for (const country of card.countries) {
-            if (country !== stack.country) actions.push({ type: 'reassign', card: id, country });
+        for (const card of stack.cities) {
+          const def = getCard(card);
+          if (def.kind !== 'wild') continue;
+          for (const country of def.countries) {
+            if (country !== stack.country) actions.push({ type: 'reassign', card, country });
           }
         }
       }
@@ -97,10 +102,16 @@ export function applyAction(state: GameState, player: PlayerId, action: Action):
   const next = clone(state);
   const me = next.players[player]!;
   switch (action.type) {
-    case 'draw': {
-      me.hand.push(next.deck.shift()!);
-      const { phase } = next;
-      if (phase.kind === 'draw' && --phase.remaining === 0) next.phase = { kind: 'play', player };
+    case 'draw':
+      me.hand.push(drawCard(next)!);
+      countDraw(next);
+      break;
+    case 'drawMarket': {
+      remove(next.market, action.card);
+      me.hand.push(action.card);
+      const refill = drawCard(next);
+      if (refill) next.market.push(refill);
+      countDraw(next);
       break;
     }
     case 'lay': {
@@ -116,6 +127,16 @@ export function applyAction(state: GameState, player: PlayerId, action: Action):
       remove(me.table.find((stack) => stack.cities.includes(action.card))!.cities, action.card);
       me.table = me.table.filter((stack) => stack.cities.length > 0);
       layCity(me, action.card, action.country);
+      break;
+    case 'play':
+      // Windfall, the only action card so far: extra draws, from the deck only.
+      remove(me.hand, action.card);
+      for (let i = 0; i < RULES.windfallDraws; i++) {
+        const card = drawCard(next);
+        if (card) me.hand.push(card);
+      }
+      next.discard.push(action.card);
+      next.turn.playsLeft--;
       break;
     case 'bank':
       remove(me.hand, action.card);
@@ -150,6 +171,7 @@ export function viewFor(state: GameState, player: PlayerId): PlayerView {
     })),
     deckSize: state.deck.length,
     discardTop: state.discard.at(-1) ?? null,
+    market: state.market,
     turn: state.turn,
     phase: state.phase,
     log: state.log,
@@ -158,7 +180,9 @@ export function viewFor(state: GameState, player: PlayerId): PlayerView {
 
 function startTurn(state: GameState, player: PlayerId): void {
   state.turn = { player, playsLeft: RULES.playsPerTurn };
-  const draws = Math.min(RULES.drawsPerTurn, state.deck.length);
+  const wanted = state.players[player]!.hand.length === 0 ? RULES.drawsOnEmptyHand : RULES.drawsPerTurn;
+  // Every draw takes one card out of these three zones, so the count stays right for the whole draw phase.
+  const draws = Math.min(wanted, state.deck.length + state.discard.length + state.market.length);
   state.phase = draws > 0 ? { kind: 'draw', player, remaining: draws } : { kind: 'play', player };
 }
 
@@ -167,6 +191,22 @@ function finishTurn(state: GameState): void {
   const { player } = state.turn;
   if (state.players[player]!.hand.length > RULES.handLimit) state.phase = { kind: 'discard', player };
   else startTurn(state, (player + 1) % state.players.length);
+}
+
+/** One of the turn's draws is done; after the last one the plays begin. */
+function countDraw(state: GameState): void {
+  const { phase } = state;
+  if (phase.kind === 'draw' && --phase.remaining === 0) state.phase = { kind: 'play', player: phase.player };
+}
+
+/** Takes the top card of the deck. An empty deck is first rebuilt by shuffling the discard pile. */
+function drawCard(state: GameState): CardId | undefined {
+  if (state.deck.length === 0 && state.discard.length > 0) {
+    ({ items: state.deck, rng: state.rng } = shuffle(state.discard, state.rng));
+    state.discard = [];
+    state.log.push({ type: 'reshuffle' });
+  }
+  return state.deck.shift();
 }
 
 function layCity(player: PlayerState, card: CardId, country: CountryId): void {
@@ -182,13 +222,20 @@ function isComplete(stack: CountryStack): boolean {
   );
 }
 
-/** Runs after every state change: a win ends the game at once; so does running out of cards to play. */
+/** Runs after every state change: a win ends the game at once; so does running out of cards to draw and play. */
 function checkGameOver(state: GameState): void {
   const winner = state.players.findIndex(
     (p) => p.table.filter(isComplete).length >= state.options.countriesToWin,
   );
   if (winner >= 0) endGame(state, winner);
-  else if (state.deck.length === 0 && state.players.every((p) => p.hand.length === 0)) endGame(state, null);
+  else if (
+    state.deck.length === 0 &&
+    state.discard.length === 0 &&
+    state.market.length === 0 &&
+    state.players.every((p) => p.hand.length === 0)
+  ) {
+    endGame(state, null);
+  }
 }
 
 function endGame(state: GameState, winner: PlayerId | null): void {
@@ -216,6 +263,7 @@ function clone(state: GameState): GameState {
     rng: state.rng,
     deck: [...state.deck],
     discard: [...state.discard],
+    market: [...state.market],
     players: state.players.map(
       (p): PlayerState => ({
         hand: [...p.hand],
