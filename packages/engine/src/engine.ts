@@ -1,4 +1,4 @@
-import { CARDS, countrySize, getCard, type ActionId, type CardId } from './cards.ts';
+import { CARDS, countrySize, getCard, type ActionId, type CardId, type CountryId } from './cards.ts';
 import { RULES } from './data.ts';
 import { shuffle } from './rng.ts';
 import type {
@@ -56,7 +56,7 @@ export function createGame(options: GameOptions, seed: number, setup: GameSetup 
 export function legalActions(state: GameState, player: PlayerId): Action[] {
   const { phase } = state;
   if (phase.kind === 'over' || phase.player !== player) return [];
-  const { hand } = state.players[player]!;
+  const { hand, table } = state.players[player]!;
   switch (phase.kind) {
     case 'draw': {
       const actions: Action[] = state.deck.length + state.discard.length > 0 ? [{ type: 'draw' }] : [];
@@ -69,8 +69,21 @@ export function legalActions(state: GameState, player: PlayerId): Action[] {
         for (const card of hand) {
           const def = getCard(card);
           if (def.kind === 'city') actions.push({ type: 'lay', card });
+          if (def.kind === 'wild') {
+            for (const country of def.countries) actions.push({ type: 'lay', card, country });
+          }
           if (def.kind === 'action') actions.push(...plays(state, player, card, def.action));
           actions.push({ type: 'bank', card });
+        }
+      }
+      // The owner's laid wild cities can move to any other country they allow, without using a play.
+      for (const stack of table) {
+        for (const card of stack.cities) {
+          const def = getCard(card);
+          if (def.kind !== 'wild') continue;
+          for (const country of def.countries) {
+            if (country !== stack.country) actions.push({ type: 'reassign', card, country });
+          }
         }
       }
       actions.push({ type: 'endTurn' });
@@ -105,10 +118,19 @@ export function applyAction(state: GameState, player: PlayerId, action: Action):
       countDraw(next);
       break;
     }
-    case 'lay':
-      remove(me.hand, action.card);
-      addCity(me, action.card);
+    case 'lay': {
+      const card = getCard(action.card);
+      const country = card.kind === 'city' ? card.country : action.country;
+      if (!country) throw new Error(`No country to lay ${card.id} in`);
+      remove(me.hand, card.id);
+      addCity(me, card.id, country);
       next.turn.playsLeft--;
+      break;
+    }
+    case 'reassign':
+      remove(me.table.find((stack) => stack.cities.includes(action.card))!.cities, action.card);
+      me.table = me.table.filter((stack) => stack.cities.length > 0);
+      addCity(me, action.card, action.country);
       break;
     case 'play': {
       const card = getCard(action.card);
@@ -137,9 +159,13 @@ export function applyAction(state: GameState, player: PlayerId, action: Action):
           transfer(next, player, action.target!, action.give!);
           break;
         case 'seizure': {
-          // The country changes hands as one stack, not city by city.
+          // The country changes hands as one stack. It joins the cities the taker already has there, if any
+          // (possible with wild cities only).
           const { table } = next.players[action.target!]!;
-          me.table.push(...table.splice(table.findIndex((stack) => stack.country === action.country), 1));
+          const [seized] = table.splice(table.findIndex((stack) => stack.country === action.country), 1);
+          const mine = me.table.find((stack) => stack.country === action.country);
+          if (mine) mine.cities.push(...seized!.cities);
+          else me.table.push(seized!);
           break;
         }
       }
@@ -276,7 +302,10 @@ function tableCards(player: PlayerState): CardId[] {
   return [...player.bank, ...player.table.flatMap((stack) => stack.cities)];
 }
 
-/** Moves a card between two tables: a banked card to the bank, a laid city to its country. */
+/**
+ * Moves a card between two tables: a banked card to the bank, a laid city to its country. A wild city stays in
+ * the country it was laid as; its new owner, whose turn it is, is free to move it once the payment is settled.
+ */
 function transfer(state: GameState, from: PlayerId, to: PlayerId, card: CardId): void {
   const payer = state.players[from]!;
   const receiver = state.players[to]!;
@@ -288,15 +317,13 @@ function transfer(state: GameState, from: PlayerId, to: PlayerId, card: CardId):
   const stack = payer.table.find((s) => s.cities.includes(card))!;
   remove(stack.cities, card);
   if (stack.cities.length === 0) payer.table.splice(payer.table.indexOf(stack), 1);
-  addCity(receiver, card);
+  addCity(receiver, card, stack.country);
 }
 
-/** Lays a city on a player's table, in its country. */
-function addCity(player: PlayerState, city: CardId): void {
-  const card = getCard(city);
-  if (card.kind !== 'city') throw new Error(`Not a city: ${city}`);
-  let stack = player.table.find((s) => s.country === card.country);
-  if (!stack) player.table.push((stack = { country: card.country, cities: [] }));
+/** Lays a city on a player's table, in the given country: its own, or for a wild city one of those it allows. */
+function addCity(player: PlayerState, city: CardId, country: CountryId): void {
+  let stack = player.table.find((s) => s.country === country);
+  if (!stack) player.table.push((stack = { country, cities: [] }));
   stack.cities.push(city);
 }
 
@@ -316,8 +343,11 @@ function drawCard(state: GameState): CardId | undefined {
   return state.deck.shift();
 }
 
+/** Wild cities count toward the size, but a country needs at least one city of its own. */
 function isComplete(stack: CountryStack): boolean {
-  return stack.cities.length === countrySize(stack.country);
+  return (
+    stack.cities.length >= countrySize(stack.country) && stack.cities.some((card) => getCard(card).kind === 'city')
+  );
 }
 
 /** Runs after every state change: a win ends the game at once; so does running out of cards to draw and play. */

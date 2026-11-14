@@ -8,6 +8,7 @@ import {
   applyAction,
   COUNTRIES,
   createGame,
+  getCard,
   IllegalActionError,
   legalActions,
   RULES,
@@ -39,7 +40,14 @@ function randomGame(config: GameConfig, g: fc.GeneratorValue, visit: (state: Gam
   const end = playOut(
     createGame(options, seed),
     (legal) => {
-      const action = legal[g(fc.nat, legal.length - 1)]!; // an index is much cheaper to generate than constantFrom
+      // Free wild city moves, and the targets of one action card, can be many: all the moves weigh as one choice,
+      // and so do all the ways to play one card. Otherwise they crowd out the rest (a card with many targets is
+      // hardly ever banked) and games run close to `playOut`'s bound.
+      const choices = [
+        ...Map.groupBy(legal, (a) => (a.type === 'reassign' ? a.type : a.type === 'play' ? a.card : a)).values(),
+      ];
+      const group = choices[g(fc.nat, choices.length - 1)]!; // an index is much cheaper to generate than constantFrom
+      const action = group.length > 1 ? group[g(fc.nat, group.length - 1)]! : group[0]!;
       actions.push(action);
       return action;
     },
@@ -86,7 +94,7 @@ function cardsIn(value: unknown): CardId[] {
   return [];
 }
 
-test('every card is in exactly one zone', () => {
+test('every card is in exactly one zone, and every laid city in a country it belongs to', () => {
   forAllGames((config, g) => {
     randomGame(config, g, (state) => {
       const { view, hands, tables, discarded } = zones(state);
@@ -99,6 +107,13 @@ test('every card is in exactly one zone', () => {
         hands.map((hand) => hand.length),
       );
       assert.equal(view.discardTop, discarded.at(-1) ?? null);
+      for (const { country, cities } of view.players.flatMap((p) => p.table)) {
+        for (const card of cities.map(getCard)) {
+          assert.ok(
+            card.kind === 'wild' ? card.countries.includes(country) : card.kind === 'city' && card.country === country,
+          );
+        }
+      }
     });
   });
 });
@@ -122,14 +137,14 @@ test('actions that are not listed are rejected', () => {
     fc.constantFrom<Action>({ type: 'draw' }, { type: 'endTurn' }),
     fc.record(
       {
-        type: fc.constantFrom('drawMarket', 'lay', 'play', 'pay', 'bank', 'discard'),
+        type: fc.constantFrom('drawMarket', 'lay', 'reassign', 'play', 'pay', 'bank', 'discard'),
         card,
+        country: fc.constantFrom(...COUNTRIES.map((country) => country.id)),
         target: fc.nat(5),
-        // What a Raid, an Exchange or a Seizure is aimed at.
+        // What a Raid or an Exchange is aimed at (a Seizure uses `country`).
         city: card,
         give: card,
         take: card,
-        country: fc.constantFrom(...COUNTRIES.map((country) => country.id)),
       },
       { noNullPrototype: true, requiredKeys: ['type', 'card'] },
     ),

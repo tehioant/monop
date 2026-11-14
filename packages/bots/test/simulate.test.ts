@@ -30,7 +30,8 @@ test('the report covers every country and counts card usage with copies grouped'
   const usage = Object.values(report.cardUsage);
   assert.ok(usage.length < CARDS.length);
   const laid = sum(usage.map((byKind) => byKind.lay ?? 0));
-  assert.ok(0 < laid && laid <= config.games * CARDS.filter((card) => card.kind === 'city').length);
+  const cities = CARDS.filter((card) => card.kind === 'city' || card.kind === 'wild');
+  assert.ok(0 < laid && laid <= config.games * cities.length);
 
   const text = formatReport(report);
   for (const heading of ['Game length in turns', 'Win rate by seat', 'Win rate by country held', 'Card usage']) {
