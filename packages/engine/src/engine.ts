@@ -55,7 +55,7 @@ export function createGame(options: GameOptions, seed: number, setup: GameSetup 
 export function legalActions(state: GameState, player: PlayerId): Action[] {
   const { phase } = state;
   if (phase.kind === 'over' || phase.player !== player) return [];
-  const { hand } = state.players[player]!;
+  const { hand, table } = state.players[player]!;
   switch (phase.kind) {
     case 'draw':
       return [{ type: 'draw' }];
@@ -72,7 +72,7 @@ export function legalActions(state: GameState, player: PlayerId): Action[] {
         }
       }
       // The owner's laid wild cities can move to any other country they allow, without using a play.
-      for (const stack of state.players[player]!.table) {
+      for (const stack of table) {
         for (const id of stack.cities) {
           const card = getCard(id);
           if (card.kind !== 'wild') continue;
@@ -113,9 +113,7 @@ export function applyAction(state: GameState, player: PlayerId, action: Action):
       break;
     }
     case 'reassign':
-      for (const stack of me.table) {
-        if (stack.cities.includes(action.card)) remove(stack.cities, action.card);
-      }
+      remove(me.table.find((stack) => stack.cities.includes(action.card))!.cities, action.card);
       me.table = me.table.filter((stack) => stack.cities.length > 0);
       layCity(me, action.card, action.country);
       break;

@@ -227,7 +227,7 @@ test('the owner moves laid wild cities between their countries on their own turn
     { type: 'reassign', card: 'wild-any-1', country: 'france' },
     { type: 'reassign', card: 'wild-egypt-italy', country: 'egypt' },
   );
-  let view = viewFor(game, 1);
+  const view = viewFor(game, 1);
   assert.deepEqual(view.players[0]!.table, [
     { country: 'france', cities: ['paris', 'wild-any-1'], complete: false },
     { country: 'egypt', cities: ['wild-egypt-italy'], complete: false },
@@ -252,8 +252,8 @@ test('wild cities count toward completing a country, but a country of wild citie
   );
   assert.deepEqual(egypt(), { country: 'egypt', cities: ['wild-egypt-italy', 'wild-any-1'], complete: false });
 
-  game = act(game, { type: 'lay', card: 'cairo' }, { type: 'reassign', card: 'wild-any-1', country: 'italy' });
-  assert.deepEqual(egypt(), { country: 'egypt', cities: ['wild-egypt-italy', 'cairo'], complete: true });
+  game = act(game, { type: 'lay', card: 'cairo' });
+  assert.deepEqual(egypt(), { country: 'egypt', cities: ['wild-egypt-italy', 'wild-any-1', 'cairo'], complete: true });
 });
 
 test('moving a wild city to complete the last country needed wins at once', () => {
@@ -265,7 +265,7 @@ test('moving a wild city to complete the last country needed wins at once', () =
   // Seat 1 only draws and passes, discarding when over the hand limit.
   const opponentPasses = () => {
     game = act(drawAll(game), { type: 'endTurn' });
-    while (viewFor(game, 0).phase.kind === 'discard') game = act(game, legalActions(game, 1)[0]!);
+    while (viewFor(game, 0).phase.kind === 'discard') game = act(game, legalActions(game, actor(game))[0]!);
     game = drawAll(game);
   };
 
