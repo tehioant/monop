@@ -44,6 +44,7 @@ export function createGame(options: GameOptions, seed: number, setup: GameSetup 
       bank: [],
       table: [],
     })),
+    market: deck.splice(0, RULES.marketSize), // dealt after the hands
     turn: { player: 0, playsLeft: 0 },
     phase: { kind: 'play', player: 0 },
     log: [],
@@ -57,17 +58,22 @@ export function legalActions(state: GameState, player: PlayerId): Action[] {
   if (phase.kind === 'over' || phase.player !== player) return [];
   const { hand } = state.players[player]!;
   switch (phase.kind) {
-    case 'draw':
-      return [{ type: 'draw' }];
+    case 'draw': {
+      const actions: Action[] = state.deck.length + state.discard.length > 0 ? [{ type: 'draw' }] : [];
+      for (const card of state.market) actions.push({ type: 'drawMarket', card });
+      return actions;
+    }
     case 'play': {
       const actions: Action[] = [];
       if (state.turn.playsLeft > 0) {
         for (const card of hand) {
-          const { kind } = getCard(card);
-          if (kind === 'city') actions.push({ type: 'lay', card });
-          if (kind === 'levy') actions.push({ type: 'play', card });
-          if (kind === 'debt') {
-            for (const target of opponents(state, player)) actions.push({ type: 'play', card, target });
+          const def = getCard(card);
+          if (def.kind === 'city') actions.push({ type: 'lay', card });
+          if (def.kind === 'action') {
+            // A Debt needs a target: one action per opponent.
+            if (def.action === 'debt') {
+              for (const target of opponents(state, player)) actions.push({ type: 'play', card, target });
+            } else actions.push({ type: 'play', card });
           }
           actions.push({ type: 'bank', card });
         }
@@ -89,12 +95,19 @@ export function applyAction(state: GameState, player: PlayerId, action: Action):
   }
   const next = clone(state);
   const me = next.players[player]!;
-  next.log.push({ ...action, player });
+  /** A charge set off by the action. It resolves once the action is logged, so that its payments are logged after it. */
+  let due: { receiver: PlayerId; debtors: readonly PlayerId[]; amount: number } | undefined;
   switch (action.type) {
-    case 'draw': {
-      me.hand.push(next.deck.shift()!);
-      const { phase } = next;
-      if (phase.kind === 'draw' && --phase.remaining === 0) next.phase = { kind: 'play', player };
+    case 'draw':
+      me.hand.push(drawCard(next)!);
+      countDraw(next);
+      break;
+    case 'drawMarket': {
+      remove(next.market, action.card);
+      me.hand.push(action.card);
+      const refill = drawCard(next);
+      if (refill) next.market.push(refill);
+      countDraw(next);
       break;
     }
     case 'lay':
@@ -104,11 +117,25 @@ export function applyAction(state: GameState, player: PlayerId, action: Action):
       break;
     case 'play': {
       const card = getCard(action.card);
-      if (card.kind !== 'levy' && card.kind !== 'debt') throw new Error(`Not an action card: ${card.id}`);
+      if (card.kind !== 'action') throw new Error(`Not an action card: ${card.id}`);
       remove(me.hand, card.id);
-      next.discard.push(card.id);
       next.turn.playsLeft--;
-      charge(next, player, card.kind === 'levy' ? opponents(next, player) : [action.target!], card.amount);
+      switch (card.action) {
+        case 'windfall':
+          // Extra draws, from the deck only.
+          for (let i = 0; i < RULES.windfallDraws; i++) {
+            const drawn = drawCard(next);
+            if (drawn) me.hand.push(drawn);
+          }
+          break;
+        case 'levy':
+          due = { receiver: player, debtors: opponents(next, player), amount: RULES.levyAmount };
+          break;
+        case 'debt':
+          due = { receiver: player, debtors: [action.target!], amount: RULES.debtAmount };
+          break;
+      }
+      next.discard.push(card.id); // after the effect: a Windfall cannot draw itself back
       break;
     }
     case 'pay': {
@@ -117,7 +144,7 @@ export function applyAction(state: GameState, player: PlayerId, action: Action):
       transfer(next, player, phase.receiver, action.card);
       phase.owed -= getCard(action.card).value;
       // No change is given: the payment is settled as soon as the amount is covered.
-      if (phase.owed <= 0) charge(next, phase.receiver, phase.queue, phase.amount);
+      if (phase.owed <= 0) due = { receiver: phase.receiver, debtors: phase.queue, amount: phase.amount };
       break;
     }
     case 'bank':
@@ -134,6 +161,8 @@ export function applyAction(state: GameState, player: PlayerId, action: Action):
       finishTurn(next);
       break;
   }
+  next.log.push({ ...action, player });
+  if (due) charge(next, due.receiver, due.debtors, due.amount);
   checkGameOver(next);
   return next;
 }
@@ -152,6 +181,7 @@ export function viewFor(state: GameState, player: PlayerId): PlayerView {
     })),
     deckSize: state.deck.length,
     discardTop: state.discard.at(-1) ?? null,
+    market: state.market,
     turn: state.turn,
     phase: state.phase,
     log: state.log,
@@ -160,7 +190,9 @@ export function viewFor(state: GameState, player: PlayerId): PlayerView {
 
 function startTurn(state: GameState, player: PlayerId): void {
   state.turn = { player, playsLeft: RULES.playsPerTurn };
-  const draws = Math.min(RULES.drawsPerTurn, state.deck.length);
+  const wanted = state.players[player]!.hand.length === 0 ? RULES.drawsOnEmptyHand : RULES.drawsPerTurn;
+  // Every draw takes one card out of these three zones, so the count stays right for the whole draw phase.
+  const draws = Math.min(wanted, state.deck.length + state.discard.length + state.market.length);
   state.phase = draws > 0 ? { kind: 'draw', player, remaining: draws } : { kind: 'play', player };
 }
 
@@ -227,16 +259,38 @@ function addCity(player: PlayerState, city: CardId): void {
   stack.cities.push(city);
 }
 
+/** One of the turn's draws is done; after the last one the plays begin. */
+function countDraw(state: GameState): void {
+  const { phase } = state;
+  if (phase.kind === 'draw' && --phase.remaining === 0) state.phase = { kind: 'play', player: phase.player };
+}
+
+/** Takes the top card of the deck. An empty deck is first rebuilt by shuffling the discard pile. */
+function drawCard(state: GameState): CardId | undefined {
+  if (state.deck.length === 0 && state.discard.length > 0) {
+    ({ items: state.deck, rng: state.rng } = shuffle(state.discard, state.rng));
+    state.discard = [];
+    state.log.push({ type: 'reshuffle' });
+  }
+  return state.deck.shift();
+}
+
 function isComplete(stack: CountryStack): boolean {
   return stack.cities.length === countrySize(stack.country);
 }
 
-/** Runs after every state change: a win ends the game at once; so does running out of cards to play. */
+/** Runs after every state change: a win ends the game at once; so does running out of cards to draw and play. */
 function checkGameOver(state: GameState): void {
   const winner = findWinner(state);
   if (winner >= 0) endGame(state, winner);
   // Only between plays: an interrupt in progress (a payment) is settled first, as it can still produce a winner.
-  else if (state.phase.kind === 'play' && state.deck.length === 0 && state.players.every((p) => p.hand.length === 0)) {
+  else if (
+    state.phase.kind === 'play' &&
+    state.deck.length === 0 &&
+    state.discard.length === 0 &&
+    state.market.length === 0 &&
+    state.players.every((p) => p.hand.length === 0)
+  ) {
     endGame(state, null);
   }
 }
@@ -271,6 +325,7 @@ function clone(state: GameState): GameState {
     rng: state.rng,
     deck: [...state.deck],
     discard: [...state.discard],
+    market: [...state.market],
     players: state.players.map(
       (p): PlayerState => ({
         hand: [...p.hand],
