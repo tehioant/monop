@@ -75,17 +75,19 @@ export type Action =
   /**
    * Play an action card for its effect; the card then goes to the discard pile.
    * The other fields say what the card is aimed at, and are present only for the cards that need them:
-   * `target` is the chosen opponent (Debt, Raid, Exchange, Seizure); `city` is the city a Raid takes from them;
-   * `give` and `take` are the cities an Exchange swaps (own for theirs); `country` is what a Seizure takes.
+   * `target` is the chosen opponent (Debt, Raid, Exchange, Seizure);
+   * `country` is the chosen country: one of the player's own for a Toll, the one a Seizure takes from `target`;
+   * `city` is the city a Raid takes from `target`;
+   * `give` and `take` are the cities an Exchange swaps, the player's own for one of `target`'s.
    */
   | {
       type: 'play';
       card: CardId;
       target?: PlayerId;
+      country?: CountryId;
       city?: CardId;
       give?: CardId;
       take?: CardId;
-      country?: CountryId;
     }
   | { type: 'bank'; card: CardId }
   /** Hands one banked card or laid city to the receiver of the payment in progress. */

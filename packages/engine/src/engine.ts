@@ -1,4 +1,4 @@
-import { CARDS, countrySize, getCard, type ActionId, type CardId, type CountryId } from './cards.ts';
+import { CARDS, countrySize, getCard, tollScale, type ActionId, type CardId, type CountryId } from './cards.ts';
 import { RULES } from './data.ts';
 import { shuffle } from './rng.ts';
 import type {
@@ -151,6 +151,11 @@ export function applyAction(state: GameState, player: PlayerId, action: Action):
         case 'debt':
           due = { receiver: player, debtors: [action.target!], amount: RULES.debtAmount };
           break;
+        case 'toll': {
+          const amount = tollAmount(me.table.find((stack) => stack.country === action.country)!);
+          due = { receiver: player, debtors: opponents(next, player), amount };
+          break;
+        }
         case 'raid':
           transfer(next, action.target!, player, action.city!);
           break;
@@ -231,6 +236,9 @@ function plays(state: GameState, player: PlayerId, card: CardId, action: ActionI
   switch (action) {
     case 'debt':
       return others.map(({ target }) => ({ type: 'play', card, target }));
+    case 'toll':
+      // Played on a country the player holds a city in.
+      return state.players[player]!.table.map(({ country }) => ({ type: 'play', card, country }));
     case 'raid':
       return others.flatMap(({ target, them }) =>
         looseCities(them).map((city): Action => ({ type: 'play', card, target, city })),
@@ -304,7 +312,8 @@ function tableCards(player: PlayerState): CardId[] {
 
 /**
  * Moves a card between two tables: a banked card to the bank, a laid city to its country. A wild city stays in
- * the country it was laid as; its new owner, whose turn it is, is free to move it once the payment is settled.
+ * the country it was laid as; its new owner is free to move it in their own play phase: at once for the player
+ * whose turn it is (a payment received, a Raid, an Exchange), on their next turn for the target of an Exchange.
  */
 function transfer(state: GameState, from: PlayerId, to: PlayerId, card: CardId): void {
   const payer = state.players[from]!;
@@ -348,6 +357,17 @@ function isComplete(stack: CountryStack): boolean {
   return (
     stack.cities.length >= countrySize(stack.country) && stack.cities.some((card) => getCard(card).kind === 'city')
   );
+}
+
+/**
+ * What a Toll on this country charges each opponent, from the country's toll scale and the holder's progress
+ * in it. The only place the amount is worked out.
+ */
+function tollAmount(stack: CountryStack): number {
+  const scale = tollScale(stack.country);
+  // The top of the scale is for a complete country only, however many cities the stack holds.
+  const level = isComplete(stack) ? scale.length : Math.min(stack.cities.length, scale.length - 1);
+  return scale[level - 1]!;
 }
 
 /** Runs after every state change: a win ends the game at once; so does running out of cards to draw and play. */

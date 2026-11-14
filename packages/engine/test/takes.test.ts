@@ -97,6 +97,56 @@ test('Seizure takes a complete country whole', () => {
   assert.deepEqual(view.players[2]!.table, [egypt]);
 });
 
+test('a wild city that changes hands arrives in the country it was laid as, where its new owner may move it', () => {
+  const deck = stack([
+    ['cairo', 'alexandria', 'wild-france-usa'],
+    ['wild-egypt-italy', 'exchange-1', 'raid-1'],
+  ]);
+  let game = createGame({ players: 2, countriesToWin: 3 }, 1, { deck });
+  game = turn(game, lay('cairo'), lay('alexandria'), { type: 'lay', card: 'wild-france-usa', country: 'france' });
+  game = act(
+    drawAll(game),
+    { type: 'lay', card: 'wild-egypt-italy', country: 'italy' },
+    { type: 'play', card: 'exchange-1', target: 0, give: 'wild-egypt-italy', take: 'wild-france-usa' },
+  );
+  assert.deepEqual(viewFor(game, 0).players[0]!.table, [
+    egypt,
+    { country: 'italy', cities: ['wild-egypt-italy'], complete: false },
+  ]);
+  assert.deepEqual(viewFor(game, 0).players[1]!.table, [
+    { country: 'france', cities: ['wild-france-usa'], complete: false },
+  ]);
+  // The taker's turn goes on, so they choose its country at once; the other player will on their own turn.
+  assert.deepEqual(
+    legalActions(game, 1).filter((action) => action.type === 'reassign'),
+    [{ type: 'reassign', card: 'wild-france-usa', country: 'usa' }],
+  );
+
+  game = act(game, { type: 'play', card: 'raid-1', target: 0, city: 'wild-egypt-italy' });
+  assert.deepEqual(viewFor(game, 0).players[1]!.table, [
+    { country: 'france', cities: ['wild-france-usa'], complete: false },
+    { country: 'italy', cities: ['wild-egypt-italy'], complete: false },
+  ]);
+});
+
+test('a seized country joins the cities the taker already has in it', () => {
+  const deck = stack([
+    ['cairo', 'alexandria'],
+    ['wild-egypt-italy', 'seizure-1'],
+  ]);
+  let game = turn(createGame({ players: 2, countriesToWin: 3 }, 1, { deck }), lay('cairo'), lay('alexandria'));
+  game = act(
+    drawAll(game),
+    { type: 'lay', card: 'wild-egypt-italy', country: 'egypt' },
+    { type: 'play', card: 'seizure-1', target: 0, country: 'egypt' },
+  );
+  const view = viewFor(game, 0);
+  assert.deepEqual(view.players[0]!.table, []);
+  assert.deepEqual(view.players[1]!.table, [
+    { country: 'egypt', cities: ['wild-egypt-italy', 'cairo', 'alexandria'], complete: true },
+  ]);
+});
+
 test('a take that completes the last country needed wins at once, for the player who made it', () => {
   // After three turns each, seat 0 holds Egypt, the UK, Paris, Lyon and Kyoto;
   // seat 1 holds Australia, Italy, Tokyo, Osaka and Marseille, and plays the Exchange last.
