@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { after, before, test } from 'node:test';
-import { Client, newGame, startTestServer, type TestServer } from './helpers.ts';
+import { act, Client, newGame, nextStates, startTestServer, type Players, type TestServer } from './helpers.ts';
 
 let server: TestServer;
 const clients: Client[] = [];
@@ -21,24 +21,6 @@ async function hello(who: { name: string } | { token: string }) {
   client.send({ type: 'hello', ...who });
   const { token } = await client.next('welcome');
   return { client, token };
-}
-
-type Players = readonly [Client, Client];
-
-/** The next message of each player, which must be a state. */
-async function nextStates([host, friend]: Players) {
-  return [await host.next('state'), await friend.next('state')] as const;
-}
-type States = Awaited<ReturnType<typeof nextStates>>;
-
-/** The player the game is waiting on sends an intent; seat 0 lays every city it can, seat 1 only draws and passes. */
-async function act(players: Players, states: States): Promise<States> {
-  const preferred = [['lay', 'draw', 'endTurn'], ['draw', 'endTurn']];
-  const seat = states.findIndex((state) => state.legalActions.length > 0);
-  const { stateVersion, legalActions } = states[seat]!;
-  const action = preferred[seat]!.map((type) => legalActions.find((a) => a.type === type)).find(Boolean);
-  players[seat]!.send({ type: 'intent', stateVersion, action: action ?? legalActions[0]! });
-  return nextStates(players);
 }
 
 test('a game survives a server restart in mid-turn, is finished by its players, and leaves only a summary', async (t) => {

@@ -187,13 +187,14 @@ export class Rooms {
     room.game = game;
     room.stateVersion++;
     room.members.forEach((member, seat) => member.send(stateFor(room, game, seat)));
+    if (!turnPassed && !isOver(game)) return;
 
     const { code, countriesToWin, stateVersion } = room;
     const players = room.members.map(({ account, name }) => ({ account, name }));
     if (game.phase.kind === 'over') {
       const durationSeconds = Math.round((Date.now() - room.startedAt) / 1000);
       this.#store.finish(code, { players, countriesToWin, winner: game.phase.winner, durationSeconds });
-    } else if (turnPassed) {
+    } else {
       this.#store.save({ code, countriesToWin, players, startedAt: new Date(room.startedAt), stateVersion, game });
     }
   }

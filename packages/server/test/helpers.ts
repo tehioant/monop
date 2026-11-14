@@ -126,3 +126,26 @@ export class Client {
     this.#socket.close();
   }
 }
+
+/** The two players of a scripted game, in seat order. */
+export type Players = readonly [Client, Client];
+
+/** The next message of each player, which must be a state. */
+export async function nextStates([host, friend]: Players) {
+  return [await host.next('state'), await friend.next('state')] as const;
+}
+
+type States = Awaited<ReturnType<typeof nextStates>>;
+
+/**
+ * One step of a scripted game: the player the game is waiting on sends an intent, and everyone reads the state
+ * that follows. Seat 0 lays every city it can; seat 1 only draws and passes.
+ */
+export async function act(players: Players, states: States): Promise<States> {
+  const preferred = [['lay', 'draw', 'endTurn'], ['draw', 'endTurn']];
+  const seat = states.findIndex((state) => state.legalActions.length > 0);
+  const { stateVersion, legalActions } = states[seat]!;
+  const action = preferred[seat]!.map((type) => legalActions.find((a) => a.type === type)).find(Boolean);
+  players[seat]!.send({ type: 'intent', stateVersion, action: action ?? legalActions[0]! });
+  return nextStates(players);
+}

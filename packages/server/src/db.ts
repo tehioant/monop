@@ -26,8 +26,7 @@ export async function openDatabase(url: string): Promise<Sql> {
         players jsonb not null,
         started_at timestamptz not null,
         state_version integer not null,
-        game json not null,
-        saved_at timestamptz not null default now()
+        game json not null
       )`;
     await sql`
       create table if not exists game_summaries (
@@ -65,8 +64,8 @@ export async function saveSnapshot(sql: Sql, snapshot: Snapshot): Promise<void> 
   const { code, countriesToWin, players, startedAt, stateVersion, game } = snapshot;
   await sql`
     insert into room_snapshots (code, countries_to_win, players, started_at, state_version, game)
-    values (${code}, ${countriesToWin}, ${json(sql, players)}, ${startedAt}, ${stateVersion}, ${json(sql, game)})
-    on conflict (code) do update set state_version = excluded.state_version, game = excluded.game, saved_at = now()`;
+    values (${code}, ${countriesToWin}, ${sql.json(players)}, ${startedAt}, ${stateVersion}, ${sql.json(game)})
+    on conflict (code) do update set state_version = excluded.state_version, game = excluded.game`;
 }
 
 /** Every room whose game was in progress when the server last saved it. */
@@ -83,14 +82,9 @@ export async function finishGame(sql: Sql, code: string, summary: Summary): Prom
   await sql.begin(async (tx) => {
     await tx`
       insert into game_summaries (players, countries_to_win, winner, duration_seconds)
-      values (${json(tx, players)}, ${countriesToWin}, ${winner}, ${durationSeconds})`;
+      values (${tx.json(players)}, ${countriesToWin}, ${winner}, ${durationSeconds})`;
     await tx`delete from room_snapshots where code = ${code}`;
   });
-}
-
-/** Plain data sent as JSON text, whatever its shape. */
-function json(sql: Pick<Sql, 'json'>, value: object): postgres.Parameter {
-  return sql.json(value as postgres.JSONValue);
 }
 
 function hashOf(token: string): string {
