@@ -1,4 +1,4 @@
-import { CARDS, countrySize, getCard, type CardId } from './cards.ts';
+import { CARDS, countrySize, getCard, tollScale, type CardId } from './cards.ts';
 import { RULES } from './data.ts';
 import { shuffle } from './rng.ts';
 import type {
@@ -56,7 +56,7 @@ export function createGame(options: GameOptions, seed: number, setup: GameSetup 
 export function legalActions(state: GameState, player: PlayerId): Action[] {
   const { phase } = state;
   if (phase.kind === 'over' || phase.player !== player) return [];
-  const { hand } = state.players[player]!;
+  const { hand, table } = state.players[player]!;
   switch (phase.kind) {
     case 'draw': {
       const actions: Action[] = state.deck.length + state.discard.length > 0 ? [{ type: 'draw' }] : [];
@@ -73,6 +73,9 @@ export function legalActions(state: GameState, player: PlayerId): Action[] {
             // A Debt needs a target: one action per opponent.
             if (def.action === 'debt') {
               for (const target of opponents(state, player)) actions.push({ type: 'play', card, target });
+            } else if (def.action === 'toll') {
+              // A Toll is played on a country the player holds a city in: one action per such country.
+              for (const { country } of table) actions.push({ type: 'play', card, country });
             } else actions.push({ type: 'play', card });
           }
           actions.push({ type: 'bank', card });
@@ -134,6 +137,11 @@ export function applyAction(state: GameState, player: PlayerId, action: Action):
         case 'debt':
           due = { receiver: player, debtors: [action.target!], amount: RULES.debtAmount };
           break;
+        case 'toll': {
+          const amount = tollAmount(me.table.find((stack) => stack.country === action.country)!);
+          due = { receiver: player, debtors: opponents(next, player), amount };
+          break;
+        }
       }
       next.discard.push(card.id); // after the effect: a Windfall cannot draw itself back
       break;
@@ -277,6 +285,17 @@ function drawCard(state: GameState): CardId | undefined {
 
 function isComplete(stack: CountryStack): boolean {
   return stack.cities.length === countrySize(stack.country);
+}
+
+/**
+ * What a Toll on this country charges each opponent, from the country's toll scale and the holder's progress
+ * in it. The only place the amount is worked out.
+ */
+function tollAmount(stack: CountryStack): number {
+  const scale = tollScale(stack.country);
+  // The top of the scale is for a complete country only, however many cities the stack holds.
+  const level = isComplete(stack) ? scale.length : Math.min(stack.cities.length, scale.length - 1);
+  return scale[level - 1]!;
 }
 
 /** Runs after every state change: a win ends the game at once; so does running out of cards to draw and play. */

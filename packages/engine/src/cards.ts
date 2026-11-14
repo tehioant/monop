@@ -27,6 +27,7 @@ export const CARDS: readonly Card[] = [
 
 const cardsById = new Map(CARDS.map((card) => [card.id, card]));
 const countrySizes = new Map<CountryId, number>(COUNTRIES.map((country) => [country.id, country.cities.length]));
+const tollScales = new Map<CountryId, readonly number[]>(COUNTRIES.map((country) => [country.id, country.toll]));
 
 export function getCard(id: CardId): Card {
   const card = cardsById.get(id);
@@ -39,4 +40,11 @@ export function countrySize(country: CountryId): number {
   const size = countrySizes.get(country);
   if (size === undefined) throw new Error(`Unknown country: ${country}`);
   return size;
+}
+
+/** A country's toll scale: entry `n - 1` is the toll for holding `n` of its cities. */
+export function tollScale(country: CountryId): readonly number[] {
+  const scale = tollScales.get(country);
+  if (!scale) throw new Error(`Unknown country: ${country}`);
+  return scale;
 }

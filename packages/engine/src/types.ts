@@ -72,8 +72,9 @@ export type Action =
   /**
    * Play an action card for its effect; the card then goes to the discard pile.
    * `target` is the chosen opponent, for the cards that need one (Debt).
+   * `country` is the chosen country of the player's own, for the cards that need one (Toll).
    */
-  | { type: 'play'; card: CardId; target?: PlayerId }
+  | { type: 'play'; card: CardId; target?: PlayerId; country?: CountryId }
   | { type: 'bank'; card: CardId }
   /** Hands one banked card or laid city to the receiver of the payment in progress. */
   | { type: 'pay'; card: CardId }

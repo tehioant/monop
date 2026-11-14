@@ -6,6 +6,7 @@ import { isDeepStrictEqual } from 'node:util';
 import fc from 'fast-check';
 import {
   applyAction,
+  COUNTRIES,
   createGame,
   IllegalActionError,
   legalActions,
@@ -123,6 +124,7 @@ test('actions that are not listed are rejected', () => {
         type: fc.constantFrom('drawMarket', 'lay', 'play', 'pay', 'bank', 'discard'),
         card: fc.constantFrom(...ALL_CARDS),
         target: fc.nat(5),
+        country: fc.constantFrom(...COUNTRIES.map((country) => country.id)),
       },
       { noNullPrototype: true, requiredKeys: ['type', 'card'] },
     ),
