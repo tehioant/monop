@@ -1,0 +1,23 @@
+{
+  "name": "@atlas/server",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./protocol": "./src/protocol.ts"
+  },
+  "scripts": {
+    "start": "node src/main.ts",
+    "typecheck": "tsc -p .",
+    "test": "node --test --test-timeout=10000 \"test/**/*.test.ts\""
+  },
+  "dependencies": {
+    "@atlas/engine": "*",
+    "@fastify/websocket": "^11.3.7",
+    "fastify": "^5.12.8",
+    "postgres": "^4.1.1"
+  },
+  "devDependencies": {
+    "@types/ws": "^8.18.2"
+  }
+}
