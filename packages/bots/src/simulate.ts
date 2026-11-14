@@ -21,10 +21,19 @@ export interface SimulationConfig extends GameOptions {
   difficulty: Difficulty;
 }
 
+export interface Spread {
+  min: number;
+  median: number;
+  mean: number;
+  max: number;
+}
+
 export interface Report {
   config: SimulationConfig;
   /** Game length in turns. A turn is counted each time the player whose turn it is changes. */
-  turns: { min: number; median: number; mean: number; max: number };
+  turns: Spread;
+  /** Game length in actions applied, by all players together. */
+  actions: Spread;
   /** Games won, by seat. */
   winsBySeat: number[];
   /** Games that ended without a winner. */
@@ -52,6 +61,7 @@ export function simulate(config: SimulationConfig): Report {
   if (!Number.isInteger(seed)) throw new RangeError(`Unsupported seed: ${seed}`);
 
   const turns: number[] = [];
+  const actions: number[] = [];
   const winsBySeat = Array.from({ length: players }, () => 0);
   let noWinner = 0;
   const countries: Report['countries'] = COUNTRIES.map(({ id }) => ({ country: id, held: 0, wins: 0 }));
@@ -60,8 +70,9 @@ export function simulate(config: SimulationConfig): Report {
   for (let game = 0; game < games; game++) {
     const gameSeed = (seed + game) >>> 0;
     const bot = createBot(difficulty, gameSeed);
-    const { length, winner, view } = playGame({ players, countriesToWin }, gameSeed, bot);
-    turns.push(length);
+    const { winner, view, ...length } = playGame({ players, countriesToWin }, gameSeed, bot);
+    turns.push(length.turns);
+    actions.push(length.actions);
     if (winner === null) noWinner++;
     else winsBySeat[winner]!++;
     view.players.forEach((player, seat) => {
@@ -83,19 +94,24 @@ export function simulate(config: SimulationConfig): Report {
     }
   }
 
-  turns.sort((a, b) => a - b);
   return {
     config,
-    turns: {
-      min: turns[0]!,
-      median: turns[Math.floor(turns.length / 2)]!,
-      mean: turns.reduce((sum, n) => sum + n, 0) / games,
-      max: turns.at(-1)!,
-    },
+    turns: spread(turns),
+    actions: spread(actions),
     winsBySeat,
     noWinner,
     countries,
     cardUsage,
+  };
+}
+
+function spread(counts: number[]): Spread {
+  const sorted = counts.toSorted((a, b) => a - b);
+  return {
+    min: sorted[0]!,
+    median: sorted[Math.floor(sorted.length / 2)]!,
+    mean: sorted.reduce((sum, n) => sum + n, 0) / sorted.length,
+    max: sorted.at(-1)!,
   };
 }
 
@@ -104,17 +120,17 @@ function playGame(
   options: GameOptions,
   seed: number,
   bot: Bot,
-): { length: number; winner: number | null; view: PlayerView } {
+): { turns: number; actions: number; winner: number | null; view: PlayerView } {
   let state = createGame(options, seed);
-  let length = 0;
+  let turns = 0;
   let turnPlayer = -1;
-  for (let step = 0; step < MAX_ACTIONS; step++) {
+  for (let actions = 0; actions < MAX_ACTIONS; actions++) {
     const view = viewFor(state, 0);
     const { phase } = view;
-    if (phase.kind === 'over') return { length, winner: phase.winner, view };
+    if (phase.kind === 'over') return { turns, actions, winner: phase.winner, view };
     if (view.turn.player !== turnPlayer) {
       turnPlayer = view.turn.player;
-      length++;
+      turns++;
     }
     const { player } = phase;
     state = applyAction(state, player, bot(viewFor(state, player), legalActions(state, player)));
@@ -123,7 +139,7 @@ function playGame(
 }
 
 export function formatReport(report: Report): string {
-  const { config, turns, winsBySeat, noWinner, countries, cardUsage } = report;
+  const { config, turns, actions, winsBySeat, noWinner, countries, cardUsage } = report;
   const { games, players, countriesToWin, difficulty, seed } = config;
   const share = (count: number, total: number) => (total === 0 ? '-' : `${((100 * count) / total).toFixed(1)}%`);
   const usageKinds = [...new Set(Object.values(cardUsage).flatMap(Object.keys))].sort();
@@ -131,10 +147,11 @@ export function formatReport(report: Report): string {
   return [
     `${games} games, ${players} players, ${countriesToWin} countries to win, ${difficulty} bots, seed ${seed}`,
     '',
-    'Game length in turns',
+    'Game length',
     table([
-      ['mean', 'median', 'min', 'max'],
-      [turns.mean.toFixed(1), turns.median, turns.min, turns.max],
+      ['', 'mean', 'median', 'min', 'max'],
+      ['turns', turns.mean.toFixed(1), turns.median, turns.min, turns.max],
+      ['actions', actions.mean.toFixed(1), actions.median, actions.min, actions.max],
     ]),
     '',
     'Win rate by seat',

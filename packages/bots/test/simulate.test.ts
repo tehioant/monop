@@ -14,6 +14,8 @@ test('bot-only games finish for every player count and both settings', () => {
       assert.equal(sum(report.winsBySeat) + report.noWinner, config.games);
       assert.ok(1 <= report.turns.min && report.turns.min <= report.turns.median);
       assert.ok(report.turns.median <= report.turns.max && report.turns.mean <= report.turns.max);
+      // A turn takes several actions: draws, plays, payments.
+      assert.ok(report.turns.max < report.actions.max && 2 * report.turns.mean < report.actions.mean);
       // Each winner holds at least the required number of complete countries.
       assert.ok(sum(report.countries.map((c) => c.wins)) >= countriesToWin * sum(report.winsBySeat));
     }
@@ -34,7 +36,7 @@ test('the report covers every country and counts card usage with copies grouped'
   assert.ok(0 < laid && laid <= config.games * cities.length);
 
   const text = formatReport(report);
-  for (const heading of ['Game length in turns', 'Win rate by seat', 'Win rate by country held', 'Card usage']) {
+  for (const heading of ['Game length', 'Win rate by seat', 'Win rate by country held', 'Card usage']) {
     assert.ok(text.includes(heading), heading);
   }
 });
