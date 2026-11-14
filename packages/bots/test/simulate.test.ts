@@ -27,7 +27,9 @@ test('the report covers every country and counts card usage with copies grouped'
     COUNTRIES.map((c) => c.id),
   );
   for (const { held, wins } of report.countries) assert.ok(wins <= held && held <= config.games);
-  const laid = report.cardUsage.city?.lay ?? 0;
+  const usage = Object.values(report.cardUsage);
+  assert.ok(usage.length < CARDS.length);
+  const laid = sum(usage.map((byKind) => byKind.lay ?? 0));
   assert.ok(0 < laid && laid <= config.games * CARDS.filter((card) => card.kind === 'city').length);
 
   const text = formatReport(report);
