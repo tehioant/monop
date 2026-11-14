@@ -5,6 +5,9 @@ export const RULES = {
   countriesToWin: [3, 5] as readonly number[],
   startingHand: 5,
   drawsPerTurn: 2,
+  /** Draws for a player who starts their turn with an empty hand. */
+  drawsOnEmptyHand: 4,
+  marketSize: 3,
   playsPerTurn: 3,
   handLimit: 7,
 };

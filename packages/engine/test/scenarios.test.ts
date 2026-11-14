@@ -24,12 +24,16 @@ test('a new game deals 5 cards to each player and waits for seat 0 to draw', () 
     assert.deepEqual(view.options, options);
     assert.equal(view.hand.length, 5);
     assert.deepEqual(view.players, Array(3).fill({ handSize: 5, bank: [], table: [] }));
-    assert.equal(view.deckSize, ALL_CARDS.length - 15);
+    assert.equal(view.market.length, 3);
+    assert.equal(view.deckSize, ALL_CARDS.length - 15 - 3);
     assert.equal(view.discardTop, null);
     assert.deepEqual(view.phase, { kind: 'draw', player: 0, remaining: 2 });
     assert.deepEqual(view.log, []);
   }
-  assert.deepEqual(legalActions(game, 0), [{ type: 'draw' }]);
+  assert.deepEqual(legalActions(game, 0), [
+    { type: 'draw' },
+    ...viewFor(game, 0).market.map((card) => ({ type: 'drawMarket', card })),
+  ]);
 });
 
 test('createGame rejects unsupported options', () => {
@@ -49,7 +53,7 @@ test('a turn draws 2 cards, then allows up to 3 plays: lay a city or bank any ca
   assert.deepEqual(view.phase, { kind: 'play', player: 0 });
   assert.equal(view.turn.playsLeft, 3);
   assert.deepEqual(view.hand.slice(-2), ['lyon', 'coin-1-1']);
-  assert.equal(view.deckSize, ALL_CARDS.length - 12);
+  assert.equal(view.deckSize, ALL_CARDS.length - 12 - 3);
 
   // Cities can be laid or banked, coins only banked; ending the turn is always possible.
   const legal = legalActions(game, 0);
@@ -108,6 +112,83 @@ test('a player ending their turn with more than 7 cards must discard down to 7',
   assert.deepEqual(viewFor(game, 0).hand, hand.slice(1, 8));
   assert.equal(view.discardTop, hand[8]);
   assert.deepEqual(view.phase, { kind: 'draw', player: 1, remaining: 2 });
+});
+
+test('each draw is taken from the deck or from the Market, which is refilled at once', () => {
+  const market = ['paris', 'cairo', 'tokyo'];
+  let game = createGame({ players: 2, countriesToWin: 3 }, 1, { deck: stack([[], []], ['lyon', 'rome'], market) });
+  for (const player of [0, 1]) assert.deepEqual(viewFor(game, player).market, market);
+
+  game = act(game, { type: 'drawMarket', card: 'cairo' });
+  const view = viewFor(game, 1);
+  assert.deepEqual(view.market, ['paris', 'tokyo', 'lyon']); // refilled from the top of the deck
+  assert.equal(viewFor(game, 0).hand.at(-1), 'cairo');
+  assert.deepEqual(view.phase, { kind: 'draw', player: 0, remaining: 1 });
+  assert.deepEqual(view.log, [{ type: 'drawMarket', player: 0, card: 'cairo' }]);
+
+  game = act(game, { type: 'draw' });
+  assert.equal(viewFor(game, 0).hand.at(-1), 'rome');
+  assert.deepEqual(viewFor(game, 0).market, ['paris', 'tokyo', 'lyon']);
+  assert.equal(viewFor(game, 0).phase.kind, 'play');
+});
+
+test('a player who starts a turn with an empty hand draws 4 instead of 2', () => {
+  let game = createGame({ players: 2, countriesToWin: 3 }, 1, { deck: stack([[], []]) });
+  // Drawing 2 and banking 3 every turn empties a hand of 5 in 5 turns.
+  for (let turn = 0; turn < 5 * 2; turn++) {
+    game = drawAll(game);
+    for (const card of viewFor(game, actor(game)).hand.slice(0, 3)) game = act(game, { type: 'bank', card });
+    game = act(game, { type: 'endTurn' });
+  }
+  assert.deepEqual(viewFor(game, 0).phase, { kind: 'draw', player: 0, remaining: 4 });
+  assert.equal(viewFor(drawAll(game), 0).hand.length, 4);
+});
+
+test('an empty deck is rebuilt by shuffling the discard pile, the same way for the same seed', () => {
+  // Cards for the hands, the Market and 2 turns each of draws from the deck. Nobody plays a card,
+  // so each player ends their second turn by discarding 2.
+  const deck = stack([[], []]).slice(0, 2 * 5 + 3 + 8);
+  const drawsAfterReshuffle = (seed: number) => {
+    let game = createGame({ players: 2, countriesToWin: 3 }, seed, { deck });
+    game = act(drawAll(game), { type: 'endTurn' });
+    game = act(drawAll(game), { type: 'endTurn' });
+    const discarded: CardId[] = [];
+    for (const player of [0, 1]) {
+      game = act(drawAll(game), { type: 'endTurn' });
+      for (const card of viewFor(game, player).hand.slice(0, 2)) {
+        game = act(game, { type: 'discard', card });
+        discarded.push(card);
+      }
+    }
+    let view = viewFor(game, 0);
+    assert.equal(view.deckSize, 0);
+    assert.equal(view.discardTop, discarded[3]);
+    assert.deepEqual(view.phase, { kind: 'draw', player: 0, remaining: 2 });
+
+    game = act(game, { type: 'draw' });
+    view = viewFor(game, 0);
+    assert.equal(view.deckSize, 3);
+    assert.equal(view.discardTop, null);
+    assert.deepEqual(view.log.slice(-2), [{ type: 'reshuffle' }, { type: 'draw', player: 0 }]);
+
+    const drawn = viewFor(act(game, { type: 'draw' }), 0).hand.slice(-2);
+    assert.ok(drawn.every((card) => discarded.includes(card)));
+    return drawn;
+  };
+  assert.deepEqual(drawsAfterReshuffle(1), drawsAfterReshuffle(1));
+  assert.notDeepEqual(drawsAfterReshuffle(1), drawsAfterReshuffle(2));
+});
+
+test('with the deck and the discard pile both empty, a player draws what is available', () => {
+  // One card beyond the hands: it is the whole Market, and the deck is empty.
+  let game = createGame({ players: 2, countriesToWin: 3 }, 1, { deck: stack([[], []]).slice(0, 2 * 5 + 1) });
+  const [card] = viewFor(game, 0).market;
+  assert.deepEqual(viewFor(game, 0).phase, { kind: 'draw', player: 0, remaining: 1 });
+  assert.deepEqual(legalActions(game, 0), [{ type: 'drawMarket', card }]);
+
+  game = act(game, { type: 'drawMarket', card: card! }, { type: 'endTurn' });
+  assert.deepEqual(viewFor(game, 0).market, []);
+  assert.deepEqual(viewFor(game, 0).phase, { kind: 'play', player: 1 }); // nothing left to draw
 });
 
 for (const countriesToWin of [3, 5]) {

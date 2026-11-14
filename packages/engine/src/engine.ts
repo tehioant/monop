@@ -39,6 +39,7 @@ export function createGame(options: GameOptions, seed: number, setup: GameSetup 
     rng,
     deck,
     discard: [],
+    market: [],
     players: Array.from({ length: players }, () => ({
       hand: deck.splice(0, RULES.startingHand),
       bank: [],
@@ -48,6 +49,7 @@ export function createGame(options: GameOptions, seed: number, setup: GameSetup 
     phase: { kind: 'play', player: 0 },
     log: [],
   };
+  state.market = deck.splice(0, RULES.marketSize);
   startTurn(state, 0);
   return state;
 }
@@ -57,8 +59,11 @@ export function legalActions(state: GameState, player: PlayerId): Action[] {
   if (phase.kind === 'over' || phase.player !== player) return [];
   const { hand } = state.players[player]!;
   switch (phase.kind) {
-    case 'draw':
-      return [{ type: 'draw' }];
+    case 'draw': {
+      const actions: Action[] = state.deck.length + state.discard.length > 0 ? [{ type: 'draw' }] : [];
+      for (const card of state.market) actions.push({ type: 'drawMarket', card });
+      return actions;
+    }
     case 'play': {
       const actions: Action[] = [];
       if (state.turn.playsLeft > 0) {
@@ -83,8 +88,16 @@ export function applyAction(state: GameState, player: PlayerId, action: Action):
   const next = clone(state);
   const me = next.players[player]!;
   switch (action.type) {
-    case 'draw': {
-      me.hand.push(next.deck.shift()!);
+    case 'draw':
+    case 'drawMarket': {
+      if (action.type === 'draw') {
+        me.hand.push(drawCard(next)!);
+      } else {
+        remove(next.market, action.card);
+        me.hand.push(action.card);
+        const refill = drawCard(next);
+        if (refill) next.market.push(refill);
+      }
       const { phase } = next;
       if (phase.kind === 'draw' && --phase.remaining === 0) next.phase = { kind: 'play', player };
       break;
@@ -132,6 +145,7 @@ export function viewFor(state: GameState, player: PlayerId): PlayerView {
     })),
     deckSize: state.deck.length,
     discardTop: state.discard.at(-1) ?? null,
+    market: state.market,
     turn: state.turn,
     phase: state.phase,
     log: state.log,
@@ -140,7 +154,9 @@ export function viewFor(state: GameState, player: PlayerId): PlayerView {
 
 function startTurn(state: GameState, player: PlayerId): void {
   state.turn = { player, playsLeft: RULES.playsPerTurn };
-  const draws = Math.min(RULES.drawsPerTurn, state.deck.length);
+  const wanted = state.players[player]!.hand.length === 0 ? RULES.drawsOnEmptyHand : RULES.drawsPerTurn;
+  // Every draw takes one card out of these three zones, so the count stays right for the whole draw phase.
+  const draws = Math.min(wanted, state.deck.length + state.discard.length + state.market.length);
   state.phase = draws > 0 ? { kind: 'draw', player, remaining: draws } : { kind: 'play', player };
 }
 
@@ -151,17 +167,30 @@ function finishTurn(state: GameState): void {
   else startTurn(state, (player + 1) % state.players.length);
 }
 
+/** Takes the top card of the deck. An empty deck is first rebuilt by shuffling the discard pile. */
+function drawCard(state: GameState): CardId | undefined {
+  if (state.deck.length === 0 && state.discard.length > 0) {
+    ({ items: state.deck, rng: state.rng } = shuffle(state.discard, state.rng));
+    state.discard = [];
+    state.log.push({ type: 'reshuffle' });
+  }
+  return state.deck.shift();
+}
+
 function isComplete(stack: CountryStack): boolean {
   return stack.cities.length === countrySize(stack.country);
 }
 
-/** Runs after every state change: a win ends the game at once; so does running out of cards to play. */
+/** Runs after every state change: a win ends the game at once; so does running out of cards to draw and play. */
 function checkGameOver(state: GameState): void {
   const winner = state.players.findIndex(
     (p) => p.table.filter(isComplete).length >= state.options.countriesToWin,
   );
   if (winner >= 0) endGame(state, winner);
-  else if (state.deck.length === 0 && state.players.every((p) => p.hand.length === 0)) endGame(state, null);
+  else {
+    const playable = [state.deck, state.discard, state.market, ...state.players.map((p) => p.hand)];
+    if (playable.every((cards) => cards.length === 0)) endGame(state, null);
+  }
 }
 
 function endGame(state: GameState, winner: PlayerId | null): void {
@@ -189,6 +218,7 @@ function clone(state: GameState): GameState {
     rng: state.rng,
     deck: [...state.deck],
     discard: [...state.discard],
+    market: [...state.market],
     players: state.players.map(
       (p): PlayerState => ({
         hand: [...p.hand],

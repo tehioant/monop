@@ -27,9 +27,9 @@ export function act(state: GameState, ...actions: Action[]): GameState {
   return actions.reduce((s, action) => applyAction(s, actor(s), action), state);
 }
 
-/** Draws until the draw phase ends. */
+/** Draws until the draw phase ends: from the deck while it has cards, else from the Market. */
 export function drawAll(state: GameState): GameState {
-  while (viewFor(state, 0).phase.kind === 'draw') state = act(state, { type: 'draw' });
+  while (viewFor(state, 0).phase.kind === 'draw') state = act(state, legalActions(state, actor(state))[0]!);
   return state;
 }
 
@@ -56,11 +56,12 @@ export function playOut(
 
 /**
  * A deck order for `createGame`'s setup. `hands` has one entry per seat: the cards that seat starts with
- * (padded to a full hand). Then `draws` are drawn in order, then the rest of the deck. Padding prefers coins.
+ * (padded to a full hand). `market` is the starting Market (padded too). Then `draws` are drawn from the deck
+ * in order, then the rest of the deck. Padding prefers coins.
  */
-export function stack(hands: CardId[][], draws: CardId[] = []): CardId[] {
-  const named = new Set([...hands.flat(), ...draws]);
+export function stack(hands: CardId[][], draws: CardId[] = [], market: CardId[] = []): CardId[] {
+  const named = new Set([...hands.flat(), ...draws, ...market]);
   const spare = ALL_CARDS.filter((card) => !named.has(card)).reverse();
   const dealt = hands.flatMap((hand) => [...hand, ...spare.splice(0, RULES.startingHand - hand.length)]);
-  return [...dealt, ...draws, ...spare];
+  return [...dealt, ...market, ...spare.splice(0, RULES.marketSize - market.length), ...draws, ...spare];
 }
