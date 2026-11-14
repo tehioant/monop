@@ -3,7 +3,7 @@ import { test } from 'node:test';
 import { CARDS, COUNTRIES, RULES } from '@atlas/engine';
 import { formatReport, simulate, type SimulationConfig } from '../src/index.ts';
 
-const config: SimulationConfig = { games: 4, players: 3, countriesToWin: 3, difficulty: 'baseline', seed: 1 };
+const config: SimulationConfig = { games: 4, players: 3, countriesToWin: 3, difficulty: 'normal', seed: 1 };
 const sum = (numbers: number[]) => numbers.reduce((total, n) => total + n, 0);
 
 test('bot-only games finish for every player count and both settings', () => {
