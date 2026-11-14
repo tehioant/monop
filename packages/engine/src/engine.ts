@@ -119,14 +119,14 @@ export function applyAction(state: GameState, player: PlayerId, action: Action):
       const country = card.kind === 'city' ? card.country : action.country;
       if (!country) throw new Error(`No country to lay ${card.id} in`);
       remove(me.hand, card.id);
-      layCity(me, card.id, country);
+      addCity(me, card.id, country);
       next.turn.playsLeft--;
       break;
     }
     case 'reassign':
       remove(me.table.find((stack) => stack.cities.includes(action.card))!.cities, action.card);
       me.table = me.table.filter((stack) => stack.cities.length > 0);
-      layCity(me, action.card, action.country);
+      addCity(me, action.card, action.country);
       break;
     case 'play':
       // Windfall, the only action card so far: extra draws, from the deck only.
@@ -209,7 +209,7 @@ function drawCard(state: GameState): CardId | undefined {
   return state.deck.shift();
 }
 
-function layCity(player: PlayerState, card: CardId, country: CountryId): void {
+function addCity(player: PlayerState, card: CardId, country: CountryId): void {
   let stack = player.table.find((s) => s.country === country);
   if (!stack) player.table.push((stack = { country, cities: [] }));
   stack.cities.push(card);
