@@ -39,17 +39,16 @@ export function createGame(options: GameOptions, seed: number, setup: GameSetup 
     rng,
     deck,
     discard: [],
-    market: [],
     players: Array.from({ length: players }, () => ({
       hand: deck.splice(0, RULES.startingHand),
       bank: [],
       table: [],
     })),
+    market: deck.splice(0, RULES.marketSize), // dealt after the hands
     turn: { player: 0, playsLeft: 0 },
     phase: { kind: 'play', player: 0 },
     log: [],
   };
-  state.market = deck.splice(0, RULES.marketSize);
   startTurn(state, 0);
   return state;
 }
