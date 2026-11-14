@@ -7,6 +7,23 @@ on:
 jobs:
   check:
     runs-on: ubuntu-latest
+    services:
+      # The server tests create and drop their own databases in this Postgres server.
+      postgres:
+        image: postgres:18-alpine
+        env:
+          POSTGRES_USER: atlas
+          POSTGRES_PASSWORD: atlas
+          POSTGRES_DB: atlas
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U atlas"
+          --health-interval 2s
+          --health-timeout 5s
+          --health-retries 15
+    env:
+      DATABASE_URL: postgres://atlas:atlas@127.0.0.1:5432/atlas
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-node@v5
