@@ -74,15 +74,24 @@ const SEAT_FIELDS: readonly FieldOf<Action | LogEntry | PlayerView['phase']>[] =
 ];
 
 function show(field: string, value: unknown, names: readonly string[]): string {
+  if (value === null) return 'none';
   if (Array.isArray(value)) return value.map((item) => show(field, item, names)).join(' + ') || 'none';
   if (typeof value === 'number' && (SEAT_FIELDS as readonly string[]).includes(field)) return names[value] ?? String(value);
   if (typeof value === 'string') return cardInfo(value).name;
-  return value === null ? 'none' : String(value);
+  // A nested action (the card at stake in a veto, say) reads as an action; any other object as its fields.
+  if (typeof value === 'object') return 'type' in value ? actionLabel(value as Action, names) : list(value, names);
+  return String(value);
 }
 
-function details(fields: Record<string, unknown>, names: readonly string[]): string {
-  const parts = Object.entries(fields).map(([field, value]) => `${words(field).toLowerCase()}: ${show(field, value, names)}`);
-  return parts.length > 0 ? ` (${parts.join(', ')})` : '';
+function list(fields: object, names: readonly string[]): string {
+  return Object.entries(fields)
+    .map(([field, value]) => `${words(field).toLowerCase()}: ${show(field, value, names)}`)
+    .join(', ');
+}
+
+function details(fields: object, names: readonly string[]): string {
+  const text = list(fields, names);
+  return text ? ` (${text})` : '';
 }
 
 /**
