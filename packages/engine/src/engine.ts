@@ -142,8 +142,7 @@ export function applyAction(state: GameState, player: PlayerId, action: Action):
       break;
     }
     case 'reassign':
-      remove(me.table.find((stack) => stack.cities.includes(action.card))!.cities, action.card);
-      me.table = me.table.filter((stack) => stack.cities.length > 0);
+      removeCity(me, action.card);
       addCity(me, action.card, action.country);
       break;
     case 'play': {
@@ -176,6 +175,9 @@ export function applyAction(state: GameState, player: PlayerId, action: Action):
         case 'seizure':
           after = () => hit(next, { take: action }, [action.target!]);
           break;
+        case 'upgrade':
+          me.table.find((stack) => stack.country === action.country)!.upgrades.push(card.id);
+          break;
         case 'veto': {
           // Perk: the first Veto a player plays in the game goes back to their hand.
           const returns =
@@ -191,7 +193,8 @@ export function applyAction(state: GameState, player: PlayerId, action: Action):
           break;
         }
       }
-      next.discard.push(card.id); // after the effect: a Windfall cannot draw itself back
+      // After the effect: a Windfall cannot draw itself back. An upgrade stays on the table instead.
+      if (card.action !== 'upgrade') next.discard.push(card.id);
       break;
     }
     case 'decline':
@@ -232,7 +235,7 @@ export function viewFor(state: GameState, player: PlayerId): PlayerView {
   const players = state.players.map((p) => ({
     handSize: p.hand.length,
     bank: p.bank,
-    table: p.table.map((stack) => ({ ...stack, complete: isComplete(stack) })),
+    table: p.table.map((stack) => ({ ...stack, complete: isComplete(stack), toll: tollAmount(stack) })),
   }));
   // A perk is active for the players who hold its country complete.
   const perks = COUNTRIES.map(({ id, perk }) => ({ country: id, perk, activeFor: [] as PlayerId[] }));
@@ -282,6 +285,11 @@ function plays(state: GameState, player: PlayerId, card: CardId, action: ActionI
       return others.flatMap(({ target, them }) =>
         them.table.filter(isComplete).map((stack): Action => ({ type: 'play', card, target, country: stack.country })),
       );
+    case 'upgrade':
+      // Attached to a complete country of the player's own.
+      return state.players[player]!.table
+        .filter(isComplete)
+        .map(({ country }): Action => ({ type: 'play', card, country }));
     case 'veto':
       return []; // only ever an answer, in a `veto` phase
     default:
@@ -354,7 +362,9 @@ function hit(state: GameState, effect: Effect, targets: readonly PlayerId[], ans
       continue;
     }
     const { amount } = effect;
-    const cards = tableCards(state.players[target]!);
+    const player = state.players[target]!;
+    // Attached upgrades count, after the cities: they are in the bank once their country has lost a city.
+    const cards = [...tableCards(player), ...player.table.flatMap((stack) => stack.upgrades)];
     if (cards.reduce((sum, card) => sum + getCard(card).value, 0) > amount) {
       state.phase = { kind: 'pay', player: target, receiver, owed: amount, amount, queue };
       return;
@@ -405,14 +415,16 @@ function take(state: GameState, action: Play): void {
       transfer(state, player, target, action.give!);
       break;
     case 'seizure': {
-      // The country changes hands as one stack. It joins the cities the taker already has there, if any
-      // (possible with wild cities only).
+      // The country changes hands as one stack, upgrades included. It joins the cities the taker already has
+      // there, if any (possible with wild cities only).
       const me = state.players[player]!;
       const { table } = state.players[target]!;
       const [seized] = table.splice(table.findIndex((stack) => stack.country === action.country), 1);
       const mine = me.table.find((stack) => stack.country === action.country);
-      if (mine) mine.cities.push(...seized!.cities);
-      else me.table.push(seized!);
+      if (mine) {
+        mine.cities.push(...seized!.cities);
+        mine.upgrades.push(...seized!.upgrades);
+      } else me.table.push(seized!);
       break;
     }
   }
@@ -436,17 +448,26 @@ function transfer(state: GameState, from: PlayerId, to: PlayerId, card: CardId):
     receiver.bank.push(card);
     return;
   }
-  const stack = payer.table.find((s) => s.cities.includes(card))!;
-  remove(stack.cities, card);
-  if (stack.cities.length === 0) payer.table.splice(payer.table.indexOf(stack), 1);
-  addCity(receiver, card, stack.country);
+  addCity(receiver, card, removeCity(payer, card));
 }
 
 /** Lays a city on a player's table, in the given country: its own, or for a wild city one of those it allows. */
 function addCity(player: PlayerState, city: CardId, country: CountryId): void {
   let stack = player.table.find((s) => s.country === country);
-  if (!stack) player.table.push((stack = { country, cities: [] }));
+  if (!stack) player.table.push((stack = { country, cities: [], upgrades: [] }));
   stack.cities.push(city);
+}
+
+/**
+ * Takes a laid city off a player's table and returns the country it was in. A country that is no longer
+ * complete loses its upgrades: they move to the player's bank, as coin.
+ */
+function removeCity(player: PlayerState, city: CardId): CountryId {
+  const stack = player.table.find((s) => s.cities.includes(city))!;
+  remove(stack.cities, city);
+  if (!isComplete(stack)) player.bank.push(...stack.upgrades.splice(0));
+  if (stack.cities.length === 0) player.table.splice(player.table.indexOf(stack), 1);
+  return stack.country;
 }
 
 /** One of the turn's draws is done; after the last one the plays begin. */
@@ -473,14 +494,14 @@ function isComplete(stack: CountryStack): boolean {
 }
 
 /**
- * What a Toll on this country charges each opponent, from the country's toll scale and the holder's progress
- * in it. The only place the amount is worked out.
+ * What a Toll on this country charges each opponent: the amount on the country's toll scale for the holder's
+ * progress in it, plus its upgrades. The only place the amount is worked out.
  */
 function tollAmount(stack: CountryStack): number {
   const scale = tollScale(stack.country);
   // The top of the scale is for a complete country only, however many cities the stack holds.
   const level = isComplete(stack) ? scale.length : Math.min(stack.cities.length, scale.length - 1);
-  return scale[level - 1]!;
+  return scale[level - 1]! + stack.upgrades.length * RULES.upgradeToll;
 }
 
 /** Runs after every state change: a win ends the game at once; so does running out of cards to draw and play. */
@@ -539,7 +560,11 @@ function clone(state: GameState): GameState {
       (p): PlayerState => ({
         hand: [...p.hand],
         bank: [...p.bank],
-        table: p.table.map((stack) => ({ country: stack.country, cities: [...stack.cities] })),
+        table: p.table.map((stack) => ({
+          country: stack.country,
+          cities: [...stack.cities],
+          upgrades: [...stack.upgrades],
+        })),
       }),
     ),
     turn: { ...state.turn },

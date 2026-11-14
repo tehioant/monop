@@ -14,7 +14,7 @@ import {
   type GameState,
   type Play,
 } from '../src/index.ts';
-import { act, drawAll, stack, turn } from './helpers.ts';
+import { act, drawAll, seat, stack, turn } from './helpers.ts';
 
 const lay = (card: CardId): Action => ({ type: 'lay', card });
 const bank = (card: CardId): Action => ({ type: 'bank', card });
@@ -89,9 +89,9 @@ test('Vetoes answer each other until one side declines or has none left: an odd 
     const view = viewFor(state, 0);
     assert.deepEqual(view.phase, { kind: 'play', player: 1 });
     assert.equal(view.turn.playsLeft, RULES.playsPerTurn - 1, 'a Veto is not one of the turn’s plays');
-    const seat = view.players.findIndex((p) => p.table.length > 0);
-    assert.deepEqual(view.players[seat]!.table, [egypt]);
-    return seat;
+    const owner = view.players.findIndex((p) => p.table.length > 0);
+    assert.deepEqual(seat(view, owner).table, [egypt]);
+    return owner;
   };
   const chain = { kind: 'veto', target: 0, effect: { take: seizure }, queue: [] };
 

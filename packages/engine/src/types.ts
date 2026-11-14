@@ -22,6 +22,8 @@ export interface GameSetup {
 export interface CountryStack {
   country: CountryId;
   cities: CardId[];
+  /** The upgrades attached to the country, each raising its toll. Only a complete country has any. */
+  upgrades: CardId[];
 }
 
 export interface PlayerState {
@@ -89,11 +91,13 @@ export type Action =
   /** Moves one of the player's laid wild cities to another of its countries. Free: uses no play. */
   | { type: 'reassign'; card: CardId; country: CountryId }
   /**
-   * Play an action card for its effect; the card then goes to the discard pile.
+   * Play an action card for its effect; the card then goes to the discard pile, except an upgrade, which stays
+   * attached to its country.
    * A Veto is played with no other field, and only in answer to a card: in a `veto` phase, never as a turn's play.
    * The other fields say what the card is aimed at, and are present only for the cards that need them:
    * `target` is the chosen opponent (Debt, Raid, Exchange, Seizure);
-   * `country` is the chosen country: one of the player's own for a Toll, the one a Seizure takes from `target`;
+   * `country` is the chosen country: one of the player's own for a Toll or an upgrade, the one a Seizure takes
+   * from `target`;
    * `city` is the city a Raid takes from `target`;
    * `give` and `take` are the cities an Exchange swaps, the player's own for one of `target`'s.
    */
@@ -137,7 +141,8 @@ export interface PlayerView {
   players: {
     handSize: number;
     bank: CardId[];
-    table: (CountryStack & { complete: boolean })[];
+    /** `toll` is what a Toll played on the country would charge each opponent now, upgrades included. */
+    table: (CountryStack & { complete: boolean; toll: number })[];
   }[];
   deckSize: number;
   discardTop: CardId | null;

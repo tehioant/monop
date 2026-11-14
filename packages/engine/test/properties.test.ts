@@ -71,19 +71,27 @@ function deepFreeze<T>(value: T): T {
 /** Where every card is, as far as the views tell: the deck is whatever is in none of these zones. */
 function zones(state: GameState) {
   const view = viewFor(state, 0);
-  // The discard pile is what was discarded since the last reshuffle.
+  // The discard pile is what was discarded since the last reshuffle. A played upgrade stays on the table.
   let discarded: CardId[] = [];
   for (const entry of view.log) {
     if (entry.type === 'reshuffle') discarded = [];
-    else if (entry.type === 'discard' || entry.type === 'play') discarded.push(entry.card);
+    else if (entry.type === 'discard' || (entry.type === 'play' && !isUpgrade(entry.card))) discarded.push(entry.card);
     else if (entry.type === 'return') discarded.pop(); // the Veto just played is back in its player's hand
   }
   return {
     view,
     hands: view.players.map((_, player) => viewFor(state, player).hand),
-    tables: view.players.flatMap((p) => [...p.bank, ...p.table.flatMap((stack) => stack.cities)]),
+    tables: view.players.flatMap((p) => [
+      ...p.bank,
+      ...p.table.flatMap((stack) => [...stack.cities, ...stack.upgrades]),
+    ]),
     discarded,
   };
+}
+
+function isUpgrade(id: CardId): boolean {
+  const card = getCard(id);
+  return card.kind === 'action' && card.action === 'upgrade';
 }
 
 const cardIds = new Set(ALL_CARDS);
@@ -95,7 +103,7 @@ function cardsIn(value: unknown): CardId[] {
   return [];
 }
 
-test('every card is in exactly one zone, and every laid city in a country it belongs to', () => {
+test('every card is in exactly one zone, every laid city in a country it belongs to, upgrades on complete countries', () => {
   forAllGames((config, g) => {
     randomGame(config, g, (state) => {
       const { view, hands, tables, discarded } = zones(state);
@@ -108,12 +116,14 @@ test('every card is in exactly one zone, and every laid city in a country it bel
         hands.map((hand) => hand.length),
       );
       assert.equal(view.discardTop, discarded.at(-1) ?? null);
-      for (const { country, cities } of view.players.flatMap((p) => p.table)) {
+      for (const { country, cities, upgrades, complete } of view.players.flatMap((p) => p.table)) {
         for (const card of cities.map(getCard)) {
           assert.ok(
             card.kind === 'wild' ? card.countries.includes(country) : card.kind === 'city' && card.country === country,
           );
         }
+        assert.ok(upgrades.every(isUpgrade));
+        assert.ok(complete || upgrades.length === 0, 'an incomplete country kept an upgrade');
       }
       // A country's perk is active for exactly the players who hold it complete.
       for (const { country, activeFor } of view.perks) {

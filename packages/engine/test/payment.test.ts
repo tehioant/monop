@@ -3,7 +3,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { createGame, legalActions, viewFor, type Action, type GameState } from '../src/index.ts';
-import { act, drawAll, stack, turn } from './helpers.ts';
+import { act, drawAll, seat, stack, turn } from './helpers.ts';
 
 const bank = (card: string): Action => ({ type: 'bank', card });
 const lay = (card: string): Action => ({ type: 'lay', card });
@@ -40,7 +40,7 @@ test('a Debt makes the chosen opponent pay its amount from their bank and laid c
   assert.deepEqual(view.phase, { kind: 'play', player: 2 });
   assert.equal(view.turn.playsLeft, 2);
   assert.deepEqual(view.players[2]!.bank, ['coin-5-1']);
-  assert.deepEqual(view.players[0], {
+  assert.deepEqual(seat(view, 0), {
     handSize: 4,
     bank: ['coin-2-1'],
     table: [{ country: 'france', cities: ['paris'], complete: false }],
@@ -56,7 +56,7 @@ test("a laid city used to pay goes to the receiver's countries, and no change is
   game = act(game, pay('coin-5-1')); // 7 paid for 5 owed
   const view = viewFor(game, 0);
   assert.deepEqual(view.phase, { kind: 'play', player: 2 });
-  assert.deepEqual(view.players[2], {
+  assert.deepEqual(seat(view, 2), {
     handSize: 6,
     bank: ['coin-5-1'],
     table: [{ country: 'france', cities: ['paris'], complete: false }],
