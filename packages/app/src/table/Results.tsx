@@ -2,8 +2,8 @@
 
 import type { PlayerView } from '@atlas/engine';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
-import { cardInfo } from './actions.ts';
-import { CountryView } from './parts.tsx';
+import { cardInfo, completeCount } from './actions.ts';
+import { CountryView, Panel, shared } from './parts.tsx';
 import { colors } from './theme.ts';
 
 export function Results({ view, names }: { view: PlayerView; names: readonly string[] }) {
@@ -12,14 +12,14 @@ export function Results({ view, names }: { view: PlayerView; names: readonly str
   return (
     <ScrollView contentContainerStyle={styles.results}>
       <Text style={styles.headline}>{headline}</Text>
-      <Text style={styles.small}>First to {view.options.countriesToWin} complete countries</Text>
+      <Text style={shared.small}>First to {view.options.countriesToWin} complete countries</Text>
       {view.players.map((player, seat) => (
-        <View key={seat} style={[styles.panel, seat === winner && styles.winner]}>
-          <Text style={styles.name}>
-            {names[seat]} · {player.table.filter((stack) => stack.complete).length} complete
+        <Panel key={seat} highlighted={seat === winner}>
+          <Text style={shared.name}>
+            {names[seat]} · {completeCount(player.table)} complete
           </Text>
-          {player.table.length === 0 && <Text style={styles.small}>No countries</Text>}
-          <View style={styles.wrap}>
+          {player.table.length === 0 && <Text style={shared.small}>No countries</Text>}
+          <View style={shared.wrap}>
             {player.table.map((stack) => (
               <CountryView
                 key={stack.country}
@@ -28,7 +28,7 @@ export function Results({ view, names }: { view: PlayerView; names: readonly str
               />
             ))}
           </View>
-        </View>
+        </Panel>
       ))}
     </ScrollView>
   );
@@ -37,16 +37,4 @@ export function Results({ view, names }: { view: PlayerView; names: readonly str
 const styles = StyleSheet.create({
   results: { padding: 16, gap: 10 },
   headline: { color: colors.ink, fontSize: 28, fontWeight: '800' },
-  small: { color: colors.muted, fontSize: 13 },
-  panel: {
-    backgroundColor: colors.surface,
-    borderRadius: 10,
-    borderWidth: 2,
-    borderColor: colors.surface,
-    padding: 10,
-    gap: 6,
-  },
-  winner: { borderColor: colors.accent },
-  name: { color: colors.ink, fontSize: 15, fontWeight: '700' },
-  wrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
 });

@@ -5,7 +5,6 @@ import { soloNames, soloView } from '../../solo/solo.ts';
 import { useSolo } from '../../solo/store.ts';
 import { Button } from '../../table/parts.tsx';
 import { Results } from '../../table/Results.tsx';
-import { colors } from '../../table/theme.ts';
 
 export default function SoloResults() {
   const game = useSolo((solo) => solo.game);
@@ -21,6 +20,6 @@ export default function SoloResults() {
 }
 
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: colors.background },
+  screen: { flex: 1 },
   bar: { padding: 16 },
 });

@@ -9,15 +9,15 @@ import { title } from '../../table/actions.ts';
 import { Button } from '../../table/parts.tsx';
 import { colors } from '../../table/theme.ts';
 
-// Every choice comes from the engine and the bots: the screen adds none of its own.
+// The options come from the engine and the bots; the screen only picks which one starts selected.
 const BOT_COUNTS = RULES.playerCounts.map((players) => players - 1);
-const DEFAULT_BOTS = 3;
+const DEFAULT_BOTS = BOT_COUNTS.includes(3) ? 3 : BOT_COUNTS[0]!;
 const DEFAULT_DIFFICULTY = DIFFICULTIES[Math.floor((DIFFICULTIES.length - 1) / 2)]!;
 const DEFAULT_COUNTRIES = Math.min(...RULES.countriesToWin);
 
 export default function NewSoloGame() {
   const start = useSolo((solo) => solo.start);
-  const [bots, setBots] = useState(BOT_COUNTS.includes(DEFAULT_BOTS) ? DEFAULT_BOTS : BOT_COUNTS[0]!);
+  const [bots, setBots] = useState(DEFAULT_BOTS);
   const [difficulty, setDifficulty] = useState(DEFAULT_DIFFICULTY);
   const [countriesToWin, setCountriesToWin] = useState(DEFAULT_COUNTRIES);
 

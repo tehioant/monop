@@ -6,7 +6,6 @@ import { botToMove, soloLegal, soloNames, soloView } from '../../solo/solo.ts';
 import { useSolo } from '../../solo/store.ts';
 import { Button } from '../../table/parts.tsx';
 import { Table } from '../../table/Table.tsx';
-import { colors } from '../../table/theme.ts';
 
 /** Pause before each bot action, so that the player can follow what the bots do. */
 const BOT_DELAY_MS = 500;
@@ -37,6 +36,6 @@ export default function SoloTable() {
 }
 
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: colors.background },
+  screen: { flex: 1 },
   bar: { flexDirection: 'row', justifyContent: 'flex-end', paddingHorizontal: 12 },
 });

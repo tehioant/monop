@@ -34,6 +34,13 @@ export function bankTotal(bank: readonly CardId[]): number {
   return bank.reduce((total, id) => total + cardInfo(id).value, 0);
 }
 
+type Stacks = PlayerView['players'][number]['table'];
+
+/** How many of a player's countries count toward winning. */
+export function completeCount(table: Stacks): number {
+  return table.filter((stack) => stack.complete).length;
+}
+
 const countrySizes = new Map<string, number>(COUNTRIES.map((country) => [country.id, country.cities.length]));
 
 /** Number of cities that complete a country; 0 if unknown. */
@@ -55,13 +62,21 @@ function words(name: string): string {
 
 const VERBS: Record<string, string> = { draw: 'Draw from the deck', drawMarket: 'Take' };
 
-/** Fields that hold a seat, shown as the player's name. */
-const SEAT_FIELDS = ['player', 'target', 'winner', 'receiver', 'queue'];
+type FieldOf<T> = T extends unknown ? keyof T : never;
+
+/** Fields that hold a seat, shown as the player's name. Typed so that a renamed field fails to compile. */
+const SEAT_FIELDS: readonly FieldOf<Action | LogEntry | PlayerView['phase']>[] = [
+  'player',
+  'target',
+  'winner',
+  'receiver',
+  'queue',
+];
 
 function show(field: string, value: unknown, names: readonly string[]): string {
   if (Array.isArray(value)) return value.map((item) => show(field, item, names)).join(' + ') || 'none';
-  if (typeof value === 'number' && SEAT_FIELDS.includes(field)) return names[value] ?? String(value);
-  if (typeof value === 'string') return cards.get(value)?.name ?? title(value);
+  if (typeof value === 'number' && (SEAT_FIELDS as readonly string[]).includes(field)) return names[value] ?? String(value);
+  if (typeof value === 'string') return cardInfo(value).name;
   return value === null ? 'none' : String(value);
 }
 
@@ -93,7 +108,7 @@ export function promptText(view: PlayerView, names: readonly string[]): string {
   if (kind === 'over') return 'Game over';
   if (player !== view.viewer) return `${names[player ?? -1] ?? 'Another player'} is playing…`;
   if (kind === 'draw') return `Your turn: draw ${rest.remaining} from the deck or the Market`;
-  if (kind === 'play') return `Your turn: ${view.turn.playsLeft} of ${RULES.playsPerTurn} plays left`;
+  if (kind === 'play') return `Your turn: ${view.turn.playsLeft} plays left`;
   if (kind === 'discard') return `Discard down to ${RULES.handLimit} cards`;
   return `Your move: ${words(kind).toLowerCase()}${details(rest, names)}`;
 }
@@ -105,15 +120,22 @@ export interface ActionGroups {
   general: Action[];
 }
 
-/** Splits the legal actions by the control that offers them. Every action lands in exactly one place. */
+/**
+ * Splits the legal actions by the control that offers them. Every action lands in exactly one place.
+ * The cards listed here are the ones `Table` draws as tappable: a zone added to one belongs in the other.
+ */
 export function groupActions(view: PlayerView, legal: readonly Action[]): ActionGroups {
   const me = view.players[view.viewer]!;
   const tappable = new Set([...view.hand, ...view.market, ...me.bank, ...me.table.flatMap((stack) => stack.cities)]);
   const groups: ActionGroups = { byCard: new Map(), general: [] };
   for (const action of legal) {
-    const card = 'card' in action && tappable.has(action.card) ? action.card : undefined;
-    if (card === undefined) groups.general.push(action);
-    else groups.byCard.set(card, [...(groups.byCard.get(card) ?? []), action]);
+    if ('card' in action && tappable.has(action.card)) {
+      const onCard = groups.byCard.get(action.card);
+      if (onCard) onCard.push(action);
+      else groups.byCard.set(action.card, [action]);
+    } else {
+      groups.general.push(action);
+    }
   }
   return groups;
 }

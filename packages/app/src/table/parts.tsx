@@ -2,14 +2,23 @@
 
 import type { CardId, PlayerView } from '@atlas/engine';
 import type { ReactNode } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View, type ViewStyle } from 'react-native';
 import { cardInfo, countrySize, title } from './actions.ts';
 import { colors, countryColor } from './theme.ts';
 
 type Stack = PlayerView['players'][number]['table'][number];
 
-/** A card drawn from its data. Dimmed and inert without `onPress`. */
-export function CardView({ id, selected, onPress }: { id: CardId; selected?: boolean; onPress?: () => void }) {
+/** A card the table draws. Dimmed and inert without `onPress`. */
+export interface Tappable {
+  id: CardId;
+  selected?: boolean;
+  onPress?: () => void;
+}
+
+export const CARD_HEIGHT = 96;
+
+/** A card drawn from its data. */
+export function CardView({ id, selected, onPress }: Tappable) {
   const { name, kind, value, country } = cardInfo(id);
   const band = country ? countryColor(country) : kind === 'coin' ? colors.coin : colors.action;
   return (
@@ -53,8 +62,8 @@ export function CountryView({ stack, detail, children }: { stack: Stack; detail?
   );
 }
 
-/** A card on the table, by name only. Dimmed and inert without `onPress`. */
-export function Chip({ id, selected, onPress }: { id: CardId; selected?: boolean; onPress?: () => void }) {
+/** A card on the table, by name only. */
+export function Chip({ id, selected, onPress }: Tappable) {
   return (
     <Pressable
       onPress={onPress}
@@ -66,6 +75,11 @@ export function Chip({ id, selected, onPress }: { id: CardId; selected?: boolean
   );
 }
 
+/** A player's area. `highlighted` outlines it: the player to act, or the winner. */
+export function Panel({ highlighted, style, children }: { highlighted?: boolean; style?: ViewStyle; children: ReactNode }) {
+  return <View style={[styles.panel, highlighted && styles.highlighted, style]}>{children}</View>;
+}
+
 export function Button({ label, onPress, quiet }: { label: string; onPress: () => void; quiet?: boolean }) {
   return (
     <Pressable onPress={onPress} style={[styles.button, quiet && styles.buttonQuiet]}>
@@ -74,10 +88,26 @@ export function Button({ label, onPress, quiet }: { label: string; onPress: () =
   );
 }
 
+/** Styles the table and the results screen share. */
+export const shared = StyleSheet.create({
+  wrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
+  name: { color: colors.ink, fontSize: 15, fontWeight: '700' },
+  small: { color: colors.muted, fontSize: 12 },
+});
+
 const styles = StyleSheet.create({
+  panel: {
+    backgroundColor: colors.surface,
+    borderRadius: 10,
+    borderWidth: 2,
+    borderColor: colors.surface,
+    padding: 8,
+    gap: 6,
+  },
+  highlighted: { borderColor: colors.accent },
   card: {
     width: 68,
-    height: 96,
+    height: CARD_HEIGHT,
     borderRadius: 8,
     borderWidth: 1,
     borderColor: colors.line,

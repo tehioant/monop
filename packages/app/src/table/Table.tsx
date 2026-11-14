@@ -4,8 +4,8 @@
 import type { Action, CardId, PlayerView } from '@atlas/engine';
 import { useState } from 'react';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
-import { actionLabel, bankTotal, cardInfo, groupActions, logLine, promptText } from './actions.ts';
-import { Button, CardView, Chip, CountryView } from './parts.tsx';
+import { actionLabel, bankTotal, cardInfo, completeCount, groupActions, logLine, promptText } from './actions.ts';
+import { Button, CARD_HEIGHT, CardView, Chip, CountryView, Panel, shared, type Tappable } from './parts.tsx';
 import { colors } from './theme.ts';
 
 export interface TableProps {
@@ -34,7 +34,7 @@ export function Table({ view, legal, names, onAction }: TableProps) {
     onAction(action);
   };
   /** A card of the viewer's or of the Market: it can be tapped exactly when it has a legal action. */
-  const tappable = (id: CardId) => ({
+  const tappable = (id: CardId): Tappable => ({
     id,
     selected: selectedActions !== undefined && id === selected,
     onPress: byCard.has(id) ? () => setSelected(id === selected ? null : id) : undefined,
@@ -45,23 +45,23 @@ export function Table({ view, legal, names, onAction }: TableProps) {
       <ScrollView style={styles.scroll} contentContainerStyle={styles.board}>
         <View style={styles.row}>
           <Text style={styles.target}>First to {view.options.countriesToWin} countries</Text>
-          <Text style={styles.small}>
+          <Text style={shared.small}>
             Deck {view.deckSize} · Discard {view.discardTop === null ? 'empty' : cardInfo(view.discardTop).name}
           </Text>
         </View>
 
         <View style={styles.middle}>
-          <View style={styles.panel}>
-            <Text style={styles.small}>Market</Text>
+          <Panel>
+            <Text style={shared.small}>Market</Text>
             <View style={styles.cards}>
               {view.market.map((id) => (
                 <CardView key={id} {...tappable(id)} />
               ))}
             </View>
-          </View>
+          </Panel>
           <View style={styles.log}>
             {view.log.slice(-LOG_ENTRIES).map((entry, i) => (
-              <Text key={i} style={styles.small} numberOfLines={2}>
+              <Text key={i} style={shared.small} numberOfLines={2}>
                 {logLine(entry, names)}
               </Text>
             ))}
@@ -71,35 +71,34 @@ export function Table({ view, legal, names, onAction }: TableProps) {
         {opponents.map((seat) => {
           const player = view.players[seat]!;
           return (
-            <View key={seat} style={[styles.panel, seat === waitingOn && styles.active]}>
+            <Panel key={seat} highlighted={seat === waitingOn}>
               <View style={styles.row}>
-                <Text style={styles.name}>{names[seat]}</Text>
-                <Text style={styles.small}>
+                <Text style={shared.name}>{names[seat]}</Text>
+                <Text style={shared.small}>
                   Hand {player.handSize} · Bank {bankTotal(player.bank)} · {countries(view, seat)}
                 </Text>
               </View>
               {player.table.length > 0 && (
-                <View style={styles.wrap}>
+                <View style={shared.wrap}>
                   {player.table.map((stack) => (
                     <CountryView key={stack.country} stack={stack} />
                   ))}
                 </View>
               )}
-            </View>
+            </Panel>
           );
         })}
-
       </ScrollView>
 
-      <View style={[styles.panel, styles.mine, view.viewer === waitingOn && styles.active]}>
+      <Panel highlighted={view.viewer === waitingOn} style={styles.mine}>
         <View style={styles.row}>
-          <Text style={styles.name}>{names[view.viewer]}</Text>
-          <Text style={styles.small}>
+          <Text style={shared.name}>{names[view.viewer]}</Text>
+          <Text style={shared.small}>
             Bank {bankTotal(me.bank)} · {countries(view, view.viewer)}
           </Text>
         </View>
         {me.table.length > 0 && (
-          <View style={styles.wrap}>
+          <View style={shared.wrap}>
             {me.table.map((stack) => (
               <CountryView key={stack.country} stack={stack}>
                 {stack.cities.map((id) => (
@@ -110,13 +109,13 @@ export function Table({ view, legal, names, onAction }: TableProps) {
           </View>
         )}
         {me.bank.length > 0 && (
-          <View style={styles.wrap}>
+          <View style={shared.wrap}>
             {me.bank.map((id) => (
               <Chip key={id} {...tappable(id)} />
             ))}
           </View>
         )}
-      </View>
+      </Panel>
 
       <Text style={styles.prompt}>{promptText(view, names)}</Text>
       <ScrollView horizontal style={styles.hand} contentContainerStyle={styles.cards}>
@@ -124,7 +123,7 @@ export function Table({ view, legal, names, onAction }: TableProps) {
           <CardView key={id} {...tappable(id)} />
         ))}
       </ScrollView>
-      <ScrollView style={styles.actions} contentContainerStyle={styles.wrap}>
+      <ScrollView style={styles.actions} contentContainerStyle={shared.wrap}>
         {selectedActions && <Button quiet label="Cancel" onPress={() => setSelected(null)} />}
         {(selectedActions ?? general).map((action, i) => (
           <Button key={i} label={actionLabel(action, names)} onPress={() => act(action)} />
@@ -135,37 +134,24 @@ export function Table({ view, legal, names, onAction }: TableProps) {
 }
 
 function countries(view: PlayerView, seat: number): string {
-  const complete = view.players[seat]!.table.filter((stack) => stack.complete).length;
-  return `Countries ${complete}/${view.options.countriesToWin}`;
+  return `Countries ${completeCount(view.players[seat]!.table)}/${view.options.countriesToWin}`;
 }
 
 const styles = StyleSheet.create({
-  table: { flex: 1, backgroundColor: colors.background },
+  table: { flex: 1 },
   // Only the board gives way when space is short: the player's own area, hand and actions keep their size.
   scroll: { flex: 1 },
   board: { paddingHorizontal: 12, paddingBottom: 8, gap: 8 },
   row: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline', gap: 8 },
-  wrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
   middle: { flexDirection: 'row', gap: 8 },
   // The latest entries, beside the Market and no taller than it.
   log: { flex: 1, justifyContent: 'flex-end', gap: 2, overflow: 'hidden' },
   cards: { flexDirection: 'row', gap: 6 },
-  panel: {
-    backgroundColor: colors.surface,
-    borderRadius: 10,
-    borderWidth: 2,
-    borderColor: colors.surface,
-    padding: 8,
-    gap: 6,
-  },
   mine: { marginHorizontal: 12 },
-  active: { borderColor: colors.accent },
   target: { color: colors.ink, fontSize: 16, fontWeight: '700' },
-  name: { color: colors.ink, fontSize: 15, fontWeight: '700' },
-  small: { color: colors.muted, fontSize: 12 },
   prompt: { color: colors.ink, fontSize: 14, fontWeight: '600', paddingHorizontal: 12, paddingTop: 8 },
   // As tall as a card, even when empty, so that nothing moves when the last card is played.
-  hand: { flexGrow: 0, flexShrink: 0, height: 112, paddingHorizontal: 12, paddingVertical: 8 },
+  hand: { flexGrow: 0, flexShrink: 0, height: CARD_HEIGHT + 16, paddingHorizontal: 12, paddingVertical: 8 },
   // Room for two rows, so that the hand does not move on most selections; more rows push it up, then scroll.
   actions: { flexGrow: 0, flexShrink: 0, minHeight: 96, maxHeight: 200, paddingHorizontal: 12 },
 });
