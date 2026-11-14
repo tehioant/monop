@@ -47,8 +47,8 @@ export function CardView({ id, selected, onPress }: Tappable) {
   );
 }
 
-/** A country with its progress, then what the caller adds: a line of `detail`, or children. */
-export function CountryView({ stack, detail, children }: { stack: Stack; detail?: string; children?: ReactNode }) {
+/** A country with its progress, and a line of `detail` if given. */
+export function CountryView({ stack, detail }: { stack: Stack; detail?: string }) {
   const progress = `${stack.cities.length}/${countrySize(stack.country)}`;
   return (
     <View style={[styles.country, { backgroundColor: countryColor(stack.country) }, stack.complete && styles.complete]}>
@@ -57,18 +57,22 @@ export function CountryView({ stack, detail, children }: { stack: Stack; detail?
         {stack.complete ? ' ✓' : ''}
         {detail !== undefined && <Text style={styles.countryDetail}>{`  ${detail}`}</Text>}
       </Text>
-      {children}
     </View>
   );
 }
 
-/** A card on the table, by name only. */
-export function Chip({ id, selected, onPress }: Tappable) {
+/** A card on the table, by name only. `color` outlines it: the country it is laid in. */
+export function Chip({ id, selected, onPress, color }: Tappable & { color?: string }) {
   return (
     <Pressable
       onPress={onPress}
       disabled={!onPress}
-      style={[styles.chip, selected && styles.chipSelected, !onPress && styles.dimmed]}
+      style={[
+        styles.chip,
+        color !== undefined && { borderColor: color },
+        selected && styles.chipSelected,
+        !onPress && styles.dimmed,
+      ]}
     >
       <Text style={styles.chipText}>{cardInfo(id).name}</Text>
     </Pressable>
@@ -122,10 +126,6 @@ const styles = StyleSheet.create({
   cardName: { flex: 1, color: colors.ink, fontSize: 12, fontWeight: '600', textAlign: 'center', padding: 4 },
   cardValue: { color: colors.coin, fontSize: 13, fontWeight: '700', paddingBottom: 4 },
   country: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    alignItems: 'center',
-    gap: 4,
     borderRadius: 6,
     paddingVertical: 4,
     paddingHorizontal: 8,
@@ -140,11 +140,11 @@ const styles = StyleSheet.create({
     borderRadius: 5,
     borderWidth: 2,
     borderColor: colors.line,
-    paddingVertical: 2,
+    paddingVertical: 4,
     paddingHorizontal: 6,
   },
-  chipSelected: { borderColor: colors.accent },
-  chipText: { color: colors.ink, fontSize: 11, fontWeight: '600' },
+  chipSelected: { borderColor: colors.accent, backgroundColor: '#dbe4ff' },
+  chipText: { color: colors.ink, fontSize: 12, fontWeight: '600' },
   button: { backgroundColor: colors.accent, borderRadius: 8, paddingVertical: 10, paddingHorizontal: 14 },
   buttonText: { color: '#fff', fontSize: 15, fontWeight: '600', textAlign: 'center' },
   buttonQuiet: { backgroundColor: 'transparent', borderWidth: 1, borderColor: colors.line },

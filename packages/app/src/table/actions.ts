@@ -117,7 +117,7 @@ export function promptText(view: PlayerView, names: readonly string[]): string {
   if (kind === 'over') return 'Game over';
   if (player !== view.viewer) return `${names[player ?? -1] ?? 'Another player'} is playing…`;
   if (kind === 'draw') return `Your turn: draw ${rest.remaining} from the deck or the Market`;
-  if (kind === 'play') return `Your turn: ${view.turn.playsLeft} plays left`;
+  if (kind === 'play') return `Your turn (plays left: ${view.turn.playsLeft})`;
   if (kind === 'discard') return `Discard down to ${RULES.handLimit} cards`;
   return `Your move: ${words(kind).toLowerCase()}${details(rest, names)}`;
 }

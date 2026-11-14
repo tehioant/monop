@@ -2,11 +2,11 @@
 // legal actions, and holds no rules: a control exists exactly when the engine listed an action for it.
 
 import type { Action, CardId, PlayerView } from '@atlas/engine';
-import { useState } from 'react';
+import { Fragment, useState } from 'react';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import { actionLabel, bankTotal, cardInfo, completeCount, groupActions, logLine, promptText } from './actions.ts';
 import { Button, CARD_HEIGHT, CardView, Chip, CountryView, Panel, shared, type Tappable } from './parts.tsx';
-import { colors } from './theme.ts';
+import { colors, countryColor } from './theme.ts';
 
 export interface TableProps {
   view: PlayerView;
@@ -99,12 +99,14 @@ export function Table({ view, legal, names, onAction }: TableProps) {
         </View>
         {me.table.length > 0 && (
           <View style={shared.wrap}>
+            {/* Each country, then its cities, in one flat row that wraps: a country never splits oddly. */}
             {me.table.map((stack) => (
-              <CountryView key={stack.country} stack={stack}>
+              <Fragment key={stack.country}>
+                <CountryView stack={stack} />
                 {stack.cities.map((id) => (
-                  <Chip key={id} {...tappable(id)} />
+                  <Chip key={id} {...tappable(id)} color={countryColor(stack.country)} />
                 ))}
-              </CountryView>
+              </Fragment>
             ))}
           </View>
         )}

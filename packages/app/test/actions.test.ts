@@ -42,7 +42,7 @@ test('the prompt says who the game waits on, and for what', () => {
   const view = viewFor(createGame({ players: 3, countriesToWin: 3 }, 1), 0);
   const during = (phase: object) => promptText({ ...view, phase: unknown<PlayerView['phase']>(phase) }, names);
   assert.equal(promptText(view, names), 'Your turn: draw 2 from the deck or the Market');
-  assert.equal(during({ kind: 'play', player: 0 }), 'Your turn: 3 plays left');
+  assert.equal(during({ kind: 'play', player: 0 }), 'Your turn (plays left: 3)');
   assert.equal(during({ kind: 'play', player: 2 }), 'Bot 2 is playing…');
   assert.equal(during({ kind: 'pay', player: 0, receiver: 1, owed: 3 }), 'Your move: pay (receiver: Bot 1, owed: 3)');
   assert.equal(
