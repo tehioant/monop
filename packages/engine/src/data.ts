@@ -32,3 +32,12 @@ export const COINS = [
   { value: 5, count: 2 },
   { value: 10, count: 1 },
 ] as const;
+
+/**
+ * Charging cards: `count` copies of each. `value` is the coin value once banked,
+ * `amount` what each charged opponent owes: every opponent for a Levy, one chosen opponent for a Debt.
+ */
+export const CHARGES = [
+  { kind: 'levy', value: 2, count: 3, amount: 2 },
+  { kind: 'debt', value: 3, count: 3, amount: 5 },
+] as const;

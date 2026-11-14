@@ -1,6 +1,6 @@
 // The card catalog, derived from the data in data.ts.
 
-import { COINS, COUNTRIES } from './data.ts';
+import { CHARGES, COINS, COUNTRIES } from './data.ts';
 
 export type CardId = string;
 export type CountryId = string;
@@ -8,12 +8,16 @@ export type CountryId = string;
 /** Every card has a coin `value`: what it is worth once banked. */
 export type Card =
   | { id: CardId; kind: 'city'; country: CountryId; value: number }
+  | { id: CardId; kind: 'levy' | 'debt'; value: number; amount: number }
   | { id: CardId; kind: 'coin'; value: number };
 
 /** The standard deck, unshuffled. */
 export const CARDS: readonly Card[] = [
   ...COUNTRIES.flatMap((country) =>
     country.cities.map((id): Card => ({ id, kind: 'city', country: country.id, value: country.cityValue })),
+  ),
+  ...CHARGES.flatMap(({ kind, value, count, amount }) =>
+    Array.from({ length: count }, (_, i): Card => ({ id: `${kind}-${i + 1}`, kind, value, amount })),
   ),
   ...COINS.flatMap(({ value, count }) =>
     Array.from({ length: count }, (_, i): Card => ({ id: `coin-${value}-${i + 1}`, kind: 'coin', value })),
