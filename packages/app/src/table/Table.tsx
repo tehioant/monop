@@ -18,7 +18,7 @@ export interface TableProps {
   onAction: (action: Action) => void;
 }
 
-const LOG_LINES = 4;
+const LOG_LINES = 3;
 
 export function Table({ view, legal, names, onAction }: TableProps) {
   const [selected, setSelected] = useState<CardId | null>(null);
@@ -42,7 +42,7 @@ export function Table({ view, legal, names, onAction }: TableProps) {
 
   return (
     <View style={styles.table}>
-      <ScrollView contentContainerStyle={styles.board}>
+      <ScrollView style={styles.scroll} contentContainerStyle={styles.board}>
         <View style={styles.row}>
           <Text style={styles.target}>First to {view.options.countriesToWin} countries</Text>
           <Text style={styles.small}>
@@ -58,6 +58,12 @@ export function Table({ view, legal, names, onAction }: TableProps) {
             ))}
           </View>
         </View>
+
+        {view.log.slice(-LOG_LINES).map((entry, i) => (
+          <Text key={i} style={styles.small} numberOfLines={1}>
+            {logLine(entry, names)}
+          </Text>
+        ))}
 
         {opponents.map((seat) => {
           const player = view.players[seat]!;
@@ -80,11 +86,6 @@ export function Table({ view, legal, names, onAction }: TableProps) {
           );
         })}
 
-        {view.log.slice(-LOG_LINES).map((entry, i) => (
-          <Text key={i} style={styles.small} numberOfLines={1}>
-            {logLine(entry, names)}
-          </Text>
-        ))}
       </ScrollView>
 
       <View style={[styles.panel, styles.mine, view.viewer === waitingOn && styles.active]}>
@@ -121,10 +122,10 @@ export function Table({ view, legal, names, onAction }: TableProps) {
         ))}
       </ScrollView>
       <ScrollView style={styles.actions} contentContainerStyle={styles.wrap}>
+        {selectedActions && <Button quiet label="Cancel" onPress={() => setSelected(null)} />}
         {(selectedActions ?? general).map((action, i) => (
           <Button key={i} label={actionLabel(action, names)} onPress={() => act(action)} />
         ))}
-        {selectedActions && <Button quiet label="Cancel" onPress={() => setSelected(null)} />}
       </ScrollView>
     </View>
   );
@@ -137,6 +138,8 @@ function countries(view: PlayerView, seat: number): string {
 
 const styles = StyleSheet.create({
   table: { flex: 1, backgroundColor: colors.background },
+  // Only the board gives way when space is short: the player's own area, hand and actions keep their size.
+  scroll: { flex: 1 },
   board: { paddingHorizontal: 12, paddingBottom: 8, gap: 8 },
   row: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline', gap: 8 },
   wrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
@@ -155,6 +158,7 @@ const styles = StyleSheet.create({
   name: { color: colors.ink, fontSize: 15, fontWeight: '700' },
   small: { color: colors.muted, fontSize: 12 },
   prompt: { color: colors.ink, fontSize: 14, fontWeight: '600', paddingHorizontal: 12, paddingTop: 8 },
-  hand: { flexGrow: 0, paddingHorizontal: 12, paddingVertical: 8 },
-  actions: { flexGrow: 0, height: 96, paddingHorizontal: 12 },
+  hand: { flexGrow: 0, flexShrink: 0, paddingHorizontal: 12, paddingVertical: 8 },
+  // Room for two rows, so that the hand does not move on most selections; more rows push it up, then scroll.
+  actions: { flexGrow: 0, flexShrink: 0, minHeight: 96, maxHeight: 200, paddingHorizontal: 12 },
 });

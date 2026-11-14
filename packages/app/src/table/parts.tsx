@@ -24,7 +24,13 @@ export function CardView({ id, selected, onPress }: { id: CardId; selected?: boo
           {country ? title(country) : title(kind)}
         </Text>
       </View>
-      <Text style={styles.cardName} numberOfLines={2} adjustsFontSizeToFit minimumFontScale={0.7}>
+      {/* One line per word at most, shrunk to fit: a long name is never cut in the middle. */}
+      <Text
+        style={styles.cardName}
+        numberOfLines={Math.min(name.split(/[ /]/).length, 3)}
+        adjustsFontSizeToFit
+        minimumFontScale={0.6}
+      >
         {name}
       </Text>
       <Text style={styles.cardValue}>{value}</Text>
