@@ -90,17 +90,15 @@ export function applyAction(state: GameState, player: PlayerId, action: Action):
   const me = next.players[player]!;
   switch (action.type) {
     case 'draw':
+      me.hand.push(drawCard(next)!);
+      countDraw(next);
+      break;
     case 'drawMarket': {
-      if (action.type === 'draw') {
-        me.hand.push(drawCard(next)!);
-      } else {
-        remove(next.market, action.card);
-        me.hand.push(action.card);
-        const refill = drawCard(next);
-        if (refill) next.market.push(refill);
-      }
-      const { phase } = next;
-      if (phase.kind === 'draw' && --phase.remaining === 0) next.phase = { kind: 'play', player };
+      remove(next.market, action.card);
+      me.hand.push(action.card);
+      const refill = drawCard(next);
+      if (refill) next.market.push(refill);
+      countDraw(next);
       break;
     }
     case 'lay': {
@@ -178,6 +176,12 @@ function finishTurn(state: GameState): void {
   else startTurn(state, (player + 1) % state.players.length);
 }
 
+/** One of the turn's draws is done; after the last one the plays begin. */
+function countDraw(state: GameState): void {
+  const { phase } = state;
+  if (phase.kind === 'draw' && --phase.remaining === 0) state.phase = { kind: 'play', player: phase.player };
+}
+
 /** Takes the top card of the deck. An empty deck is first rebuilt by shuffling the discard pile. */
 function drawCard(state: GameState): CardId | undefined {
   if (state.deck.length === 0 && state.discard.length > 0) {
@@ -198,9 +202,13 @@ function checkGameOver(state: GameState): void {
     (p) => p.table.filter(isComplete).length >= state.options.countriesToWin,
   );
   if (winner >= 0) endGame(state, winner);
-  else {
-    const playable = [state.deck, state.discard, state.market, ...state.players.map((p) => p.hand)];
-    if (playable.every((cards) => cards.length === 0)) endGame(state, null);
+  else if (
+    state.deck.length === 0 &&
+    state.discard.length === 0 &&
+    state.market.length === 0 &&
+    state.players.every((p) => p.hand.length === 0)
+  ) {
+    endGame(state, null);
   }
 }
 
