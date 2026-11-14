@@ -80,7 +80,10 @@ function zones(state: GameState) {
   return {
     view,
     hands: view.players.map((_, player) => viewFor(state, player).hand),
-    tables: view.players.flatMap((p) => [...p.bank, ...p.table.flatMap((stack) => [...stack.cities, ...stack.upgrades])]),
+    tables: view.players.flatMap((p) => [
+      ...p.bank,
+      ...p.table.flatMap((stack) => [...stack.cities, ...stack.upgrades]),
+    ]),
     discarded,
   };
 }

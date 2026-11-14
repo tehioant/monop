@@ -141,7 +141,7 @@ test('a seized country joins the cities the taker already has in it', () => {
     { type: 'play', card: 'seizure-1', target: 0, country: 'egypt' },
   );
   const view = viewFor(game, 0);
-  assert.deepEqual(seat(view, 0).table, []);
+  assert.deepEqual(view.players[0]!.table, []);
   assert.deepEqual(seat(view, 1).table, [
     { country: 'egypt', cities: ['wild-egypt-italy', 'cairo', 'alexandria'], complete: true },
   ]);

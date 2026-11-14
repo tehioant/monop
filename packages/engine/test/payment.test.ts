@@ -61,7 +61,7 @@ test("a laid city used to pay goes to the receiver's countries, and no change is
     bank: ['coin-5-1'],
     table: [{ country: 'france', cities: ['paris'], complete: false }],
   });
-  assert.deepEqual(seat(view, 0), { handSize: 4, bank: ['coin-2-1'], table: [] });
+  assert.deepEqual(view.players[0], { handSize: 4, bank: ['coin-2-1'], table: [] });
 });
 
 test('a Levy charges every opponent its amount, in turn order starting after the player', () => {
@@ -134,7 +134,7 @@ test('a city received as payment can complete a country and win the game', () =>
   game = act(game, { type: 'play', card: 'debt-1', target: 0 });
   const view = viewFor(game, 0);
   assert.deepEqual(view.phase, { kind: 'over', winner: 1 });
-  assert.deepEqual(seat(view, 0).table, []);
+  assert.deepEqual(view.players[0]!.table, []);
   assert.deepEqual(view.log.slice(-3), [
     { type: 'pay', card: 'cairo', player: 0 },
     { type: 'pay', card: 'sydney', player: 0 },
