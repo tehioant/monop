@@ -76,13 +76,15 @@ export function Table({ view, legal, names, onAction }: TableProps) {
           <View style={styles.cards}>{view.market.map(card)}</View>
         </View>
 
-        <View style={styles.panel}>
-          {view.log.slice(-LOG_LINES).map((entry, i) => (
-            <Text key={i} style={styles.small} numberOfLines={1}>
-              {logLine(entry, names)}
-            </Text>
-          ))}
-        </View>
+        {view.log.length > 0 && (
+          <View style={styles.panel}>
+            {view.log.slice(-LOG_LINES).map((entry, i) => (
+              <Text key={i} style={styles.small} numberOfLines={1}>
+                {logLine(entry, names)}
+              </Text>
+            ))}
+          </View>
+        )}
 
         <View style={[styles.panel, view.viewer === waitingOn && styles.active]}>
           <View style={styles.row}>

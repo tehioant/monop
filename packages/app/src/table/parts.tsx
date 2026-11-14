@@ -23,7 +23,7 @@ export function CardView({ id, selected, onPress }: { id: CardId; selected?: boo
           {country ? title(country) : title(kind)}
         </Text>
       </View>
-      <Text style={styles.cardName} numberOfLines={3}>
+      <Text style={styles.cardName} numberOfLines={2} adjustsFontSizeToFit minimumFontScale={0.7}>
         {name}
       </Text>
       <Text style={styles.cardValue}>{value}</Text>
@@ -65,7 +65,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   cardSelected: { borderColor: colors.accent, borderWidth: 3 },
-  dimmed: { opacity: 0.45 },
+  dimmed: { opacity: 0.6 },
   cardBand: { alignSelf: 'stretch', paddingVertical: 3, paddingHorizontal: 2 },
   cardBandText: { color: '#fff', fontSize: 10, fontWeight: '700', textAlign: 'center' },
   cardName: { flex: 1, color: colors.ink, fontSize: 12, fontWeight: '600', textAlign: 'center', padding: 4 },

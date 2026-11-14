@@ -3,6 +3,7 @@ import { RULES } from '@atlas/engine';
 import { router } from 'expo-router';
 import { useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { useSolo } from '../../solo/store.ts';
 import { title } from '../../table/actions.ts';
 import { Button } from '../../table/parts.tsx';
@@ -21,7 +22,8 @@ export default function NewSoloGame() {
   const [countriesToWin, setCountriesToWin] = useState(DEFAULT_COUNTRIES);
 
   return (
-    <View style={styles.screen}>
+    <SafeAreaView style={styles.screen}>
+      <Text style={styles.title}>Solo game</Text>
       <Choice label="Opponents" options={BOT_COUNTS} value={bots} onChange={setBots} />
       <Choice label="Difficulty" options={DIFFICULTIES} value={difficulty} onChange={setDifficulty} show={title} />
       <Choice label="Countries to win" options={RULES.countriesToWin} value={countriesToWin} onChange={setCountriesToWin} />
@@ -32,7 +34,8 @@ export default function NewSoloGame() {
           router.replace('/solo/table');
         }}
       />
-    </View>
+      <Button quiet label="Back" onPress={() => router.back()} />
+    </SafeAreaView>
   );
 }
 
@@ -65,6 +68,7 @@ function Choice<T extends string | number>(props: {
 
 const styles = StyleSheet.create({
   screen: { flex: 1, padding: 24, gap: 24 },
+  title: { color: colors.ink, fontSize: 28, fontWeight: '800' },
   choice: { gap: 8 },
   label: { color: colors.ink, fontSize: 16, fontWeight: '700' },
   options: { flexDirection: 'row', gap: 8 },
