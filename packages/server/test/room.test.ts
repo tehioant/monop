@@ -1,34 +1,8 @@
 import assert from 'node:assert/strict';
 import { after, before, test } from 'node:test';
-import {
-  applyAction,
-  CARDS,
-  COUNTRIES,
-  createGame,
-  RULES,
-  viewFor,
-  type CardId,
-  type GameOptions,
-} from '@atlas/engine';
+import { applyAction, viewFor } from '@atlas/engine';
 import { PROTOCOL_VERSION as v } from '../src/protocol.ts';
-import { Client, startTestServer, type TestServer } from './helpers.ts';
-
-// Every game of this file is dealt from the same stacked deck (hands by seat, then the Market, then the draws):
-// seat 0 starts with cities of the three smallest countries and draws the missing ones first, so it can win a
-// 3-country game in a few turns.
-const winning: CardId[] = [...COUNTRIES]
-  .sort((a, b) => a.cities.length - b.cities.length)
-  .slice(0, 3)
-  .flatMap((country) => country.cities);
-const others = CARDS.map((card) => card.id).filter((card) => !winning.includes(card));
-const dealt = RULES.startingHand + RULES.marketSize;
-const deck = [
-  ...winning.slice(0, RULES.startingHand),
-  ...others.slice(0, dealt),
-  ...winning.slice(RULES.startingHand),
-  ...others.slice(dealt),
-];
-const newGame = (options: GameOptions) => createGame(options, 1, { deck });
+import { act, Client, deck, newGame, nextStates, startTestServer, type Players, type TestServer } from './helpers.ts';
 
 let server: TestServer;
 const clients: Client[] = [];
@@ -53,13 +27,6 @@ async function guest(name: string): Promise<Client> {
   client.send({ type: 'hello', name });
   await client.next('welcome');
   return client;
-}
-
-type Players = readonly [Client, Client];
-
-/** The next message of each player, which must be a state. */
-async function nextStates([host, friend]: Players) {
-  return [await host.next('state'), await friend.next('state')] as const;
 }
 
 /** Two guests in a started game, in seat order, with the first state each of them received. */
@@ -126,18 +93,12 @@ test('a guest creates a private room, another joins by its code, and the host st
 
 test('scripted clients play a full game to a win, each receiving only its own view', async () => {
   const { players, states: first } = await startedGame();
-  // Seat 0 lays every city it can; seat 1 only draws and passes.
-  const preferred = [['lay', 'draw', 'endTurn'], ['draw', 'endTurn']];
 
   let states = first;
   for (let step = 0; states[0].view.phase.kind !== 'over'; step++) {
     assert.ok(step < 100, 'the scripted game is short');
-    const seat = states.findIndex((state) => state.legalActions.length > 0);
-    const { stateVersion, legalActions } = states[seat]!;
-    const action = preferred[seat]!.map((type) => legalActions.find((a) => a.type === type)).find(Boolean);
-    players[seat]!.send({ type: 'intent', stateVersion, action: action ?? legalActions[0]! });
-
-    states = await nextStates(players);
+    const { stateVersion } = states[0];
+    states = await act(players, states);
     states.forEach((state, viewer) => {
       assert.deepEqual(Object.keys(state).sort(), ['legalActions', 'stateVersion', 'type', 'v', 'view']);
       assert.equal(state.stateVersion, stateVersion + 1);
