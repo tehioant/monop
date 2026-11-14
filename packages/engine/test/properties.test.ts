@@ -6,7 +6,9 @@ import { isDeepStrictEqual } from 'node:util';
 import fc from 'fast-check';
 import {
   applyAction,
+  COUNTRIES,
   createGame,
+  getCard,
   IllegalActionError,
   legalActions,
   RULES,
@@ -79,7 +81,7 @@ function cardsIn(value: unknown): CardId[] {
   return [];
 }
 
-test('every card is in exactly one zone', () => {
+test('every card is in exactly one zone, and every laid city in a country it belongs to', () => {
   forAllGames((config, g) => {
     randomGame(config, g, (state) => {
       const { view, hands, tables, discarded } = zones(state);
@@ -92,6 +94,12 @@ test('every card is in exactly one zone', () => {
         hands.map((hand) => hand.length),
       );
       assert.equal(view.discardTop, discarded.at(-1) ?? null);
+      for (const { country, cities } of view.players.flatMap((p) => p.table)) {
+        for (const card of cities.map(getCard)) {
+          if (card.kind === 'wild') assert.ok(card.countries.includes(country));
+          else assert.equal(card.kind === 'city' && card.country, country);
+        }
+      }
     });
   });
 });
@@ -114,6 +122,14 @@ test('actions that are not listed are rejected', () => {
     fc.constantFrom<Action>({ type: 'draw' }, { type: 'endTurn' }),
     fc.record(
       { type: fc.constantFrom('lay', 'bank', 'discard'), card: fc.constantFrom(...ALL_CARDS) },
+      { noNullPrototype: true },
+    ),
+    fc.record(
+      {
+        type: fc.constantFrom('lay', 'reassign'),
+        card: fc.constantFrom(...ALL_CARDS),
+        country: fc.constantFrom(...COUNTRIES.map((country) => country.id)),
+      },
       { noNullPrototype: true },
     ),
     fc.constantFrom<unknown>({ type: 'bank' }, { type: 'draw', card: 'paris' }, { type: 'seize' }, 'draw', null),
