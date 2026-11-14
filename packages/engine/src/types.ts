@@ -39,6 +39,11 @@ export type Phase =
   | { kind: 'draw'; player: PlayerId; remaining: number }
   | { kind: 'play'; player: PlayerId }
   | { kind: 'discard'; player: PlayerId }
+  /**
+   * `player` still owes `owed` coin to `receiver` and pays it card by card from their bank and laid cities.
+   * `queue` lists the players charged next, in order; each will owe `amount`.
+   */
+  | { kind: 'pay'; player: PlayerId; receiver: PlayerId; owed: number; amount: number; queue: PlayerId[] }
   | { kind: 'over'; winner: PlayerId | null };
 
 /** Plain JSON data. Treat as immutable: `applyAction` returns a new state. */
@@ -49,6 +54,8 @@ export interface GameState {
   deck: CardId[];
   /** Top card last. */
   discard: CardId[];
+  /** Face-up cards a turn's draws may be taken from. Refilled from the deck; short only when the cards run out. */
+  market: CardId[];
   players: PlayerState[];
   /** Whose turn it is; survives interrupts, unlike `phase.player`. */
   turn: { player: PlayerId; playsLeft: number };
@@ -57,15 +64,29 @@ export interface GameState {
 }
 
 export type Action =
+  /** Take the top card of the deck. */
   | { type: 'draw' }
+  /** Take a face-up Market card instead; the Market is refilled from the deck at once. */
+  | { type: 'drawMarket'; card: CardId }
   | { type: 'lay'; card: CardId }
+  /**
+   * Play an action card for its effect; the card then goes to the discard pile.
+   * The other fields say what the card is aimed at, and are present only for the cards that need them:
+   * `target` is the chosen opponent (Debt, Raid, Exchange, Seizure); `city` is the city a Raid takes from them;
+   * `give` and `take` are the cities an Exchange swaps (own for theirs); `country` is what a Seizure takes.
+   */
+  | {
+      type: 'play';
+      card: CardId;
+      target?: PlayerId;
+      city?: CardId;
+      give?: CardId;
+      take?: CardId;
+      country?: CountryId;
+    }
   | { type: 'bank'; card: CardId }
-  /** Take `city` from an incomplete country of `target`. */
-  | { type: 'raid'; card: CardId; target: PlayerId; city: CardId }
-  /** Swap own city `give` for `take` of `target`; both come from incomplete countries. */
-  | { type: 'exchange'; card: CardId; target: PlayerId; give: CardId; take: CardId }
-  /** Take the complete `country` of `target`, whole. */
-  | { type: 'seizure'; card: CardId; target: PlayerId; country: CountryId }
+  /** Hands one banked card or laid city to the receiver of the payment in progress. */
+  | { type: 'pay'; card: CardId }
   | { type: 'endTurn' }
   | { type: 'discard'; card: CardId };
 
@@ -73,7 +94,11 @@ export type Action =
  * What happened, in terms every player may see: an entry never names a card that is hidden from someone.
  * So far every action is public as it is; one that carries a hidden choice needs its own entry.
  */
-export type LogEntry = (Action & { player: PlayerId }) | { type: 'gameOver'; winner: PlayerId | null };
+export type LogEntry =
+  | (Action & { player: PlayerId })
+  /** The deck ran out: the discard pile was shuffled into a new deck. Logged before the action that needed a card. */
+  | { type: 'reshuffle' }
+  | { type: 'gameOver'; winner: PlayerId | null };
 
 /** Everything one player may know, and nothing else. Safe to send to that player. */
 export interface PlayerView {
@@ -88,6 +113,7 @@ export interface PlayerView {
   }[];
   deckSize: number;
   discardTop: CardId | null;
+  market: CardId[];
   turn: GameState['turn'];
   /** The pending prompt: who must act, and how. */
   phase: Phase;

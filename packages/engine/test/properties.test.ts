@@ -63,14 +63,17 @@ function deepFreeze<T>(value: T): T {
 /** Where every card is, as far as the views tell: the deck is whatever is in none of these zones. */
 function zones(state: GameState) {
   const view = viewFor(state, 0);
+  // The discard pile is what was discarded since the last reshuffle.
+  let discarded: CardId[] = [];
+  for (const entry of view.log) {
+    if (entry.type === 'reshuffle') discarded = [];
+    else if (entry.type === 'discard' || entry.type === 'play') discarded.push(entry.card);
+  }
   return {
     view,
     hands: view.players.map((_, player) => viewFor(state, player).hand),
     tables: view.players.flatMap((p) => [...p.bank, ...p.table.flatMap((stack) => stack.cities)]),
-    // A card that is neither laid nor banked goes to the discard pile: discarded from hand, or played as an action.
-    discarded: view.log.flatMap((entry) =>
-      'card' in entry && entry.type !== 'lay' && entry.type !== 'bank' ? [entry.card] : [],
-    ),
+    discarded,
   };
 }
 
@@ -87,7 +90,7 @@ test('every card is in exactly one zone', () => {
   forAllGames((config, g) => {
     randomGame(config, g, (state) => {
       const { view, hands, tables, discarded } = zones(state);
-      const visible = [...hands.flat(), ...tables, ...discarded];
+      const visible = [...hands.flat(), ...tables, ...view.market, ...discarded];
       assert.equal(new Set(visible).size, visible.length, 'a card is in two zones');
       assert.ok(visible.every((card) => cardIds.has(card)));
       assert.equal(visible.length + view.deckSize, ALL_CARDS.length, 'a card was lost or created');
@@ -115,14 +118,21 @@ test('every listed legal action applies, and only the awaited player has any', (
 
 test('actions that are not listed are rejected', () => {
   const card = fc.constantFrom(...ALL_CARDS);
-  const target = fc.nat(RULES.playerCounts.at(-1)!);
-  const country = fc.constantFrom(...COUNTRIES.map((c) => c.id));
   const anyAction = fc.oneof(
     fc.constantFrom<Action>({ type: 'draw' }, { type: 'endTurn' }),
-    fc.record({ type: fc.constantFrom('lay', 'bank', 'discard'), card }, { noNullPrototype: true }),
-    fc.record({ type: fc.constant('raid'), card, target, city: card }, { noNullPrototype: true }),
-    fc.record({ type: fc.constant('exchange'), card, target, give: card, take: card }, { noNullPrototype: true }),
-    fc.record({ type: fc.constant('seizure'), card, target, country }, { noNullPrototype: true }),
+    fc.record(
+      {
+        type: fc.constantFrom('drawMarket', 'lay', 'play', 'pay', 'bank', 'discard'),
+        card,
+        target: fc.nat(5),
+        // What a Raid, an Exchange or a Seizure is aimed at.
+        city: card,
+        give: card,
+        take: card,
+        country: fc.constantFrom(...COUNTRIES.map((country) => country.id)),
+      },
+      { noNullPrototype: true, requiredKeys: ['type', 'card'] },
+    ),
     fc.constantFrom<unknown>({ type: 'bank' }, { type: 'draw', card: 'paris' }, { type: 'seize' }, 'draw', null),
   ) as fc.Arbitrary<Action>;
 
@@ -149,10 +159,12 @@ test('games terminate: won exactly when someone completes enough countries, else
       const expected = leaders.includes(view.turn.player) ? view.turn.player : (leaders[0] ?? null);
       assert.equal(view.phase.kind === 'over' ? view.phase.winner : null, expected);
     });
-    // Without a winner, the game only ends when nobody has a card left to play.
+    // Without a winner, the game only ends when nobody has a card left to draw or play.
     const view = viewFor(end, 0);
     if (view.phase.kind === 'over' && view.phase.winner === null) {
       assert.equal(view.deckSize, 0);
+      assert.equal(view.discardTop, null);
+      assert.deepEqual(view.market, []);
       assert.ok(view.players.every((p) => p.handSize === 0));
     }
   });
@@ -161,19 +173,25 @@ test('games terminate: won exactly when someone completes enough countries, else
 test('a view never shows a card from another hand or from the deck', () => {
   forAllGames((config, g) => {
     let logged = 0;
+    let marketBefore: CardId[] = [];
     randomGame(config, g, (state) => {
-      const { hands, tables, discarded } = zones(state);
+      const { view, hands, tables, discarded } = zones(state);
       for (let viewer = 0; viewer < config.players; viewer++) {
-        const known = new Set([...hands[viewer]!, ...tables, ...discarded]);
+        const known = new Set([...hands[viewer]!, ...tables, ...view.market, ...discarded]);
         const { log, ...table } = viewFor(state, viewer);
-        // Log entries are checked when they appear: what they name was public at that time.
-        const shown = [...cardsIn(table), ...cardsIn(log.slice(logged))];
         assert.deepEqual(
-          shown.filter((card) => !known.has(card)),
+          cardsIn(table).filter((card) => !known.has(card)),
+          [],
+        );
+        // Log entries are checked when they appear: what they name was public at that time (a card taken
+        // from the Market) or is public now.
+        assert.deepEqual(
+          cardsIn(log.slice(logged)).filter((card) => !known.has(card) && !marketBefore.includes(card)),
           [],
         );
       }
-      logged = viewFor(state, 0).log.length;
+      logged = view.log.length;
+      marketBefore = view.market;
     });
   });
 });
