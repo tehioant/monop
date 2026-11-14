@@ -13,6 +13,8 @@ export const RULES = {
   levyAmount: 2,
   /** What a Debt charges one chosen opponent. */
   debtAmount: 5,
+  /** What each upgrade attached to a country adds to its toll. */
+  upgradeToll: 3,
   playsPerTurn: 3,
   handLimit: 7,
 };
@@ -68,4 +70,5 @@ export const ACTIONS = [
   { id: 'raid', value: 3, count: 3 },
   { id: 'exchange', value: 3, count: 3 },
   { id: 'seizure', value: 5, count: 2 },
+  { id: 'upgrade', value: 3, count: 3 },
 ] as const;

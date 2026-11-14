@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { isDeepStrictEqual } from 'node:util';
 import { CARDS, createGame, legalActions, viewFor, type Action, type CardId, type GameState } from '../src/index.ts';
-import { act, actor, completeCountries, drawAll, playOut, stack, turn } from './helpers.ts';
+import { act, actor, completeCountries, drawAll, playOut, seat, stack, turn } from './helpers.ts';
 
 /**
  * Seat 0 holds Egypt (complete) and Paris, seat 1 holds Rome. Seat 2 is about to play,
@@ -53,8 +53,8 @@ test('Raid takes one chosen city from an incomplete country of any opponent', ()
 
   game = act(game, { type: 'play', card: 'raid-1', target: 0, city: 'paris' });
   const view = viewFor(game, 0);
-  assert.deepEqual(view.players[0]!.table, [egypt]);
-  assert.deepEqual(view.players[2], {
+  assert.deepEqual(seat(view, 0).table, [egypt]);
+  assert.deepEqual(seat(view, 2), {
     handSize: 5,
     bank: [],
     table: [
@@ -80,8 +80,8 @@ test('Exchange swaps one city each, both from incomplete countries', () => {
 
   const swap: Action = { type: 'play', card: 'exchange-1', target: 0, give: 'sydney', take: 'paris' };
   const view = viewFor(act(game, swap), 1);
-  assert.deepEqual(view.players[0]!.table, [egypt, { country: 'australia', cities: ['sydney'], complete: false }]);
-  assert.deepEqual(view.players[2]!.table, [{ country: 'france', cities: ['paris'], complete: false }]);
+  assert.deepEqual(seat(view, 0).table, [egypt, { country: 'australia', cities: ['sydney'], complete: false }]);
+  assert.deepEqual(seat(view, 2).table, [{ country: 'france', cities: ['paris'], complete: false }]);
 
   // Once Australia is complete its cities cannot be given away.
   assert.deepEqual(plays(act(game, lay('melbourne')), 'exchange-1'), []);
@@ -93,8 +93,8 @@ test('Seizure takes a complete country whole', () => {
   assert.deepEqual(plays(game, 'seizure-1'), [{ type: 'play', card: 'seizure-1', target: 0, country: 'egypt' }]);
 
   const view = viewFor(act(game, { type: 'play', card: 'seizure-1', target: 0, country: 'egypt' }), 0);
-  assert.deepEqual(view.players[0]!.table, [{ country: 'france', cities: ['paris'], complete: false }]);
-  assert.deepEqual(view.players[2]!.table, [egypt]);
+  assert.deepEqual(seat(view, 0).table, [{ country: 'france', cities: ['paris'], complete: false }]);
+  assert.deepEqual(seat(view, 2).table, [egypt]);
 });
 
 test('a wild city that changes hands arrives in the country it was laid as, where its new owner may move it', () => {
@@ -109,11 +109,11 @@ test('a wild city that changes hands arrives in the country it was laid as, wher
     { type: 'lay', card: 'wild-egypt-italy', country: 'italy' },
     { type: 'play', card: 'exchange-1', target: 0, give: 'wild-egypt-italy', take: 'wild-france-usa' },
   );
-  assert.deepEqual(viewFor(game, 0).players[0]!.table, [
+  assert.deepEqual(seat(viewFor(game, 0), 0).table, [
     egypt,
     { country: 'italy', cities: ['wild-egypt-italy'], complete: false },
   ]);
-  assert.deepEqual(viewFor(game, 0).players[1]!.table, [
+  assert.deepEqual(seat(viewFor(game, 0), 1).table, [
     { country: 'france', cities: ['wild-france-usa'], complete: false },
   ]);
   // The taker's turn goes on, so they choose its country at once; the other player will on their own turn.
@@ -123,7 +123,7 @@ test('a wild city that changes hands arrives in the country it was laid as, wher
   );
 
   game = act(game, { type: 'play', card: 'raid-1', target: 0, city: 'wild-egypt-italy' });
-  assert.deepEqual(viewFor(game, 0).players[1]!.table, [
+  assert.deepEqual(seat(viewFor(game, 0), 1).table, [
     { country: 'france', cities: ['wild-france-usa'], complete: false },
     { country: 'italy', cities: ['wild-egypt-italy'], complete: false },
   ]);
@@ -141,8 +141,8 @@ test('a seized country joins the cities the taker already has in it', () => {
     { type: 'play', card: 'seizure-1', target: 0, country: 'egypt' },
   );
   const view = viewFor(game, 0);
-  assert.deepEqual(view.players[0]!.table, []);
-  assert.deepEqual(view.players[1]!.table, [
+  assert.deepEqual(seat(view, 0).table, []);
+  assert.deepEqual(seat(view, 1).table, [
     { country: 'egypt', cities: ['wild-egypt-italy', 'cairo', 'alexandria'], complete: true },
   ]);
 });
