@@ -152,7 +152,6 @@ export function applyAction(state: GameState, player: PlayerId, action: Action):
       remove(me.hand, card.id);
       // A Veto answers a card: it is not one of the turn's plays.
       if (card.action !== 'veto') next.turn.played++;
-      let returns = false;
       switch (card.action) {
         case 'windfall':
           // Extra draws, from the deck only.
@@ -177,19 +176,22 @@ export function applyAction(state: GameState, player: PlayerId, action: Action):
         case 'seizure':
           after = () => hit(next, { take: action }, [action.target!]);
           break;
-        case 'veto':
+        case 'veto': {
           // Perk: the first Veto a player plays in the game goes back to their hand.
-          returns =
+          const returns =
             hasPerk(me, 'vetoReturn') &&
             !next.log.some((entry) => entry.type === 'play' && entry.player === player && isVeto(entry.card));
           after = () => {
-            if (returns) next.log.push({ type: 'return', card: card.id, player });
+            if (returns) {
+              me.hand.push(next.discard.pop()!);
+              next.log.push({ type: 'return', card: card.id, player });
+            }
             answer(next, true);
           };
           break;
+        }
       }
-      // After the effect: a Windfall cannot draw itself back.
-      (returns ? me.hand : next.discard).push(card.id);
+      next.discard.push(card.id); // after the effect: a Windfall cannot draw itself back
       break;
     }
     case 'decline':
@@ -232,6 +234,13 @@ export function viewFor(state: GameState, player: PlayerId): PlayerView {
     bank: p.bank,
     table: p.table.map((stack) => ({ ...stack, complete: isComplete(stack) })),
   }));
+  // A perk is active for the players who hold its country complete.
+  const perks = COUNTRIES.map(({ id, perk }) => ({ country: id, perk, activeFor: [] as PlayerId[] }));
+  players.forEach((p, seat) => {
+    for (const stack of p.table) {
+      if (stack.complete) perks.find((entry) => entry.country === stack.country)!.activeFor.push(seat);
+    }
+  });
   return {
     viewer: player,
     options: state.options,
@@ -240,12 +249,7 @@ export function viewFor(state: GameState, player: PlayerId): PlayerView {
     deckSize: state.deck.length,
     discardTop: state.discard.at(-1) ?? null,
     market: state.market,
-    // A perk is active for the players who hold its country complete.
-    perks: COUNTRIES.map(({ id, perk }) => ({
-      country: id,
-      perk,
-      activeFor: players.flatMap((p, seat) => (p.table.some((s) => s.country === id && s.complete) ? [seat] : [])),
-    })),
+    perks,
     turn: { player: state.turn.player, playsLeft: playsLeft(state) },
     phase: state.phase,
     log: state.log,

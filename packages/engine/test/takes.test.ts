@@ -150,13 +150,13 @@ test('a seized country joins the cities the taker already has in it', () => {
 test('a take that completes the last country needed wins at once, for the player who made it', () => {
   // After three turns each, seat 0 holds Egypt, the UK, Paris, Lyon and Kyoto;
   // seat 1 holds Australia, Italy, Tokyo, Osaka and Marseille, and plays the Exchange last.
-  // Seat 0 draws 3 cards on its second turn (Egypt's perk), seat 1 always 2.
+  // Both complete their two countries on their third turn only, so that no perk changes what they draw.
   const deck = stack(
     [
-      ['cairo', 'alexandria', 'london', 'manchester', 'edinburgh'],
-      ['sydney', 'melbourne', 'rome', 'milan', 'naples'],
+      ['cairo', 'london', 'manchester', 'paris', 'lyon'],
+      ['sydney', 'rome', 'milan', 'tokyo', 'osaka'],
     ],
-    ['paris', 'lyon', 'tokyo', 'osaka', 'kyoto', 'coin-1-1', 'coin-1-2', 'marseille', 'exchange-1'],
+    ['kyoto', 'alexandria', 'marseille', 'melbourne', 'edinburgh', 'coin-1-1', 'naples', 'exchange-1'],
   );
   // Marseille for Kyoto completes a third country on both sides.
   const swap: Action = { type: 'play', card: 'exchange-1', target: 0, give: 'marseille', take: 'kyoto' };

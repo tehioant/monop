@@ -233,8 +233,8 @@ for (const countriesToWin of [3, 5]) {
       .sort((a, b) => a.cities.length - b.cities.length)
       .slice(0, countriesToWin)
       .flatMap((country) => country.cities);
-    // Seat 0 starts with the first 4 cities and a coin it keeps, so that its hand is never empty (an empty hand
-    // draws more). Each round it draws the next 2 cities, and seat 1 draws 2 coins.
+    // Seat 0 starts with the first 4 cities and a coin it keeps, so that its hand is never empty, even with a 4th
+    // play (an empty hand draws more). Each round it draws the next 2 cities, and seat 1 draws 2 coins.
     const [kept, ...spareCoins] = coins;
     const draws = cities.slice(4, 6);
     for (let i = 6; i < cities.length; i += 2) draws.push(...spareCoins.splice(0, 2), ...cities.slice(i, i + 2));

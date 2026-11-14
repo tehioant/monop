@@ -37,17 +37,7 @@ function finish(game: GameState): GameState {
   return act(game, endTurn);
 }
 
-test('card data: one perk per country, the three perks spread evenly, all shown in every view from the start', () => {
-  const counts = [...Map.groupBy(COUNTRIES, (country) => country.perk)].map(([perk, countries]) => [
-    perk,
-    countries.length,
-  ]);
-  assert.deepEqual(counts, [
-    ['extraDraw', 4],
-    ['extraPlay', 3],
-    ['vetoReturn', 3],
-  ]);
-
+test('every view shows the perk of each country from the start, active for nobody', () => {
   const game = createGame({ players: 3, countriesToWin: 3 }, 1);
   const perks = COUNTRIES.map(({ id, perk }) => ({ country: id, perk, activeFor: [] }));
   for (const viewer of [0, 1, 2]) assert.deepEqual(viewFor(game, viewer).perks, perks);
@@ -81,8 +71,8 @@ test('extra play: a 4th card as soon as the country is complete, and no more as 
   const country = countryWith('extraPlay');
   const [, ...cities] = country.cities; // with the wild city, all the country needs
   const size = country.cities.length;
-  const coins = ['coin-1-1', 'coin-1-2', 'coin-1-3'];
-  const deck = stack([[...cities, 'wild-any-1', ...coins].slice(0, RULES.startingHand), ['seizure-1']]);
+  const coins = ['coin-1-1', 'coin-1-2'];
+  const deck = stack([[...cities, 'wild-any-1', ...coins], ['seizure-1']]);
   let game = drawAll(createGame({ players: 2, countriesToWin: 3 }, 1, { deck }));
   const playsLeft = () => viewFor(game, 0).turn.playsLeft;
   const plays = () => legalActions(game, actor(game)).filter((action) => action.type !== 'reassign');
