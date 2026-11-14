@@ -66,7 +66,8 @@ function zones(state: GameState) {
     view,
     hands: view.players.map((_, player) => viewFor(state, player).hand),
     tables: view.players.flatMap((p) => [...p.bank, ...p.table.flatMap((stack) => stack.cities)]),
-    discarded: view.log.flatMap((entry) => (entry.type === 'discard' ? [entry.card] : [])),
+    // Played action cards are discarded too.
+    discarded: view.log.flatMap((entry) => (entry.type === 'discard' || entry.type === 'play' ? [entry.card] : [])),
   };
 }
 
@@ -113,8 +114,12 @@ test('actions that are not listed are rejected', () => {
   const anyAction = fc.oneof(
     fc.constantFrom<Action>({ type: 'draw' }, { type: 'endTurn' }),
     fc.record(
-      { type: fc.constantFrom('lay', 'bank', 'discard'), card: fc.constantFrom(...ALL_CARDS) },
-      { noNullPrototype: true },
+      {
+        type: fc.constantFrom('lay', 'bank', 'discard', 'play', 'pay'),
+        card: fc.constantFrom(...ALL_CARDS),
+        target: fc.nat(5),
+      },
+      { noNullPrototype: true, requiredKeys: ['type', 'card'] },
     ),
     fc.constantFrom<unknown>({ type: 'bank' }, { type: 'draw', card: 'paris' }, { type: 'seize' }, 'draw', null),
   ) as fc.Arbitrary<Action>;
