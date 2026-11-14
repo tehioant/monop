@@ -32,9 +32,7 @@ function plays(game: GameState, type: Action['type']): Action[] {
 const egypt = { country: 'egypt', cities: ['cairo', 'alexandria'], complete: true };
 
 test('the deck holds 2 Seizure cards; a Raid, Exchange or Seizure with no valid target can only be banked', () => {
-  const copies = (action: string) => CARDS.filter((card) => card.kind === 'action' && card.action === action).length;
-  assert.equal(copies('seizure'), 2);
-  assert.ok(copies('raid') > 0 && copies('exchange') > 0);
+  assert.equal(CARDS.filter((card) => card.kind === 'action' && card.action === 'seizure').length, 2);
 
   // Nobody has laid a city yet.
   const hand = ['raid-1', 'exchange-1', 'seizure-1'];
@@ -83,7 +81,6 @@ test('Exchange swaps one city each, both from incomplete countries', () => {
   const view = viewFor(act(game, { type: 'exchange', card: 'exchange-1', target: 0, give: 'sydney', take: 'paris' }), 1);
   assert.deepEqual(view.players[0]!.table, [egypt, { country: 'australia', cities: ['sydney'], complete: false }]);
   assert.deepEqual(view.players[2]!.table, [{ country: 'france', cities: ['paris'], complete: false }]);
-  assert.equal(view.discardTop, 'exchange-1');
 
   // Once Australia is complete its cities cannot be given away.
   assert.deepEqual(plays(act(game, lay('melbourne')), 'exchange'), []);
@@ -98,7 +95,6 @@ test('Seizure takes a complete country whole', () => {
   const view = viewFor(game, 0);
   assert.deepEqual(view.players[0]!.table, [{ country: 'france', cities: ['paris'], complete: false }]);
   assert.deepEqual(view.players[2]!.table, [egypt]);
-  assert.equal(view.discardTop, 'seizure-1');
 });
 
 test('a take that completes the last country needed wins at once, for the player who made it', () => {

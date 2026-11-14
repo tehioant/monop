@@ -60,9 +60,6 @@ function deepFreeze<T>(value: T): T {
   return value;
 }
 
-/** Log entries whose `card` went to the discard pile. */
-const DISCARDING = new Set(['discard', 'raid', 'exchange', 'seizure']);
-
 /** Where every card is, as far as the views tell: the deck is whatever is in none of these zones. */
 function zones(state: GameState) {
   const view = viewFor(state, 0);
@@ -70,8 +67,10 @@ function zones(state: GameState) {
     view,
     hands: view.players.map((_, player) => viewFor(state, player).hand),
     tables: view.players.flatMap((p) => [...p.bank, ...p.table.flatMap((stack) => stack.cities)]),
-    // Discarded from hand, or played as an action.
-    discarded: view.log.flatMap((entry) => (DISCARDING.has(entry.type) && 'card' in entry ? [entry.card] : [])),
+    // A card that is neither laid nor banked goes to the discard pile: discarded from hand, or played as an action.
+    discarded: view.log.flatMap((entry) =>
+      'card' in entry && entry.type !== 'lay' && entry.type !== 'bank' ? [entry.card] : [],
+    ),
   };
 }
 
@@ -146,9 +145,9 @@ test('games terminate: won exactly when someone completes enough countries, else
       const leaders = view.players.flatMap((_, player) =>
         completeCountries(view, player) >= config.countriesToWin ? [player] : [],
       );
-      // An exchange can complete enough countries for both players at once: one of them wins.
-      const winner = view.phase.kind === 'over' ? view.phase.winner : null;
-      assert.ok(winner === null ? leaders.length === 0 : leaders.includes(winner));
+      // An exchange can complete enough countries for both players at once: the one whose turn it is wins.
+      const expected = leaders.includes(view.turn.player) ? view.turn.player : (leaders[0] ?? null);
+      assert.equal(view.phase.kind === 'over' ? view.phase.winner : null, expected);
     });
     // Without a winner, the game only ends when nobody has a card left to play.
     const view = viewFor(end, 0);

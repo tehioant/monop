@@ -97,20 +97,20 @@ export function applyAction(state: GameState, player: PlayerId, action: Action):
       next.turn.playsLeft--;
       break;
     case 'raid':
-      playCard(next, action.card);
+      playCard(next, me, action.card);
       moveCity(next.players[action.target]!, me, action.city);
       break;
     case 'exchange': {
       const them = next.players[action.target]!;
-      playCard(next, action.card);
+      playCard(next, me, action.card);
       moveCity(them, me, action.take);
       moveCity(me, them, action.give);
       break;
     }
     case 'seizure': {
       const them = next.players[action.target]!;
-      playCard(next, action.card);
-      // The stack moves as it is, so whatever is attached to the country goes with it.
+      playCard(next, me, action.card);
+      // The country changes hands as one stack, not city by city.
       const stack = them.table.find((s) => s.country === action.country)!;
       remove(them.table, stack);
       me.table.push(stack);
@@ -158,6 +158,7 @@ export function viewFor(state: GameState, player: PlayerId): PlayerView {
 /** The plays of one Raid, Exchange or Seizure card: one action per valid target, none if there is no target. */
 function takes(state: GameState, player: PlayerId, card: CardId, kind: ActionKind): Action[] {
   const actions: Action[] = [];
+  const mine = looseCities(state.players[player]!);
   state.players.forEach((them, target) => {
     if (target === player) return;
     switch (kind) {
@@ -165,7 +166,7 @@ function takes(state: GameState, player: PlayerId, card: CardId, kind: ActionKin
         for (const city of looseCities(them)) actions.push({ type: 'raid', card, target, city });
         break;
       case 'exchange':
-        for (const give of looseCities(state.players[player]!)) {
+        for (const give of mine) {
           for (const take of looseCities(them)) actions.push({ type: 'exchange', card, target, give, take });
         }
         break;
@@ -184,9 +185,9 @@ function looseCities(player: PlayerState): CardId[] {
   return player.table.flatMap((stack) => (isComplete(stack) ? [] : stack.cities));
 }
 
-/** The turn player plays an action card from hand: it costs a play and goes to the discard pile. */
-function playCard(state: GameState, card: CardId): void {
-  remove(state.players[state.turn.player]!.hand, card);
+/** An action card played from hand costs a play and goes to the discard pile. */
+function playCard(state: GameState, player: PlayerState, card: CardId): void {
+  remove(player.hand, card);
   state.discard.push(card);
   state.turn.playsLeft--;
 }
