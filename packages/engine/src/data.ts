@@ -8,6 +8,7 @@ export const RULES = {
   /** Draws for a player who starts their turn with an empty hand. */
   drawsOnEmptyHand: 4,
   marketSize: 3,
+  windfallDraws: 2,
   playsPerTurn: 3,
   handLimit: 7,
 };
@@ -35,3 +36,6 @@ export const COINS = [
   { value: 5, count: 2 },
   { value: 10, count: 1 },
 ] as const;
+
+/** Action cards: `count` copies of each, worth `value` once banked. */
+export const ACTIONS = [{ id: 'windfall', value: 1, count: 4 }] as const;

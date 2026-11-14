@@ -66,7 +66,7 @@ function zones(state: GameState) {
   let discarded: CardId[] = [];
   for (const entry of view.log) {
     if (entry.type === 'reshuffle') discarded = [];
-    else if (entry.type === 'discard') discarded.push(entry.card);
+    else if (entry.type === 'discard' || entry.type === 'play') discarded.push(entry.card);
   }
   return {
     view,
@@ -119,7 +119,7 @@ test('actions that are not listed are rejected', () => {
   const anyAction = fc.oneof(
     fc.constantFrom<Action>({ type: 'draw' }, { type: 'endTurn' }),
     fc.record(
-      { type: fc.constantFrom('drawMarket', 'lay', 'bank', 'discard'), card: fc.constantFrom(...ALL_CARDS) },
+      { type: fc.constantFrom('drawMarket', 'lay', 'play', 'bank', 'discard'), card: fc.constantFrom(...ALL_CARDS) },
       { noNullPrototype: true },
     ),
     fc.constantFrom<unknown>({ type: 'bank' }, { type: 'draw', card: 'paris' }, { type: 'seize' }, 'draw', null),

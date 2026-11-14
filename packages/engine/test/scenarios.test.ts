@@ -179,16 +179,52 @@ test('an empty deck is rebuilt by shuffling the discard pile, the same way for t
   assert.notDeepEqual(drawsAfterReshuffle(1), drawsAfterReshuffle(2));
 });
 
+test('Windfall draws 2 extra cards from the deck and counts as one of the plays', () => {
+  const deck = stack([['windfall-1'], []], ['lyon', 'rome', 'milan', 'naples']);
+  let game = drawAll(createGame({ players: 2, countriesToWin: 3 }, 1, { deck }));
+  const { market, deckSize } = viewFor(game, 0);
+  // Like any card it can be banked instead; it cannot be laid.
+  assert.deepEqual(
+    legalActions(game, 0).filter((a) => 'card' in a && a.card === 'windfall-1'),
+    [
+      { type: 'play', card: 'windfall-1' },
+      { type: 'bank', card: 'windfall-1' },
+    ],
+  );
+
+  game = act(game, { type: 'play', card: 'windfall-1' });
+  const view = viewFor(game, 1);
+  assert.deepEqual(viewFor(game, 0).hand.slice(-2), ['milan', 'naples']);
+  assert.equal(view.players[0]!.handSize, 8);
+  assert.equal(view.deckSize, deckSize - 2);
+  assert.deepEqual(view.market, market);
+  assert.equal(view.discardTop, 'windfall-1');
+  assert.deepEqual(view.turn, { player: 0, playsLeft: 2 });
+  assert.deepEqual(view.phase, { kind: 'play', player: 0 });
+  assert.deepEqual(view.log.at(-1), { type: 'play', player: 0, card: 'windfall-1' });
+});
+
 test('with the deck and the discard pile both empty, a player draws what is available', () => {
   // One card beyond the hands: it is the whole Market, and the deck is empty.
-  let game = createGame({ players: 2, countriesToWin: 3 }, 1, { deck: stack([[], []]).slice(0, 2 * 5 + 1) });
+  const deck = stack([['windfall-1'], []]).slice(0, 2 * 5 + 1);
+  let game = createGame({ players: 2, countriesToWin: 3 }, 1, { deck });
   const [card] = viewFor(game, 0).market;
   assert.deepEqual(viewFor(game, 0).phase, { kind: 'draw', player: 0, remaining: 1 });
   assert.deepEqual(legalActions(game, 0), [{ type: 'drawMarket', card }]);
 
-  game = act(game, { type: 'drawMarket', card: card! }, { type: 'endTurn' });
-  assert.deepEqual(viewFor(game, 0).market, []);
-  assert.deepEqual(viewFor(game, 0).phase, { kind: 'play', player: 1 }); // nothing left to draw
+  // A Windfall with nothing to draw is still a play.
+  game = act(game, { type: 'drawMarket', card: card! }, { type: 'play', card: 'windfall-1' });
+  let view = viewFor(game, 0);
+  assert.equal(view.hand.length, 5);
+  assert.equal(view.turn.playsLeft, 2);
+  assert.deepEqual([view.market, view.deckSize, view.discardTop], [[], 0, 'windfall-1']);
+
+  // The discarded Windfall is now the only card left to draw.
+  game = act(game, { type: 'endTurn' });
+  assert.deepEqual(viewFor(game, 0).phase, { kind: 'draw', player: 1, remaining: 1 });
+  view = viewFor(act(game, { type: 'draw' }), 1);
+  assert.equal(view.hand.at(-1), 'windfall-1');
+  assert.deepEqual(view.phase, { kind: 'play', player: 1 });
 });
 
 for (const countriesToWin of [3, 5]) {

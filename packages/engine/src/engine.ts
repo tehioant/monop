@@ -68,7 +68,9 @@ export function legalActions(state: GameState, player: PlayerId): Action[] {
       const actions: Action[] = [];
       if (state.turn.playsLeft > 0) {
         for (const card of hand) {
-          if (getCard(card).kind === 'city') actions.push({ type: 'lay', card });
+          const { kind } = getCard(card);
+          if (kind === 'city') actions.push({ type: 'lay', card });
+          if (kind === 'action') actions.push({ type: 'play', card });
           actions.push({ type: 'bank', card });
         }
       }
@@ -112,6 +114,16 @@ export function applyAction(state: GameState, player: PlayerId, action: Action):
       next.turn.playsLeft--;
       break;
     }
+    case 'play':
+      // Windfall, the only action card so far: extra draws, from the deck only.
+      remove(me.hand, action.card);
+      for (let i = 0; i < RULES.windfallDraws; i++) {
+        const card = drawCard(next);
+        if (card) me.hand.push(card);
+      }
+      next.discard.push(action.card);
+      next.turn.playsLeft--;
+      break;
     case 'bank':
       remove(me.hand, action.card);
       me.bank.push(action.card);

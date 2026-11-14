@@ -64,6 +64,8 @@ export type Action =
   /** Take a face-up Market card instead; the Market is refilled from the deck at once. */
   | { type: 'drawMarket'; card: CardId }
   | { type: 'lay'; card: CardId }
+  /** Play an action card for its effect; the card then goes to the discard pile. */
+  | { type: 'play'; card: CardId }
   | { type: 'bank'; card: CardId }
   | { type: 'endTurn' }
   | { type: 'discard'; card: CardId };

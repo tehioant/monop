@@ -61,7 +61,9 @@ export function playOut(
  */
 export function stack(hands: CardId[][], draws: CardId[] = [], market: CardId[] = []): CardId[] {
   const named = new Set([...hands.flat(), ...draws, ...market]);
-  const spare = ALL_CARDS.filter((card) => !named.has(card)).reverse();
+  const spare = CARDS.filter((card) => !named.has(card.id))
+    .sort((a, b) => Number(b.kind === 'coin') - Number(a.kind === 'coin'))
+    .map((card) => card.id);
   const dealt = hands.flatMap((hand) => [...hand, ...spare.splice(0, RULES.startingHand - hand.length)]);
   return [...dealt, ...market, ...spare.splice(0, RULES.marketSize - market.length), ...draws, ...spare];
 }
