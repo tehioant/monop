@@ -2,7 +2,17 @@ import assert from 'node:assert/strict';
 import { after, before, test } from 'node:test';
 import { applyAction, viewFor } from '@atlas/engine';
 import { PROTOCOL_VERSION as v } from '../src/protocol.ts';
-import { act, Client, deck, newGame, nextStates, startTestServer, type Players, type TestServer } from './helpers.ts';
+import {
+  act,
+  Client,
+  deck,
+  newGame,
+  nextStates,
+  person,
+  startTestServer,
+  type Players,
+  type TestServer,
+} from './helpers.ts';
 
 let server: TestServer;
 const clients: Client[] = [];
@@ -69,13 +79,13 @@ test('a guest creates a private room, another joins by its code, and the host st
   host.send({ type: 'createRoom', countriesToWin: 3 });
   const room = await host.next('room');
   assert.match(room.code, /^[A-Z]{5}$/);
-  assert.deepEqual(room, { v, type: 'room', code: room.code, countriesToWin: 3, players: [{ name: 'Ada' }], you: 0 });
+  assert.deepEqual(room, { v, type: 'room', code: room.code, countriesToWin: 3, players: [person('Ada')], you: 0 });
 
   host.send({ type: 'startGame' });
   assert.equal((await host.next('error')).code, 'not_enough_players');
 
   friend.send({ type: 'joinRoom', code: room.code });
-  const lobby = { ...room, players: [{ name: 'Ada' }, { name: 'Bo' }] };
+  const lobby = { ...room, players: [person('Ada'), person('Bo')] };
   assert.deepEqual(await host.next('room'), lobby);
   assert.deepEqual(await friend.next('room'), { ...lobby, you: 1 });
 

@@ -1,5 +1,6 @@
 import { randomInt } from 'node:crypto';
 import { isDeepStrictEqual } from 'node:util';
+import type { Bot } from '@atlas/bots';
 import {
   applyAction,
   legalActions,
@@ -11,9 +12,9 @@ import {
 } from '@atlas/engine';
 import type { ErrorCode, ServerMessage } from './protocol.ts';
 
-/** Who holds a seat: an account id and the display name it plays under. */
+/** Who holds a seat: an account id, or null for a bot, and the display name it plays under. */
 export interface Player {
-  account: string;
+  account: string | null;
   name: string;
 }
 
@@ -82,18 +83,31 @@ const MAX_SEATS = Math.max(...RULES.playerCounts);
  */
 export class Rooms {
   #newGame: (options: GameOptions) => GameState;
+  #bot: Bot;
   #store: RoomStore;
   #byCode = new Map<string, Room>();
   /** The room of every connected member. */
   #byMember = new Map<Member, Room>();
 
-  /** `snapshots` are the rooms to start with, each as it was last saved, with nobody connected. */
-  constructor(newGame: (options: GameOptions) => GameState, store: RoomStore, snapshots: Snapshot[] = []) {
+  /**
+   * `bot` plays the bot seats. `snapshots` are the rooms to start with, each as it was last saved, with nobody
+   * connected.
+   */
+  constructor(
+    newGame: (options: GameOptions) => GameState,
+    bot: Bot,
+    store: RoomStore,
+    snapshots: Snapshot[] = [],
+  ) {
     this.#newGame = newGame;
+    this.#bot = bot;
     this.#store = store;
     for (const { code, countriesToWin, players, startedAt, stateVersion, game } of snapshots) {
       const members = players.map((player) => ({ ...player, send() {} }));
-      this.#byCode.set(code, { code, countriesToWin, members, game, stateVersion, startedAt: startedAt.getTime() });
+      const room = { code, countriesToWin, members, game, stateVersion, startedAt: startedAt.getTime() };
+      this.#byCode.set(code, room);
+      // A game saved at the start of a bot's turn has nobody else to move it on.
+      this.#playBots(room);
     }
   }
 
@@ -106,6 +120,8 @@ export class Rooms {
       if (!room.game || isOver(room.game)) continue;
       const seat = room.members.findIndex((held) => held.account === member.account && !this.#byMember.has(held));
       if (seat < 0) continue;
+      // Like the seats, the names of a game are final once it has started.
+      member.name = room.members[seat]!.name;
       room.members[seat] = member;
       this.#byMember.set(member, room);
       member.send(lobbyFor(room, seat));
@@ -136,16 +152,38 @@ export class Rooms {
     this.#seat(room, member);
   }
 
+  /** The host seats a bot in their lobby. */
+  addBot(member: Member): void {
+    const room = this.#hostedLobby(member);
+    if (room.members.length >= MAX_SEATS) throw new Rejection('room_full', 'The room is full');
+    const taken = new Set(room.members.map(({ name }) => name));
+    let number = 1;
+    while (taken.has(`Bot ${number}`)) number++;
+    room.members.push({ account: null, name: `Bot ${number}`, send() {} });
+    sendLobby(room);
+  }
+
+  /** The host empties a seat of their lobby other than their own: its player is told, and is in no room any more. */
+  remove(member: Member, seat: unknown): void {
+    const room = this.#hostedLobby(member);
+    if (typeof seat !== 'number' || seat < 1 || !room.members[seat]) {
+      throw new Rejection('bad_message', 'No such seat to empty');
+    }
+    const [removed] = room.members.splice(seat, 1);
+    this.#byMember.delete(removed!);
+    removed!.send({ type: 'removed' });
+    sendLobby(room);
+  }
+
   start(member: Member): void {
-    const room = this.#roomOf(member);
-    if (room.game) throw new Rejection('game_started', 'The game has already started');
-    if (room.members[0] !== member) throw new Rejection('not_host', 'Only the host starts the game');
+    const room = this.#hostedLobby(member);
     const players = room.members.length;
     if (!RULES.playerCounts.includes(players)) {
       throw new Rejection('not_enough_players', `A game needs at least ${Math.min(...RULES.playerCounts)} players`);
     }
     room.startedAt = Date.now();
     this.#advance(room, this.#newGame({ players, countriesToWin: room.countriesToWin }));
+    this.#playBots(room);
   }
 
   /** Applies `action` for the member's seat if it is one of the engine's legal actions for the current state. */
@@ -160,6 +198,7 @@ export class Rooms {
     const legal = legalActions(room.game, seat).find((candidate) => isDeepStrictEqual(candidate, action));
     if (!legal) throw new Rejection('illegal_action', 'Not a legal action for this player now');
     this.#advance(room, applyAction(room.game, seat, legal));
+    this.#playBots(room);
   }
 
   /**
@@ -172,6 +211,9 @@ export class Rooms {
     this.#byMember.delete(member);
     if (!room.game) {
       room.members.splice(room.members.indexOf(member), 1);
+      // The host's seat goes to the next person, never to a bot.
+      const host = room.members.findIndex(isPerson);
+      if (host > 0) room.members.unshift(...room.members.splice(host, 1));
       sendLobby(room);
     }
     const inProgress = room.game && !isOver(room.game);
@@ -199,6 +241,19 @@ export class Rooms {
     }
   }
 
+  /**
+   * Plays the bots in the room's seats, one action after the other, until the game waits on a person or is over.
+   * A bot is given what a player in its seat would be given: that seat's view and legal actions.
+   */
+  #playBots(room: Room): void {
+    for (let game = room.game!; game.phase.kind !== 'over'; game = room.game!) {
+      const seat = game.phase.player;
+      if (isPerson(room.members[seat]!)) return;
+      const action = this.#bot(viewFor(game, seat), legalActions(game, seat));
+      this.#advance(room, applyAction(game, seat, action));
+    }
+  }
+
   #seat(room: Room, member: Member): void {
     room.members.push(member);
     this.#byMember.set(member, room);
@@ -211,9 +266,21 @@ export class Rooms {
     return room;
   }
 
+  /** The room of the member, who must be its host and still in the lobby. */
+  #hostedLobby(member: Member): Room {
+    const room = this.#roomOf(member);
+    if (room.game) throw new Rejection('game_started', 'The game has already started');
+    if (room.members[0] !== member) throw new Rejection('not_host', 'Only the host can do this');
+    return room;
+  }
+
   #requireNoRoom(member: Member): void {
     if (this.#byMember.has(member)) throw new Rejection('bad_message', 'Already in a room');
   }
+}
+
+function isPerson(player: Player): boolean {
+  return player.account !== null;
 }
 
 function isOver(game: GameState): boolean {
@@ -225,7 +292,7 @@ function sendLobby(room: Room): void {
 }
 
 function lobbyFor(room: Room, you: PlayerId): ServerMessage {
-  const players = room.members.map(({ name }) => ({ name }));
+  const players = room.members.map((member) => ({ name: member.name, bot: !isPerson(member) }));
   return { type: 'room', code: room.code, countriesToWin: room.countriesToWin, players, you };
 }
 

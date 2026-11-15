@@ -59,6 +59,11 @@ export async function findAccount(sql: Sql, token: string): Promise<{ id: string
   return account;
 }
 
+/** The account plays under `name` from now on. */
+export async function renameAccount(sql: Sql, id: string, name: string): Promise<void> {
+  await sql`update accounts set name = ${name} where id = ${id}`;
+}
+
 /** Saves a room over its previous snapshot. The players and the start time of a room never change. */
 export async function saveSnapshot(sql: Sql, snapshot: Snapshot): Promise<void> {
   const { code, countriesToWin, players, startedAt, stateVersion, game } = snapshot;

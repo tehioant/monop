@@ -1,11 +1,21 @@
 import { randomInt } from 'node:crypto';
 import type { AddressInfo } from 'node:net';
 import websocket from '@fastify/websocket';
+import { createBot, type Bot, type Difficulty } from '@atlas/bots';
 import { createGame, type GameOptions, type GameState } from '@atlas/engine';
 import Fastify from 'fastify';
 import type { WebSocket } from 'ws';
-import { createAccount, findAccount, finishGame, loadSnapshots, openDatabase, saveSnapshot, type Sql } from './db.ts';
-import { PROTOCOL_VERSION, type ServerMessage } from './protocol.ts';
+import {
+  createAccount,
+  findAccount,
+  finishGame,
+  loadSnapshots,
+  openDatabase,
+  renameAccount,
+  saveSnapshot,
+  type Sql,
+} from './db.ts';
+import { MAX_NAME_LENGTH, PROTOCOL_VERSION, type ServerMessage } from './protocol.ts';
 import { Rejection, Rooms, type Member } from './rooms.ts';
 
 export interface ServerOptions {
@@ -15,6 +25,8 @@ export interface ServerOptions {
   host: string;
   /** How a room's game is created. Defaults to a randomly seeded game; scripted games pass their own. */
   newGame?: (options: GameOptions) => GameState;
+  /** Who plays the bot seats. Defaults to bots of level `BOT_LEVEL`, seeded at random; scripted games pass their own. */
+  bot?: Bot;
 }
 
 export interface Server {
@@ -22,7 +34,8 @@ export interface Server {
   close(): Promise<void>;
 }
 
-const MAX_NAME_LENGTH = 20;
+/** The level of the bots a host seats: the middle one, as a solo game starts with. */
+const BOT_LEVEL: Difficulty = 'normal';
 const MAX_MESSAGE_BYTES = 16 * 1024;
 
 /**
@@ -40,6 +53,8 @@ export async function startServer(options: ServerOptions): Promise<Server> {
   };
   const rooms = new Rooms(
     options.newGame ?? ((gameOptions) => createGame(gameOptions, randomInt(2 ** 32))),
+    // A bot keeps nothing from one decision to the next, so one is made for each, with its own seed.
+    options.bot ?? ((view, legal) => createBot(BOT_LEVEL, randomInt(2 ** 32))(view, legal)),
     {
       save: (snapshot) => write(() => saveSnapshot(sql, snapshot)),
       finish: (code, summary) => write(() => finishGame(sql, code, summary)),
@@ -72,13 +87,15 @@ function serve(socket: WebSocket, sql: Sql, rooms: Rooms): void {
 
   const hello = async (token: unknown, name: unknown): Promise<void> => {
     if (member) throw new Rejection('bad_message', 'Already said hello');
+    const wanted = typeof name === 'string' ? name.trim().slice(0, MAX_NAME_LENGTH) : '';
     let account: { id: string; token: string; name: string };
     if (typeof token === 'string') {
       const known = await findAccount(sql, token);
       if (!known) throw new Rejection('invalid_token', 'Unknown token');
-      account = { token, ...known };
+      if (wanted && wanted !== known.name) await renameAccount(sql, known.id, wanted);
+      account = { token, id: known.id, name: wanted || known.name };
     } else {
-      const guest = typeof name === 'string' && name.trim() ? name.trim().slice(0, MAX_NAME_LENGTH) : 'Guest';
+      const guest = wanted || 'Guest';
       account = { name: guest, ...(await createAccount(sql, guest)) };
     }
     member = { account: account.id, name: account.name, send };
@@ -95,6 +112,10 @@ function serve(socket: WebSocket, sql: Sql, rooms: Rooms): void {
         return rooms.create(member, message.countriesToWin);
       case 'joinRoom':
         return rooms.join(member, message.code);
+      case 'addBot':
+        return rooms.addBot(member);
+      case 'removePlayer':
+        return rooms.remove(member, message.seat);
       case 'startGame':
         return rooms.start(member);
       case 'intent':
