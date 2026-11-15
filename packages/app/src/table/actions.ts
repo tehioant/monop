@@ -147,6 +147,12 @@ export function promptText(view: PlayerView, names: readonly string[]): string {
   return `Your move: ${words(kind).toLowerCase()}${details(rest, names)}`;
 }
 
+/** Every card the viewer can see on the table: their hand, the Market, the discard top, every bank and country. */
+export function shownCards(view: PlayerView): Set<CardId> {
+  const laid = view.players.flatMap(({ bank, table }) => [...bank, ...table.flatMap((stack) => [...stack.cities, ...stack.upgrades])]);
+  return new Set([...view.hand, ...view.market, ...laid, ...(view.discardTop === null ? [] : [view.discardTop])]);
+}
+
 export interface ActionGroups {
   /** Actions that use a card the viewer can tap: in their hand, in the Market, in their bank or laid by them. */
   byCard: Map<CardId, Action[]>;

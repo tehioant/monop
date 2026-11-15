@@ -8,17 +8,18 @@ import { colors, countryColor } from './theme.ts';
 
 type Stack = PlayerView['players'][number]['table'][number];
 
-/** A card the table draws. Dimmed and inert without `onPress`. */
+/** A card the table draws. `dimmed` says that nothing can be done with it now; it is inert without `onPress`. */
 export interface Tappable {
   id: CardId;
   selected?: boolean;
+  dimmed?: boolean;
   onPress?: () => void;
 }
 
 export const CARD_HEIGHT = 96;
 
 /** A card drawn from its data. */
-export function CardView({ id, selected, onPress }: Tappable) {
+export function CardView({ id, selected, dimmed, onPress }: Tappable) {
   const { name, kind, value, country } = cardInfo(id);
   const perk = country && countryPerk(country);
   const band = country ? countryColor(country) : kind === 'coin' ? colors.coin : colors.action;
@@ -27,7 +28,7 @@ export function CardView({ id, selected, onPress }: Tappable) {
       onPress={onPress}
       disabled={!onPress}
       accessibilityLabel={name}
-      style={[styles.card, selected && styles.cardSelected, !onPress && styles.dimmed]}
+      style={[styles.card, selected && styles.cardSelected, dimmed && styles.dimmed]}
     >
       <View style={[styles.cardBand, { backgroundColor: band }]}>
         <Text style={styles.cardBandText} numberOfLines={1}>
@@ -72,12 +73,24 @@ export function CountryView({ stack, detail, active }: { stack: Stack; detail?: 
 }
 
 /** A card on the table, by name only. `color` outlines it: the country it is laid in. */
-export function Chip({ id, selected, onPress, color }: Tappable & { color?: string }) {
-  return <Choice label={cardInfo(id).name} picked={selected} onPress={onPress} color={color} />;
+export function Chip({ id, selected, dimmed, onPress, color }: Tappable & { color?: string }) {
+  return <Choice label={cardInfo(id).name} picked={selected} dimmed={dimmed ?? false} onPress={onPress} color={color} />;
 }
 
-/** Something to pick, by its label. Dimmed and inert without `onPress`. */
-export function Choice({ label, picked, onPress, color }: { label: string; picked?: boolean; onPress?: () => void; color?: string }) {
+/** Something to pick, by its label. Inert without `onPress`, and dimmed then unless `dimmed` says otherwise. */
+export function Choice({
+  label,
+  picked,
+  onPress,
+  color,
+  dimmed = !onPress,
+}: {
+  label: string;
+  picked?: boolean;
+  onPress?: () => void;
+  color?: string;
+  dimmed?: boolean;
+}) {
   return (
     <Pressable
       onPress={onPress}
@@ -86,7 +99,7 @@ export function Choice({ label, picked, onPress, color }: { label: string; picke
         styles.chip,
         color !== undefined && { borderColor: color },
         picked && styles.chipSelected,
-        !onPress && styles.dimmed,
+        dimmed && styles.dimmed,
       ]}
     >
       <Text style={styles.chipText}>{label}</Text>

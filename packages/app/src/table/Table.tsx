@@ -3,10 +3,10 @@
 
 import type { Action, CardId, PlayerView } from '@atlas/engine';
 import { Fragment, useEffect, useState } from 'react';
-import { ScrollView, StyleSheet, Text, View } from 'react-native';
-import { actionLabel, bankTotal, cardInfo, completeCount, groupActions, logLine, promptText } from './actions.ts';
+import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { actionLabel, bankTotal, completeCount, groupActions, logLine, promptText, shownCards } from './actions.ts';
 import { Button, CARD_HEIGHT, CardView, Chip, CountryView, Panel, shared, type Tappable } from './parts.tsx';
-import { CardPanel, PayPanel, VetoPanel } from './Prompt.tsx';
+import { CardPanel, CardText, PayPanel, VetoPanel } from './Prompt.tsx';
 import { cardPrompt, payPrompt, togglePay, vetoPrompt, type PayPrompt, type Picks } from './prompts.ts';
 import { colors, countryColor } from './theme.ts';
 
@@ -26,6 +26,7 @@ const LOG_ENTRIES = 4;
 interface Selection {
   /** The length of the log the picks were made at: they are void as soon as anything happens in the game. */
   at: number;
+  /** The card tapped last. Its text stays up for as long as the card is on the table, whatever happens in the game. */
   card: CardId | null;
   /** The targets picked for `card`. */
   picks: Picks;
@@ -39,8 +40,12 @@ export function Table({ view, legal, names, onAction }: TableProps) {
   const [selection, setSelection] = useState<Selection>({ ...NOTHING, at: 0 });
   /** Confirmed payments still to send. */
   const [queue, setQueue] = useState<CardId[]>([]);
+  /** The opponents whose area is expanded. */
+  const [expanded, setExpanded] = useState<readonly number[]>([]);
   const now = view.log.length;
-  const { card: selected, picks, paying } = selection.at === now ? selection : NOTHING;
+  const fresh = selection.at === now;
+  const { picks, paying } = fresh ? selection : NOTHING;
+  const selected = selection.card !== null && shownCards(view).has(selection.card) ? selection.card : null;
   const select = (change: Partial<Selection>) => setSelection({ card: selected, picks, paying, ...change, at: now });
   /** Sends an action; what was picked for it has served. */
   const send = (action: Action) => {
@@ -49,10 +54,10 @@ export function Table({ view, legal, names, onAction }: TableProps) {
   };
 
   const { byCard, general } = groupActions(view, legal);
-  const selectedActions = selected === null ? undefined : byCard.get(selected);
   const pay = payPrompt(view, legal, paying, names);
+  // The selected card is offered to play only if it was tapped in this very state of the game, and nothing is owed.
+  const selectedActions = selected !== null && fresh && !pay ? byCard.get(selected) : undefined;
   const veto = vetoPrompt(view, legal, names);
-  const me = view.players[view.viewer]!;
   const opponents = view.players.map((_, i) => (view.viewer + i) % view.players.length).slice(1);
   const waitingOn = view.phase.kind === 'over' ? null : view.phase.player;
 
@@ -69,23 +74,54 @@ export function Table({ view, legal, names, onAction }: TableProps) {
     if (first) send(first);
   };
 
-  /** A card of the viewer's or of the Market: it can be tapped exactly when it has a legal action. */
+  /** Any card on the table: a tap shows its text, a second tap puts it away. */
+  const readable = (id: CardId): Tappable => ({
+    id,
+    selected: id === selected,
+    // A card whose text stayed up while the game moved on is selected anew by a tap, to be played.
+    onPress: () => select({ card: id === selected && (selectedActions || !byCard.has(id)) ? null : id, picks: {} }),
+  });
+  /** A card of the viewer's or of the Market: dimmed unless it has a legal action, which a tap then offers. */
   const tappable = (id: CardId): Tappable => {
-    if (queue.length > 0) return { id };
-    // While the viewer owes, their cards are picked to pay with, and none is selected for anything else.
-    if (pay) {
-      const card = pay.cards.find((payable) => payable.key === id);
-      const onPress = card && !card.disabled ? () => select({ paying: togglePay(pay, paying, id) }) : undefined;
-      return { id, selected: card?.picked, onPress };
+    // While the viewer owes, a tap on a card they can pay with picks it too; not once the payment is on its way.
+    const payable = pay?.cards.find((card) => card.key === id);
+    if (pay && payable && queue.length === 0) {
+      const picked = payable.disabled ? paying : togglePay(pay, paying, id);
+      return { id, selected: payable.picked, dimmed: payable.disabled, onPress: () => select({ card: id, paying: picked }) };
     }
-    return {
-      id,
-      selected: selectedActions !== undefined && id === selected,
-      onPress: byCard.has(id) ? () => select({ card: id === selected ? null : id, picks: {} }) : undefined,
-    };
+    return { ...readable(id), dimmed: pay !== null || queue.length > 0 || !byCard.has(id) };
   };
   const perkActive = (seat: number, country: string) =>
     view.perks.some((perk) => perk.country === country && perk.activeFor.includes(seat));
+
+  /** What a player has on the table, card by card: each country with its cities and upgrades, then the bank. */
+  const holdings = (seat: number, card: (id: CardId) => Tappable) => {
+    const { table, bank } = view.players[seat]!;
+    return (
+      <>
+        {table.length > 0 && (
+          <View style={shared.wrap}>
+            {/* Each country, then its cards, in one flat row that wraps: a country never splits oddly. */}
+            {table.map((stack) => (
+              <Fragment key={stack.country}>
+                <CountryView stack={stack} active={perkActive(seat, stack.country)} />
+                {[...stack.cities, ...stack.upgrades].map((id) => (
+                  <Chip key={id} {...card(id)} color={countryColor(stack.country)} />
+                ))}
+              </Fragment>
+            ))}
+          </View>
+        )}
+        {bank.length > 0 && (
+          <View style={shared.wrap}>
+            {bank.map((id) => (
+              <Chip key={id} {...card(id)} />
+            ))}
+          </View>
+        )}
+      </>
+    );
+  };
 
   /** What is asked of the viewer under their hand: a payment, the targets of the selected card, a Veto, or buttons. */
   const prompt = () => {
@@ -100,10 +136,10 @@ export function Table({ view, legal, names, onAction }: TableProps) {
         />
       );
     }
-    if (selected !== null && selectedActions) {
+    if (selectedActions) {
       return (
         <CardPanel
-          prompt={cardPrompt(view, selected, selectedActions, picks, names)}
+          prompt={cardPrompt(view, selectedActions, picks, names)}
           names={names}
           onPick={(slot, key) => select({ picks: { ...picks, [slot]: key } })}
           onAction={send}
@@ -126,9 +162,12 @@ export function Table({ view, legal, names, onAction }: TableProps) {
       <ScrollView style={styles.scroll} contentContainerStyle={styles.board}>
         <View style={styles.row}>
           <Text style={styles.target}>First to {view.options.countriesToWin} countries</Text>
-          <Text style={shared.small}>
-            Deck {view.deckSize} · Discard {view.discardTop === null ? 'empty' : cardInfo(view.discardTop).name}
-          </Text>
+          <View style={styles.piles}>
+            <Text style={shared.small}>
+              Deck {view.deckSize} · Discard{view.discardTop === null ? ' empty' : ''}
+            </Text>
+            {view.discardTop !== null && <Chip {...readable(view.discardTop)} />}
+          </View>
         </View>
 
         <View style={styles.middle}>
@@ -149,24 +188,38 @@ export function Table({ view, legal, names, onAction }: TableProps) {
           </View>
         </View>
 
+        {/* An opponent is a summary; a tap expands it to their exact cities and bank, another folds it back. */}
         {opponents.map((seat) => {
           const player = view.players[seat]!;
+          const open = expanded.includes(seat);
           return (
-            <Panel key={seat} highlighted={seat === waitingOn}>
-              <View style={styles.row}>
-                <Text style={shared.name}>{names[seat]}</Text>
-                <Text style={shared.small}>
-                  Hand {player.handSize} · Bank {bankTotal(player.bank)} · {countries(view, seat)}
-                </Text>
-              </View>
-              {player.table.length > 0 && (
-                <View style={shared.wrap}>
-                  {player.table.map((stack) => (
-                    <CountryView key={stack.country} stack={stack} active={perkActive(seat, stack.country)} />
-                  ))}
+            <Pressable
+              key={seat}
+              accessibilityLabel={`${names[seat]}: ${open ? 'hide' : 'show'} cities and bank`}
+              onPress={() => setExpanded(open ? expanded.filter((other) => other !== seat) : [...expanded, seat])}
+            >
+              <Panel highlighted={seat === waitingOn}>
+                <View style={styles.row}>
+                  <Text style={shared.name}>
+                    {open ? '▾' : '▸'} {names[seat]}
+                  </Text>
+                  <Text style={shared.small}>
+                    Hand {player.handSize} · Bank {bankTotal(player.bank)} · {countries(view, seat)}
+                  </Text>
                 </View>
-              )}
-            </Panel>
+                {open && holdings(seat, readable)}
+                {open && player.table.length + player.bank.length === 0 && (
+                  <Text style={shared.small}>No city laid, nothing banked</Text>
+                )}
+                {!open && player.table.length > 0 && (
+                  <View style={shared.wrap}>
+                    {player.table.map((stack) => (
+                      <CountryView key={stack.country} stack={stack} active={perkActive(seat, stack.country)} />
+                    ))}
+                  </View>
+                )}
+              </Panel>
+            </Pressable>
           );
         })}
       </ScrollView>
@@ -175,29 +228,10 @@ export function Table({ view, legal, names, onAction }: TableProps) {
         <View style={styles.row}>
           <Text style={shared.name}>{names[view.viewer]}</Text>
           <Text style={shared.small}>
-            Bank {bankTotal(me.bank)} · {countries(view, view.viewer)}
+            Bank {bankTotal(view.players[view.viewer]!.bank)} · {countries(view, view.viewer)}
           </Text>
         </View>
-        {me.table.length > 0 && (
-          <View style={shared.wrap}>
-            {/* Each country, then its cities, in one flat row that wraps: a country never splits oddly. */}
-            {me.table.map((stack) => (
-              <Fragment key={stack.country}>
-                <CountryView stack={stack} active={perkActive(view.viewer, stack.country)} />
-                {stack.cities.map((id) => (
-                  <Chip key={id} {...tappable(id)} color={countryColor(stack.country)} />
-                ))}
-              </Fragment>
-            ))}
-          </View>
-        )}
-        {me.bank.length > 0 && (
-          <View style={shared.wrap}>
-            {me.bank.map((id) => (
-              <Chip key={id} {...tappable(id)} />
-            ))}
-          </View>
-        )}
+        {holdings(view.viewer, tappable)}
       </Panel>
 
       <Text style={styles.prompt}>{pay?.text ?? veto?.text ?? promptText(view, names)}</Text>
@@ -206,7 +240,10 @@ export function Table({ view, legal, names, onAction }: TableProps) {
           <CardView key={id} {...tappable(id)} />
         ))}
       </ScrollView>
-      <View style={styles.actions}>{prompt()}</View>
+      <View style={styles.actions}>
+        {selected !== null && <CardText card={selected} onClose={selectedActions ? undefined : () => select({ card: null })} />}
+        {prompt()}
+      </View>
     </View>
   );
 }
@@ -225,6 +262,7 @@ const styles = StyleSheet.create({
   // The latest entries, beside the Market and no taller than it.
   log: { flex: 1, justifyContent: 'flex-end', gap: 2, overflow: 'hidden' },
   cards: { flexDirection: 'row', gap: 6 },
+  piles: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   mine: { marginHorizontal: 12 },
   target: { color: colors.ink, fontSize: 16, fontWeight: '700' },
   prompt: { color: colors.ink, fontSize: 14, fontWeight: '600', paddingHorizontal: 12, paddingTop: 8 },

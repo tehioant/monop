@@ -1,15 +1,38 @@
-// The panels under the hand that ask the player something: the targets of a selected card, a payment, a Veto.
-// They draw what `prompts.ts` worked out and report taps; the selection itself lives in `Table`.
+// The panels under the hand: the text of the selected card, and what is asked of the player (the targets of that
+// card, a payment, a Veto). They draw what `prompts.ts` worked out and report taps; the selection lives in `Table`.
 
-import type { Action } from '@atlas/engine';
+import type { Action, CardId } from '@atlas/engine';
 import type { ReactNode } from 'react';
-import { ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { actionLabel } from './actions.ts';
+import { cardText } from './cardText.ts';
 import { Button, Choice, shared } from './parts.tsx';
 import type { CardPrompt, PayPrompt, Slot, VetoPrompt } from './prompts.ts';
 import { colors, countryColor } from './theme.ts';
 
-/** A selected card: its text, what it can do at once, and the targets to pick before confirming. */
+/** A card in full. `onClose` puts it away: for a card that is only read, with no panel of its own to cancel. */
+export function CardText({ card, onClose }: { card: CardId; onClose?: () => void }) {
+  const { name, lines } = cardText(card);
+  return (
+    <View style={styles.text}>
+      <View style={styles.heading}>
+        <Text style={styles.title}>{name}</Text>
+        {onClose && (
+          <Pressable onPress={onClose} hitSlop={10}>
+            <Text style={styles.close}>Close</Text>
+          </Pressable>
+        )}
+      </View>
+      {lines.map((line, i) => (
+        <Text key={i} style={styles.line}>
+          {line}
+        </Text>
+      ))}
+    </View>
+  );
+}
+
+/** What a selected card can do: at once, or once the targets to pick are confirmed. */
 export function CardPanel({
   prompt,
   names,
@@ -25,7 +48,7 @@ export function CardPanel({
 }) {
   const { chosen, confirm, steps } = prompt;
   return (
-    <PromptPanel title={prompt.title}>
+    <View style={styles.panel}>
       {steps.length > 0 && (
         <ScrollView style={styles.scroll} contentContainerStyle={styles.steps}>
           {steps.map((step) => (
@@ -57,7 +80,7 @@ export function CardPanel({
       </View>
       {/* On its own line, so that nothing moves when its label changes. */}
       {confirm !== null && <Button label={confirm} disabled={!chosen} onPress={() => chosen && onAction(chosen)} />}
-    </PromptPanel>
+    </View>
   );
 }
 
@@ -138,6 +161,10 @@ function PromptPanel({ title, children }: { title: string; children: ReactNode }
 const styles = StyleSheet.create({
   panel: { flexShrink: 1, paddingHorizontal: 12, paddingBottom: 8, gap: 6 },
   title: { color: colors.ink, fontSize: 13, fontWeight: '600' },
+  text: { paddingHorizontal: 12, paddingBottom: 6, gap: 1 },
+  heading: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline' },
+  close: { color: colors.accent, fontSize: 13, fontWeight: '600' },
+  line: { color: colors.ink, fontSize: 12 },
   // The choices scroll when they are many; the title and the buttons stay in view.
   scroll: { flexGrow: 0, flexShrink: 1, maxHeight: 220 },
   steps: { gap: 8 },
