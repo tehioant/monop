@@ -59,14 +59,17 @@ export const WILD_CITIES = [
   { id: 'wild-any-2', value: 1, countries: 'any' },
 ] as const;
 
-/** Coin cards: `count` copies of each `value`. */
+/**
+ * Coin cards: `count` copies of each `value`. The number of coin cards sets the length of a game (they come
+ * between the cities, and fuller banks pay charges in coin, not in cities): see docs/balance/first-pass.md.
+ */
 export const COINS = [
-  { value: 1, count: 6 },
-  { value: 2, count: 5 },
-  { value: 3, count: 3 },
-  { value: 4, count: 3 },
-  { value: 5, count: 2 },
-  { value: 10, count: 1 },
+  { value: 1, count: 11 },
+  { value: 2, count: 9 },
+  { value: 3, count: 6 },
+  { value: 4, count: 5 },
+  { value: 5, count: 3 },
+  { value: 10, count: 2 },
 ] as const;
 
 /** Action cards: `count` copies of each, worth `value` once banked. */
