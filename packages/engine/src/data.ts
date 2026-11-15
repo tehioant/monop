@@ -30,7 +30,8 @@ export const RULES = {
  * `perk` is what a player gets for as long as they hold the country complete:
  * `extraDraw` draws `RULES.drawsWithPerk` cards at the start of their turn, `extraPlay` plays up to
  * `RULES.playsWithPerk` cards per turn, `vetoReturn` takes back into their hand the first Veto they play in the game.
- * The perks are dealt to the countries in turn, in list order: a placeholder for balancing.
+ * The perks are dealt to the countries in turn, in list order. The first balance pass found no reason to move
+ * them: see docs/balance/first-pass.md.
  */
 export const COUNTRIES = [
   { id: 'egypt', cityValue: 1, cities: ['cairo', 'alexandria'], toll: [1, 2], perk: 'extraDraw' },

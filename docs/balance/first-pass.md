@@ -6,7 +6,8 @@ Card data tuned on bot-only games (issue 14). All the numbers tuned here are in 
 
 - **Deck: 88 to 121 cards.** The 38 cities are untouched. Coin cards go from 20 to 40; Levy, Debt, Raid, Exchange and
   Veto from 3 to 5 copies; Toll from 6 to 10. Nothing else changed: no rule, no amount, no perk, no toll scale.
-- **Quick game (3 countries): 11 to 15 minutes** for 2 to 5 players (was 7 to 10). On target.
+- **Quick game (3 countries): 11 to 15 minutes** for 2 to 5 players (was 7 to 10). On target; a minute over at five
+  players when the bots are hard or easy.
 - **Long game (5 countries): 15 to 23 minutes** (was 10 to 16). Short of the 25–30 target, and data cannot close the
   gap without pushing the quick game over its own: see "Long game" below.
 - **The first player still wins too often** (58% at two players, 33% at four). No card data changes that; it takes a
@@ -100,8 +101,9 @@ One change at a time on the "before" data, normal bots:
 - **Coin alone makes long games stall.** Full banks pay every charge in coin, cities stop changing hands, and
   careless players bank the few cards that could still move them. Easy bots, 5 countries, games without a winner in
   3000 at four and five players: 9 and 80 before; 24 and 129 with 36 coin cards; 33 and 164 with 44. Adding the cards
-  that take (Raid 5, Exchange 5) and Veto 5 to the 36 coins: 1 and 52. Adding the charges too (Toll 10, Debt 5): 1
-  and 6. So the deck grows as a whole around the same cities.
+  that take (Raid 5, Exchange 5, Seizure 3) and Veto 5 to the 36 coins: 1 and 52. Adding the charges too (Toll 10,
+  Debt 5): 1 and 6. The deck kept (40 coins, Levy 5 as well, Seizure back at 2): 2 and 7. So the deck grows as a
+  whole around the same cities.
 - **Nothing in the data moves the first seat's share.**
 - **The long game is about 1.5 times the quick one in every variant** (1.45 to 1.6).
 - Which countries win is set by their size. Perks and tolls do not show: the win rate when held stays within a few
@@ -111,11 +113,12 @@ One change at a time on the "before" data, normal bots:
 
 **Card counts.** Coin 1 / 2 / 3 / 4 / 5 / 10: 6, 5, 3, 3, 2, 1 becomes 12, 10, 6, 6, 4, 2 (same mix, doubled). Levy,
 Debt, Raid, Exchange, Veto: 3 becomes 5. Toll: 6 becomes 10. Forty coin cards is the most that keeps the quick game
-at 15 minutes or under at five players.
+at 15 minutes at five players with normal bots (16 with hard or easy ones).
 
 **Kept as they were**, because no experiment gave a reason to move them: toll scales, the Levy and Debt amounts, the
 upgrade amount, coin values, the wild cities, the perk of each country, Windfall x4 and Upgrade x3. Seizure stays at
-2 copies: that number is an acceptance criterion of the Seizure ticket, and a third copy changed nothing measurable.
+2 copies: that number is an acceptance criterion of the Seizure ticket, and with normal bots a third copy changed
+neither the length nor the seat shares.
 
 **5 countries to win at 5 players: offered, no cap.** With the new data every game between normal or hard bots has a
 winner, and the game is 8% longer than at four players (45.0 turns against 41.6), not a different game: 9 in 10
@@ -134,7 +137,7 @@ that evens it out is in the number of cards drawn at the start of a player's **f
 | the first player draws nothing | 47.9 / 52.1 | 34.4 / 36.2 / 29.3 | 26.0 / 29.5 / 22.9 / 21.6 | 20.8 / 25.1 / 18.8 / 17.1 / 18.2 |
 | seat *s* draws *s* cards (0, 1, 2, 3, 4) | 53.6 / 46.4 | 36.1 / 33.7 / 30.2 | 25.7 / 24.8 / 24.6 / 24.9 | 18.8 / 20.4 / 20.0 / 18.6 / 22.2 |
 
-(3 countries; the 5-country lines are the same within noise, and game length does not change.) "The first player
+(3 countries; the 5-country lines are the same within noise, and game length changes by less than a turn.) "The first player
 draws nothing" is the smallest and settles two players; the graded form is the most even from three players up.
 Tried and weaker: extra starting cards for later seats, fewer plays on the first turn. Drawing the first player at
 random would even out the seats over many games but not the advantage inside a game; in a solo game the person
