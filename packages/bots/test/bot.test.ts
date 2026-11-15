@@ -83,7 +83,7 @@ test('at every level a bot returns one of the legal actions, in every phase, unt
   for (const level of DIFFICULTIES) {
     const seen = new Set<string>();
     // As many seeds as it takes for every kind of choice to come up with the current card data.
-    for (let seed = 1; seed <= 7; seed++) {
+    for (let seed = 1; seed <= 8; seed++) {
       const { log } = playGame(Array.from({ length: 2 + (seed % 4) }, () => level), seed % 2 ? 3 : 5, seed);
       for (const entry of log) seen.add(entry.type);
     }
