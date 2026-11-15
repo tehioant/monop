@@ -2,7 +2,6 @@
 // card, a payment, a Veto). They draw what `prompts.ts` worked out and report taps; the selection lives in `Table`.
 
 import type { Action, CardId } from '@atlas/engine';
-import type { ReactNode } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { actionLabel } from './actions.ts';
 import { cardText } from './cardText.ts';
@@ -97,7 +96,8 @@ export function PayPanel({
   onConfirm: () => void;
 }) {
   return (
-    <PromptPanel title={prompt.summary}>
+    <View style={styles.panel}>
+      <Text style={styles.title}>{prompt.summary}</Text>
       <Text style={shared.small}>No change is given. Pay with banked cards and laid cities, never from your hand.</Text>
       <ScrollView style={styles.scroll} contentContainerStyle={shared.wrap}>
         {prompt.cards.map((card) => (
@@ -106,6 +106,7 @@ export function PayPanel({
             label={card.label}
             picked={card.picked}
             color={card.country && countryColor(card.country)}
+            dimmed={card.disabled}
             onPress={card.disabled ? undefined : () => onToggle(card.key)}
           />
         ))}
@@ -114,7 +115,7 @@ export function PayPanel({
         <Button quiet label="Clear" disabled={prompt.total === 0} onPress={onClear} />
         <Button label={`Pay ${prompt.total}`} disabled={prompt.actions.length === 0} onPress={onConfirm} />
       </View>
-    </PromptPanel>
+    </View>
   );
 }
 
@@ -145,15 +146,6 @@ export function VetoPanel({
         />
       ))}
       {veto && <Button label="Play Veto" onPress={() => onAction(veto)} />}
-    </View>
-  );
-}
-
-function PromptPanel({ title, children }: { title: string; children: ReactNode }) {
-  return (
-    <View style={styles.panel}>
-      <Text style={styles.title}>{title}</Text>
-      {children}
     </View>
   );
 }

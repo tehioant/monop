@@ -84,12 +84,12 @@ export function Table({ view, legal, names, onAction }: TableProps) {
   /** A card of the viewer's or of the Market: dimmed unless it has a legal action, which a tap then offers. */
   const tappable = (id: CardId): Tappable => {
     // While the viewer owes, a tap on a card they can pay with picks it too; not once the payment is on its way.
-    const payable = pay?.cards.find((card) => card.key === id);
-    if (pay && payable && queue.length === 0) {
-      const picked = payable.disabled ? paying : togglePay(pay, paying, id);
-      return { id, selected: payable.picked, dimmed: payable.disabled, onPress: () => select({ card: id, paying: picked }) };
+    const payable = queue.length === 0 ? pay?.cards.find((card) => card.key === id) : undefined;
+    if (pay && payable) {
+      const onPress = () => select({ card: id, paying: togglePay(pay, paying, id) });
+      return { id, selected: payable.picked, dimmed: payable.disabled, onPress };
     }
-    return { ...readable(id), dimmed: pay !== null || queue.length > 0 || !byCard.has(id) };
+    return { ...readable(id), dimmed: pay !== null || !byCard.has(id) };
   };
   const perkActive = (seat: number, country: string) =>
     view.perks.some((perk) => perk.country === country && perk.activeFor.includes(seat));

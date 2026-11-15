@@ -74,16 +74,16 @@ export function CountryView({ stack, detail, active }: { stack: Stack; detail?: 
 
 /** A card on the table, by name only. `color` outlines it: the country it is laid in. */
 export function Chip({ id, selected, dimmed, onPress, color }: Tappable & { color?: string }) {
-  return <Choice label={cardInfo(id).name} picked={selected} dimmed={dimmed ?? false} onPress={onPress} color={color} />;
+  return <Choice label={cardInfo(id).name} picked={selected} dimmed={dimmed} onPress={onPress} color={color} />;
 }
 
-/** Something to pick, by its label. Inert without `onPress`, and dimmed then unless `dimmed` says otherwise. */
+/** Something to pick, by its label. Inert without `onPress`. */
 export function Choice({
   label,
   picked,
   onPress,
   color,
-  dimmed = !onPress,
+  dimmed,
 }: {
   label: string;
   picked?: boolean;

@@ -30,9 +30,6 @@ const EFFECTS: Record<ActionId, string[]> = {
   ],
 };
 
-const cards = new Map<CardId, Card>(CARDS.map((card) => [card.id, card]));
-const countries = new Map<string, (typeof COUNTRIES)[number]>(COUNTRIES.map((country) => [country.id, country]));
-
 /** A toll scale in words: '1 with 1 city, 2 with 2 cities, 4 once complete'. */
 function tollText(scale: readonly number[]): string {
   return scale
@@ -44,14 +41,12 @@ function lines(card: Card): string[] {
   const worth = `Worth ${card.value} as payment`;
   switch (card.kind) {
     case 'city': {
-      const country = countries.get(card.country);
-      const perk = countryPerk(card.country);
-      if (!country || !perk) return [`${worth}, laid or banked.`];
+      const country = COUNTRIES.find(({ id }) => id === card.country)!;
       const name = title(country.id);
       return [
         `A city of ${name}, which is complete with ${country.cities.length} cities: ${country.cities.map(title).join(', ')}.`,
         `A Toll on ${name} charges each opponent ${tollText(country.toll)}.`,
-        `Held complete: ${perk.text}.`,
+        `Held complete: ${countryPerk(country.id)!.text}.`,
         `${worth}, laid or banked.`,
       ];
     }
@@ -73,6 +68,6 @@ function lines(card: Card): string[] {
 
 /** A card in full: its name, then one sentence per line. A card the table does not know has a name only. */
 export function cardText(id: CardId): { name: string; lines: string[] } {
-  const card = cards.get(id);
+  const card = CARDS.find((known) => known.id === id);
   return { name: cardInfo(id).name, lines: card ? lines(card) : [] };
 }
