@@ -28,7 +28,17 @@ test('first-turn draws equal the seat for every supported player count; later tu
       assert.deepEqual(first.phase, seat === 0
         ? { kind: 'play', player: seat }
         : { kind: 'draw', player: seat, remaining: seat });
-      assert.equal(drawAll(first).players[seat]!.hand.length, 5 + seat);
+      const drawn = drawAll(first);
+      assert.equal(drawn.players[seat]!.hand.length, 5 + seat);
+      if (seat >= 3) {
+        let ended = applyAction(drawn, seat, { type: 'endTurn' });
+        assert.deepEqual(ended.phase, { kind: 'discard', player: seat });
+        while (ended.players[seat]!.hand.length > 7) {
+          ended = applyAction(ended, seat, { type: 'discard', card: ended.players[seat]!.hand[0]! });
+        }
+        assert.notEqual(ended.turn.player, seat);
+        assert.equal(ended.players[seat]!.hand.length, 7);
+      }
       game.log.push({ type: 'endTurn', player: seat });
       assert.deepEqual(enter(game).phase, { kind: 'draw', player: seat, remaining: 2 });
     }

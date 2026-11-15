@@ -68,7 +68,7 @@ test('an upgrade is attached to a complete country of the player, and raises its
 test('a Seizure takes the upgrades along with the country', () => {
   const seize: Action = { type: 'play', card: 'seizure-1', target: 0, country: 'egypt' };
   let view = viewFor(act(upgradedEgypt('seizure-1'), seize), 0);
-  assert.deepEqual(view.players[0], { handSize: 4, bank: [], table: [] });
+  assert.deepEqual(view.players[0], { handSize: 2, bank: [], table: [] });
   assert.deepEqual(view.players[1]!.table, [
     egypt(['cairo', 'alexandria'], ['upgrade-1'], complete + RULES.upgradeToll),
   ]);
@@ -89,7 +89,7 @@ test("when a city of an upgraded country is paid away, its upgrades move to the 
   // Paying a city breaks the country: the upgrade is now coin in the bank, and can pay the rest.
   game = act(game, pay('cairo'));
   assert.deepEqual(viewFor(game, 1).players[0], {
-    handSize: 4,
+    handSize: 2,
     bank: ['upgrade-1'],
     table: [egypt(['alexandria'], [], oneCity)],
   });
@@ -100,7 +100,7 @@ test('a player who cannot cover the amount pays their upgrades too, as coin', ()
   // A Debt is worth all of seat 0's table: two cities and the upgrade.
   const view = viewFor(act(upgradedEgypt('debt-1'), { type: 'play', card: 'debt-1', target: 0 }), 0);
   assert.deepEqual(view.phase, { kind: 'play', player: 1 });
-  assert.deepEqual(view.players[0], { handSize: 4, bank: [], table: [] });
+  assert.deepEqual(view.players[0], { handSize: 2, bank: [], table: [] });
   // The receiver gets Egypt without its upgrade, which is in their bank.
   assert.deepEqual(view.players[1]!.bank, ['upgrade-1']);
   assert.deepEqual(view.players[1]!.table, [egypt(['cairo', 'alexandria'], [], complete)]);

@@ -41,7 +41,8 @@ test('log entries name the player, when there is one', () => {
 test('the prompt says who the game waits on, and for what', () => {
   const view = viewFor(createGame({ players: 3, countriesToWin: 3 }, 1), 0);
   const during = (phase: object) => promptText({ ...view, phase: unknown<PlayerView['phase']>(phase) }, names);
-  assert.equal(promptText(view, names), 'Your turn: draw 2 from the deck or the Market');
+  assert.equal(promptText(view, names), 'Your turn (plays left: 3)');
+  assert.equal(during({ kind: 'draw', player: 0, remaining: 2 }), 'Your turn: draw 2 from the deck or the Market');
   assert.equal(during({ kind: 'play', player: 0 }), 'Your turn (plays left: 3)');
   assert.equal(during({ kind: 'play', player: 2 }), 'Bot 2 is playing…');
   assert.equal(during({ kind: 'pay', player: 0, receiver: 1, owed: 3 }), 'Your move: pay (receiver: Bot 1, owed: 3)');
@@ -61,7 +62,7 @@ test('every legal action is offered once: on its card if the viewer can tap it, 
     ...['coin-3-3', 'coin-4-1', 'coin-4-2'],
   ];
   let state = createGame({ players: 2, countriesToWin: 3 }, 1, { deck });
-  for (const action of [{ type: 'draw' }, { type: 'draw' }, { type: 'lay', card: 'cairo' }, { type: 'bank', card: 'coin-1-1' }] as const) {
+  for (const action of [{ type: 'lay', card: 'cairo' }, { type: 'bank', card: 'coin-1-1' }] as const) {
     state = applyAction(state, 0, action);
   }
   // One action per place a card of the viewer's can be, one on a card the table does not draw, one with no card.
@@ -87,16 +88,16 @@ test('every legal action is offered once: on its card if the viewer can tap it, 
 
 test('the cards shown are those the viewer can see on the table: never another hand, never the deck', () => {
   const deck = [
-    ...['cairo', 'alexandria', 'coin-1-1', 'coin-1-2', 'coin-1-3'],
+    ...['cairo', 'alexandria', 'upgrade-1', 'coin-1-2', 'coin-1-3'],
     ...['coin-2-1', 'coin-2-2', 'coin-2-3', 'coin-2-4', 'coin-2-5'],
     ...['tokyo', 'coin-3-1', 'coin-3-2'],
-    ...['upgrade-1', 'coin-4-1', 'coin-4-2', 'coin-5-1', 'coin-5-2'],
+    ...['coin-1-1', 'coin-4-1', 'coin-4-2', 'coin-5-1', 'coin-5-2'],
   ];
   const draw: Action = { type: 'draw' };
   const turns: [number, Action[]][] = [
-    [0, [draw, draw, { type: 'lay', card: 'cairo' }, { type: 'lay', card: 'alexandria' }]],
+    [0, [{ type: 'lay', card: 'cairo' }, { type: 'lay', card: 'alexandria' }]],
     [0, [{ type: 'play', card: 'upgrade-1', country: 'egypt' }, { type: 'endTurn' }]],
-    [1, [draw, draw, { type: 'bank', card: 'coin-2-1' }]],
+    [1, [draw, { type: 'bank', card: 'coin-2-1' }]],
   ];
   let state = createGame({ players: 2, countriesToWin: 3 }, 1, { deck });
   for (const [player, actions] of turns) for (const action of actions) state = applyAction(state, player, action);
@@ -105,5 +106,5 @@ test('the cards shown are those the viewer can see on the table: never another h
   const shown = shownCards({ ...view, discardTop: 'windfall-1' });
   const expected = ['cairo', 'alexandria', 'upgrade-1', 'coin-2-1', 'windfall-1', ...view.hand, ...view.market];
   assert.deepEqual([...shown].sort(), expected.sort());
-  assert.deepEqual([view.hand.length, view.market.length], [4, 3]);
+  assert.deepEqual([view.hand.length, view.market.length], [2, 3]);
 });

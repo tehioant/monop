@@ -308,7 +308,8 @@ function startTurn(state: GameState, player: PlayerId): void {
   const firstTurn = !state.log.some((entry) => entry.type === 'endTurn' && entry.player === player);
   const usual = hasPerk(me, 'extraDraw') ? RULES.drawsWithPerk : RULES.drawsPerTurn;
   // Empty-hand recovery overrides first-turn compensation, which overrides the extra-draw perk.
-  const wanted = me.hand.length === 0 ? RULES.drawsOnEmptyHand : firstTurn ? player : usual;
+  let wanted = firstTurn ? player : usual;
+  if (me.hand.length === 0) wanted = RULES.drawsOnEmptyHand;
   // Every draw takes one card out of these three zones, so the count stays right for the whole draw phase.
   const draws = Math.min(wanted, state.deck.length + state.discard.length + state.market.length);
   state.phase = draws > 0 ? { kind: 'draw', player, remaining: draws } : { kind: 'play', player };

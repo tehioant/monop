@@ -1,0 +1,310 @@
+{
+  "config": {
+    "games": 3000,
+    "players": 3,
+    "countriesToWin": 5,
+    "difficulty": "normal",
+    "seed": 1
+  },
+  "turns": {
+    "min": 11,
+    "median": 38,
+    "mean": 38.047666666666665,
+    "max": 75
+  },
+  "actions": {
+    "min": 78,
+    "median": 314,
+    "mean": 321.79633333333334,
+    "max": 786
+  },
+  "winsBySeat": [
+    1075,
+    1030,
+    895
+  ],
+  "noWinner": 0,
+  "countries": [
+    {
+      "country": "egypt",
+      "held": 3673,
+      "wins": 2177
+    },
+    {
+      "country": "australia",
+      "held": 3657,
+      "wins": 2256
+    },
+    {
+      "country": "france",
+      "held": 2530,
+      "wins": 1511
+    },
+    {
+      "country": "uk",
+      "held": 2518,
+      "wins": 1547
+    },
+    {
+      "country": "italy",
+      "held": 2316,
+      "wins": 1512
+    },
+    {
+      "country": "japan",
+      "held": 2342,
+      "wins": 1449
+    },
+    {
+      "country": "brazil",
+      "held": 2544,
+      "wins": 1602
+    },
+    {
+      "country": "usa",
+      "held": 1575,
+      "wins": 1021
+    },
+    {
+      "country": "china",
+      "held": 1551,
+      "wins": 977
+    },
+    {
+      "country": "india",
+      "held": 1542,
+      "wins": 954
+    }
+  ],
+  "cardUsage": {
+    "coin 10": {
+      "bank": 5560,
+      "pay": 1764,
+      "drawMarket": 749,
+      "discard": 1
+    },
+    "wild uk,india 3": {
+      "bank": 62,
+      "pay": 703,
+      "lay": 2776,
+      "play": 1173,
+      "reassign": 1794,
+      "drawMarket": 382
+    },
+    "city uk 2": {
+      "lay": 8121,
+      "play": 3733,
+      "bank": 211,
+      "drawMarket": 1102,
+      "pay": 2321,
+      "discard": 3
+    },
+    "city egypt 1": {
+      "drawMarket": 795,
+      "lay": 5491,
+      "play": 2394,
+      "pay": 1205,
+      "bank": 119,
+      "discard": 3
+    },
+    "city brazil 2": {
+      "lay": 8069,
+      "play": 3625,
+      "pay": 2376,
+      "drawMarket": 1102,
+      "bank": 247,
+      "discard": 1
+    },
+    "coin 2": {
+      "bank": 25788,
+      "pay": 39632,
+      "drawMarket": 2614,
+      "discard": 76
+    },
+    "action raid 3": {
+      "play": 18609,
+      "drawMarket": 2909,
+      "bank": 305,
+      "pay": 336,
+      "discard": 2
+    },
+    "wild egypt,italy 2": {
+      "lay": 2782,
+      "drawMarket": 355,
+      "play": 1684,
+      "pay": 791,
+      "reassign": 1690,
+      "bank": 52
+    },
+    "coin 4": {
+      "bank": 15761,
+      "pay": 18987,
+      "drawMarket": 1456,
+      "discard": 6
+    },
+    "city china 3": {
+      "lay": 10730,
+      "pay": 2874,
+      "play": 5082,
+      "drawMarket": 1400,
+      "bank": 329,
+      "discard": 4
+    },
+    "action levy 2": {
+      "play": 12715,
+      "drawMarket": 1547,
+      "bank": 1181,
+      "pay": 1473,
+      "discard": 38
+    },
+    "action upgrade 3": {
+      "bank": 3375,
+      "pay": 5114,
+      "play": 4540,
+      "drawMarket": 786,
+      "discard": 16
+    },
+    "city france 2": {
+      "lay": 8126,
+      "drawMarket": 1088,
+      "play": 3709,
+      "pay": 2373,
+      "bank": 199,
+      "discard": 1
+    },
+    "city japan 2": {
+      "lay": 8163,
+      "drawMarket": 1152,
+      "pay": 2423,
+      "play": 3813,
+      "bank": 218,
+      "discard": 3
+    },
+    "city india 3": {
+      "lay": 10702,
+      "play": 5127,
+      "bank": 356,
+      "drawMarket": 1389,
+      "pay": 2864,
+      "discard": 1
+    },
+    "action exchange 3": {
+      "bank": 1056,
+      "play": 14100,
+      "pay": 1219,
+      "drawMarket": 1464,
+      "discard": 29
+    },
+    "coin 3": {
+      "bank": 15807,
+      "drawMarket": 1606,
+      "pay": 19591,
+      "discard": 22
+    },
+    "action windfall 1": {
+      "play": 14688,
+      "drawMarket": 2358,
+      "bank": 207,
+      "pay": 252,
+      "discard": 1
+    },
+    "city usa 3": {
+      "lay": 10751,
+      "play": 5242,
+      "drawMarket": 1435,
+      "pay": 2902,
+      "bank": 345,
+      "discard": 5
+    },
+    "coin 5": {
+      "bank": 10603,
+      "pay": 10632,
+      "drawMarket": 1056,
+      "discard": 3
+    },
+    "wild brazil,china 3": {
+      "lay": 2777,
+      "drawMarket": 391,
+      "reassign": 1779,
+      "pay": 659,
+      "bank": 53,
+      "play": 1147
+    },
+    "action seizure 5": {
+      "play": 7441,
+      "drawMarket": 1174,
+      "bank": 376,
+      "pay": 469,
+      "discard": 1
+    },
+    "wild australia,japan 2": {
+      "lay": 2797,
+      "play": 1535,
+      "reassign": 1584,
+      "pay": 663,
+      "drawMarket": 364,
+      "bank": 38,
+      "discard": 1
+    },
+    "action toll 1": {
+      "play": 34466,
+      "drawMarket": 5798,
+      "bank": 1687,
+      "pay": 2642,
+      "discard": 8
+    },
+    "coin 1": {
+      "bank": 29618,
+      "drawMarket": 3110,
+      "pay": 41703,
+      "discard": 221
+    },
+    "action veto 4": {
+      "play": 16528,
+      "drawMarket": 2692,
+      "return": 1073,
+      "bank": 1456,
+      "pay": 1276,
+      "discard": 1
+    },
+    "city australia 1": {
+      "lay": 5534,
+      "play": 2438,
+      "drawMarket": 747,
+      "pay": 1078,
+      "bank": 113
+    },
+    "city italy 2": {
+      "lay": 8154,
+      "play": 3797,
+      "drawMarket": 1130,
+      "pay": 2365,
+      "bank": 206,
+      "discard": 2
+    },
+    "wild egypt,australia,france,uk,italy,japan,brazil,usa,china,india 1": {
+      "lay": 5692,
+      "reassign": 7761,
+      "play": 1182,
+      "drawMarket": 806,
+      "pay": 1057,
+      "bank": 66,
+      "discard": 1
+    },
+    "action debt 3": {
+      "play": 15885,
+      "drawMarket": 2774,
+      "bank": 781,
+      "pay": 736,
+      "discard": 2
+    },
+    "wild france,usa 3": {
+      "lay": 2762,
+      "pay": 659,
+      "reassign": 1867,
+      "play": 1128,
+      "drawMarket": 350,
+      "bank": 56
+    }
+  }
+}

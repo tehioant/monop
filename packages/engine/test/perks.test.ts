@@ -50,10 +50,10 @@ test('extra draw: 3 cards at the start of each turn of the player who holds the 
   const draws = (player: PlayerId, remaining: number) =>
     assert.deepEqual(viewFor(game, 0).phase, { kind: 'draw', player, remaining });
 
-  // Seat 0 completes the country: from their next turn they draw 3 cards, and seat 1 still 2.
+  // Seat 0 completes the country: next turn they draw 3; seat 1 draws its first-turn 1.
   game = turn(game, ...country.cities.map(lay));
   assert.deepEqual(activeFor(game, country.id), [0]);
-  draws(1, RULES.drawsPerTurn);
+  draws(1, 1);
   game = finish(drawAll(game));
   draws(0, RULES.drawsWithPerk);
 

@@ -2,7 +2,59 @@
 
 Card data tuned on bot-only games (issue 14). All the numbers tuned here are in `packages/engine/src/data.ts`.
 
-## Outcome
+## Implemented first-turn compensation (issue 32)
+
+The sections below this one are **historical issue-14 data and experiments**, not new measurements.
+The graded rule is now implemented in `packages/engine/src/engine.ts`: seat *s* draws *s* cards on its
+first turn (seat 0 starts in play). A first turn means no own `endTurn` in the log; a prior Veto,
+decline or payment response does not count. Precedence is **empty hand: 4 > first turn: seat >
+normal turn: 2 (3 with extra-draw perk)**. Availability, Market choices and the seven-card end-turn
+limit are unchanged. No save-shape change, card-data change or bot-policy tuning was made.
+
+### New measurements on the implemented rule
+
+Normal bots, 3,000 games per row, first seed 1 (game seeds 1 through 3,000), all seats at the same
+level. Both victory settings, 2–5 seats: 24,000 games total. These are actual reruns, not copied
+historical experiments. Runtime: Linux, Node 26.9.0, dependencies installed with `npm ci`.
+Measured source: feature checkpoint `96872240cb6add9f5ad67612c9eb25414d7cd717`; the subsequent
+source change only expands the same precedence expression into two statements (no balance change).
+No historical baseline was rerun. Raw reports retain exact win counts, turn/action distributions,
+country statistics, card usage and complete configuration in [`first-turn-draw/`](first-turn-draw/).
+
+| players | countries to win | new wins by seat (%) | mean turns | no winner |
+|---|---|---|---|---|
+| 2 | 3 | 53.6 / 46.4 | 22.40 | 0 |
+| 3 | 3 | 36.1 / 33.7 / 30.2 | 26.18 | 0 |
+| 4 | 3 | 25.7 / 24.8 / 24.6 / 24.9 | 28.58 | 0 |
+| 5 | 3 | 18.8 / 20.4 / 20.0 / 18.6 / 22.2 | 30.00 | 0 |
+| 2 | 5 | 52.9 / 47.1 | 30.64 | 0 |
+| 3 | 5 | 35.8 / 34.3 / 29.8 | 38.05 | 0 |
+| 4 | 5 | 25.4 / 26.3 / 24.1 / 24.1 | 42.20 | 0 |
+| 5 | 5 | 18.9 / 19.7 / 20.7 / 19.0 / 21.7 | 44.86 | 0 |
+
+The three-country seat shares reproduce the historical graded-rule experiment to its displayed
+precision. Four-player shares are close to equal; five-player seat 4 still leads, and two/three-player
+seat 0 still leads. Compensation reduces the historical first-seat advantage; these bot results do
+not establish perfect fairness or human play quality. Five-country results are newly measured here,
+not inferred from the old “within noise” statement. All measured games had a winner. New mean lengths
+are slightly above the historical uncompensated lines; those older lines are contextual comparisons,
+not freshly paired controls. Percentages use all 3,000 games as denominator and may round off 100%.
+
+Reproduce from the repository root (pure approved domain balance measurement; no app/server):
+
+```sh
+node --input-type=module -e '
+import { simulate } from "./packages/bots/src/simulate.ts";
+import { writeFileSync } from "node:fs";
+for (const countriesToWin of [3, 5]) for (const players of [2, 3, 4, 5]) {
+  const report = simulate({ games: 3000, players, countriesToWin, difficulty: "normal", seed: 1 });
+  writeFileSync(`docs/balance/first-turn-draw/${players}-players-${countriesToWin}-countries.json`, JSON.stringify(report, null, 2) + "\n");
+}'
+```
+
+## Historical issue-14 balance pass
+
+## Historical outcome
 
 - **Deck: 88 to 121 cards.** The 38 cities are untouched. Coin cards go from 20 to 40; Levy, Debt, Raid, Exchange and
   Veto from 3 to 5 copies; Toll from 6 to 10. Nothing else changed: no rule, no amount, no perk, no toll scale.
@@ -11,7 +63,7 @@ Card data tuned on bot-only games (issue 14). All the numbers tuned here are in 
 - **Long game (5 countries): 15 to 23 minutes** (was 10 to 16). Short of the 25–30 target, and data cannot close the
   gap without pushing the quick game over its own: see "Long game" below.
 - **The first player still wins too often** (58% at two players, 33% at four). No card data changes that; it takes a
-  rule change, described below and not made.
+  rule change, described below and not made during issue 14 (now implemented by issue 32 above).
 - **No country dominates**: holding any given country goes with about the same win rate. The two 2-city countries are
   in most winning sets because they are the cheapest; a possible correction is described below.
 - **5 countries to win stays offered at 5 players.** No cap, so no engine change: the pass is data only.
@@ -22,7 +74,7 @@ Card data tuned on bot-only games (issue 14). All the numbers tuned here are in 
   seats play at the same level. Unless said otherwise the level is `normal`.
 - 3000 games per line. At that size a seat's share is known to about ±1.7 points and a mean length to ±0.3 turn;
   smaller differences below are noise.
-- "Before" is the card data of `main` at `cf59792`; "after" is this branch.
+- Historical "before" is the card data of `main` at `cf59792`; "after" is the issue-14 card-data branch.
 - A **turn** is one player's turn. **Minutes assume 30 seconds per turn.** A turn at four players is about 8 actions,
   everybody's included: two draws, about three plays, the end of the turn, and two payments or Veto answers from
   opponents. At 3 to 4 seconds an action on a phone (choose, tap, watch the card move) that is 25 to 32 seconds. It
@@ -133,7 +185,7 @@ that evens it out is in the number of cards drawn at the start of a player's **f
 
 | first turn | 2 players | 3 players | 4 players | 5 players |
 |---|---|---|---|---|
-| today: everyone draws 2 | 57.7 / 42.3 | 41.8 / 31.8 / 26.4 | 33.1 / 26.8 / 20.9 / 19.1 | 27.5 / 22.2 / 18.0 / 16.9 / 15.4 |
+| historical baseline: everyone draws 2 | 57.7 / 42.3 | 41.8 / 31.8 / 26.4 | 33.1 / 26.8 / 20.9 / 19.1 | 27.5 / 22.2 / 18.0 / 16.9 / 15.4 |
 | the first player draws nothing | 47.9 / 52.1 | 34.4 / 36.2 / 29.3 | 26.0 / 29.5 / 22.9 / 21.6 | 20.8 / 25.1 / 18.8 / 17.1 / 18.2 |
 | seat *s* draws *s* cards (0, 1, 2, 3, 4) | 53.6 / 46.4 | 36.1 / 33.7 / 30.2 | 25.7 / 24.8 / 24.6 / 24.9 | 18.8 / 20.4 / 20.0 / 18.6 / 22.2 |
 
