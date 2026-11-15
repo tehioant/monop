@@ -21,28 +21,40 @@ const MAX_PLAYERS = Math.max(...RULES.playerCounts);
 const home = () => router.dismissTo('/');
 
 export default function Online() {
-  const { session, setName, createRoom, joinRoom, addBot, removePlayer, startGame, play, leave } = useOnline();
+  const { session, setName, resume, createRoom, joinRoom, addBot, removePlayer, startGame, play, leave } = useOnline();
   const { room, game } = session;
+  const reconnecting = session.lost !== null;
 
-  // However the screen is left, the connection goes with it.
-  useEffect(() => leave, [leave]);
+  // A player with a game in progress comes straight back to it. However the screen is left, the connection
+  // goes with it.
+  useEffect(() => {
+    resume();
+    return leave;
+  }, [resume, leave]);
 
+  if (session.error === 'unsupported_version') return <UpdateNeeded />;
   if (!room) return <Entry session={session} onName={setName} onCreate={createRoom} onJoin={joinRoom} />;
-  if (!game) return <Lobby room={room} onAddBot={addBot} onRemove={removePlayer} onStart={startGame} />;
+  if (!game) {
+    return (
+      <Lobby room={room} reconnecting={reconnecting} onAddBot={addBot} onRemove={removePlayer} onStart={startGame} />
+    );
+  }
 
   const names = room.players.map((player) => player.name);
   const over = game.view.phase.kind === 'over';
   return (
     <SafeAreaView style={styles.game}>
       {!over && (
-        <View style={styles.quit}>
+        <View style={styles.bar}>
+          {reconnecting ? <Reconnecting /> : <Presence room={room} />}
           <Button quiet label="Quit" onPress={home} />
         </View>
       )}
       {over ? (
         <Results view={game.view} names={names} />
       ) : (
-        <Table view={game.view} legal={game.legalActions} names={names} onAction={play} />
+        // Nothing can be played until the server has given the game again.
+        <Table view={game.view} legal={reconnecting ? [] : game.legalActions} names={names} onAction={play} />
       )}
       {over && (
         <View style={styles.home}>
@@ -66,9 +78,50 @@ function explain(error: NonNullable<Session['error']>): string {
       return 'This game has already started.';
     case 'removed':
       return 'The host removed you from the room.';
+    case 'replaced':
+      return 'You are now playing this game on another device.';
+    case 'ended':
+      return 'The game you were in is over.';
     default:
       return 'Something went wrong. Please try again.';
   }
+}
+
+/** The app is too old for the server: nothing online works until it is updated. */
+function UpdateNeeded() {
+  return (
+    <SafeAreaView style={styles.screen}>
+      <Text style={styles.title}>Update needed</Text>
+      <Text style={styles.label}>
+        This version of the app can no longer play online. Update it to play with your friends again.
+      </Text>
+      <Button label="Back" onPress={home} />
+    </SafeAreaView>
+  );
+}
+
+/** The connection is lost and being opened again. */
+function Reconnecting() {
+  return <Text style={styles.reconnecting}>Reconnecting…</Text>;
+}
+
+/** Who is connected, in seat order. */
+function Presence({ room }: { room: Room }) {
+  return (
+    <View style={styles.presence}>
+      {room.players.map((player, seat) =>
+        player.status === 'connected' ? (
+          <Text key={seat} style={shared.small}>
+            <Text style={styles.here}>●</Text> {player.name}
+          </Text>
+        ) : (
+          <Text key={seat} style={[shared.small, styles.away]}>
+            ○ {player.name} (offline)
+          </Text>
+        ),
+      )}
+    </View>
+  );
 }
 
 function Entry(props: {
@@ -123,12 +176,19 @@ function Entry(props: {
   );
 }
 
-function Lobby(props: { room: Room; onAddBot: () => void; onRemove: (seat: number) => void; onStart: () => void }) {
-  const { room, onAddBot, onRemove, onStart } = props;
+function Lobby(props: {
+  room: Room;
+  reconnecting: boolean;
+  onAddBot: () => void;
+  onRemove: (seat: number) => void;
+  onStart: () => void;
+}) {
+  const { room, reconnecting, onAddBot, onRemove, onStart } = props;
   const host = room.you === 0;
   return (
     <SafeAreaView style={styles.screen}>
       <Text style={styles.title}>Room</Text>
+      {reconnecting && <Reconnecting />}
       <Text style={styles.label}>Share this code with your friends</Text>
       <Text style={styles.code} selectable>
         {room.code}
@@ -182,6 +242,10 @@ const styles = StyleSheet.create({
   code: { color: colors.ink, fontSize: 44, fontWeight: '800', letterSpacing: 6, textAlign: 'center' },
   seat: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', minHeight: 40 },
   game: { flex: 1 },
-  quit: { flexDirection: 'row', justifyContent: 'flex-end', paddingHorizontal: 12 },
+  bar: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 12 },
+  presence: { flex: 1, flexDirection: 'row', flexWrap: 'wrap', columnGap: 12 },
+  here: { color: '#15803d' },
+  away: { color: '#b91c1c', fontWeight: '600' },
+  reconnecting: { flex: 1, color: '#b91c1c', fontSize: 15, fontWeight: '600' },
   home: { padding: 16 },
 });

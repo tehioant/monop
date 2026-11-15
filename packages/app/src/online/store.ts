@@ -1,22 +1,11 @@
-// The online session in progress, shared with the online screen. It owns the connection to the game server
-// and keeps the guest token and the display name on the device; what the messages mean is in `session.ts`.
+// The online session in progress, shared with the online screen. It keeps the guest token and the display name
+// on the device; the connection to the game server is in `connection.ts`, what the messages mean in `session.ts`.
 
 import type { Action } from '@atlas/engine';
-import type { ClientMessage } from '@atlas/server/protocol';
 import * as SecureStore from 'expo-secure-store';
 import { create } from 'zustand';
-import {
-  decode,
-  defaultName,
-  disconnected,
-  encode,
-  hello,
-  intent,
-  offline,
-  receive,
-  type RoomRequest,
-  type Session,
-} from './session.ts';
+import { connection, type Socket } from './connection.ts';
+import { defaultName, intent, offline, type RoomRequest, type Session } from './session.ts';
 
 /**
  * The game server's WebSocket endpoint. Set EXPO_PUBLIC_SERVER_URL when starting or building the app;
@@ -33,6 +22,8 @@ interface OnlineStore {
   session: Session;
   /** The display name to go online under next. A blank one is replaced by a generated name. */
   setName: (name: string) => void;
+  /** Goes back to the game in progress this device's account holds a seat in, if there is one. */
+  resume: () => void;
   createRoom: (countriesToWin: number) => void;
   joinRoom: (code: string) => void;
   /** Host only, in the lobby. */
@@ -48,52 +39,43 @@ interface OnlineStore {
 }
 
 export const useOnline = create<OnlineStore>((set, get) => {
-  let socket: WebSocket | null = null;
-  const send = (message: ClientMessage) => socket?.send(encode(message));
+  const server = connection(
+    () => new WebSocket(SERVER_URL) as Socket,
+    () => get().session,
+    (session) => {
+      const { token } = get().session;
+      if (session.token !== null && session.token !== token) SecureStore.setItem(TOKEN_KEY, session.token);
+      set({ session });
+    },
+  );
 
-  /** Opens a new connection, says hello, and sends `request` once welcomed. */
+  /** Opens a new connection, which says hello and sends `request` once welcomed. */
   const connect = (request: RoomRequest) => {
-    get().leave();
     const name = get().session.name.trim() || defaultName();
     SecureStore.setItem(NAME_KEY, name);
     const token = get().session.token ?? SecureStore.getItem(TOKEN_KEY);
     set({ session: { ...offline(name, token), request } });
-
-    const opened = new WebSocket(SERVER_URL);
-    socket = opened;
-    opened.onopen = () => send(hello(get().session));
-    opened.onmessage = (event) => {
-      if (opened !== socket) return;
-      const { token: known } = get().session;
-      const { session, send: answers } = receive(get().session, decode(String(event.data)));
-      if (session.token !== null && session.token !== known) SecureStore.setItem(TOKEN_KEY, session.token);
-      set({ session });
-      answers.forEach(send);
-    };
-    // Also how a connection that could not be opened ends.
-    opened.onclose = () => {
-      if (opened !== socket) return;
-      socket = null;
-      set({ session: disconnected(get().session) });
-    };
+    server.open();
   };
 
   return {
     session: offline(SecureStore.getItem(NAME_KEY) ?? defaultName(), null),
     setName: (name) => set({ session: { ...get().session, name } }),
+    resume: () => {
+      // Only an account the server has already issued can hold a seat.
+      if (get().session.token ?? SecureStore.getItem(TOKEN_KEY)) connect({ type: 'resync' });
+    },
     createRoom: (countriesToWin) => connect({ type: 'createRoom', countriesToWin }),
     joinRoom: (code) => connect({ type: 'joinRoom', code }),
-    addBot: () => send({ type: 'addBot' }),
-    removePlayer: (seat) => send({ type: 'removePlayer', seat }),
-    startGame: () => send({ type: 'startGame' }),
+    addBot: () => server.send({ type: 'addBot' }),
+    removePlayer: (seat) => server.send({ type: 'removePlayer', seat }),
+    startGame: () => server.send({ type: 'startGame' }),
     play: (action) => {
       const { game } = get().session;
-      if (game) send(intent(game, action));
+      if (game) server.send(intent(game, action));
     },
     leave: () => {
-      const open = socket;
-      socket = null;
-      open?.close();
+      server.close();
       const { name, token } = get().session;
       set({ session: offline(name, token) });
     },
