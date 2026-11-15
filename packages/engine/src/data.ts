@@ -30,7 +30,8 @@ export const RULES = {
  * `perk` is what a player gets for as long as they hold the country complete:
  * `extraDraw` draws `RULES.drawsWithPerk` cards at the start of their turn, `extraPlay` plays up to
  * `RULES.playsWithPerk` cards per turn, `vetoReturn` takes back into their hand the first Veto they play in the game.
- * The perks are dealt to the countries in turn, in list order: a placeholder for balancing.
+ * The perks are dealt to the countries in turn, in list order. The first balance pass found no reason to move
+ * them: see docs/balance/first-pass.md.
  */
 export const COUNTRIES = [
   { id: 'egypt', cityValue: 1, cities: ['cairo', 'alexandria'], toll: [1, 2], perk: 'extraDraw' },
@@ -59,25 +60,32 @@ export const WILD_CITIES = [
   { id: 'wild-any-2', value: 1, countries: 'any' },
 ] as const;
 
-/** Coin cards: `count` copies of each `value`. */
+/**
+ * Coin cards: `count` copies of each `value`.
+ *
+ * The counts of the coin and action cards come from the first balance pass (docs/balance/first-pass.md). The
+ * number of coin cards sets the length of a game: they come between the cities. The cards that charge or take
+ * (Levy, Debt, Toll, Raid, Exchange) and the Veto that answers them grow with the coin, or full banks
+ * stop cities from changing hands and a long game can stall.
+ */
 export const COINS = [
-  { value: 1, count: 6 },
-  { value: 2, count: 5 },
-  { value: 3, count: 3 },
-  { value: 4, count: 3 },
-  { value: 5, count: 2 },
-  { value: 10, count: 1 },
+  { value: 1, count: 12 },
+  { value: 2, count: 10 },
+  { value: 3, count: 6 },
+  { value: 4, count: 6 },
+  { value: 5, count: 4 },
+  { value: 10, count: 2 },
 ] as const;
 
 /** Action cards: `count` copies of each, worth `value` once banked. */
 export const ACTIONS = [
   { id: 'windfall', value: 1, count: 4 },
-  { id: 'levy', value: 2, count: 3 },
-  { id: 'debt', value: 3, count: 3 },
-  { id: 'toll', value: 1, count: 6 },
-  { id: 'raid', value: 3, count: 3 },
-  { id: 'exchange', value: 3, count: 3 },
+  { id: 'levy', value: 2, count: 5 },
+  { id: 'debt', value: 3, count: 5 },
+  { id: 'toll', value: 1, count: 10 },
+  { id: 'raid', value: 3, count: 5 },
+  { id: 'exchange', value: 3, count: 5 },
   { id: 'seizure', value: 5, count: 2 },
   { id: 'upgrade', value: 3, count: 3 },
-  { id: 'veto', value: 4, count: 3 },
+  { id: 'veto', value: 4, count: 5 },
 ] as const;
