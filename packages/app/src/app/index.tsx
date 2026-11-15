@@ -9,6 +9,7 @@ export default function Home() {
       <Text style={styles.title}>Atlas</Text>
       <Text style={styles.tagline}>Collect countries, city by city.</Text>
       <Button label="Solo game" onPress={() => router.push('/solo/new')} />
+      <Button label="Play online" onPress={() => router.push('/online')} />
     </View>
   );
 }

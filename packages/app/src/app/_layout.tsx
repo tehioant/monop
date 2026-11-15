@@ -7,6 +7,7 @@ export default function RootLayout() {
       {/* No swiping out of a game or back into a finished one: leaving is explicit. */}
       <Stack.Screen name="solo/table" options={{ gestureEnabled: false }} />
       <Stack.Screen name="solo/results" options={{ gestureEnabled: false }} />
+      <Stack.Screen name="online" options={{ gestureEnabled: false }} />
     </Stack>
   );
 }
