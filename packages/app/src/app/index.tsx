@@ -6,9 +6,9 @@ import { Button } from '../table/parts.tsx';
 import { colors } from '../table/theme.ts';
 
 export default function Home() {
-  const { game, abandon } = useSolo();
   // The solo game saved on the device, or left a moment ago. There is one at a time.
-  const saved = game !== null && inProgress(game);
+  const saved = useSolo(({ game }) => game !== null && inProgress(game));
+  const abandon = useSolo((solo) => solo.abandon);
 
   const confirmAbandon = () =>
     Alert.alert('Abandon the solo game?', 'The game in progress will be lost.', [

@@ -24,15 +24,19 @@ const SAVE = new File(Paths.document, 'solo-game.json');
 
 const newSeed = () => Math.floor(Math.random() * 2 ** 32);
 
+/** The saved game. A save that cannot be continued is discarded: the player starts fresh. */
 function load(): SoloGame | null {
   try {
-    return SAVE.exists ? deserialize(SAVE.textSync()) : null;
+    if (!SAVE.exists) return null;
+    const game = deserialize(SAVE.textSync());
+    if (!game) SAVE.delete();
+    return game;
   } catch {
     return null;
   }
 }
 
-/** Writes the game in progress; without one, removes what was saved (also a save that could not be loaded). */
+/** Writes the game in progress; without one, removes what was saved. */
 function save(game: SoloGame | null) {
   try {
     if (game && inProgress(game)) SAVE.writeSync(serialize(game));
@@ -52,7 +56,6 @@ export const useSolo = create<SoloStore>((set) => ({
   stepBot: () => set(({ game }) => ({ game: game && botToMove(game) ? playBot(game) : game })),
 }));
 
-save(useSolo.getState().game);
 useSolo.subscribe(({ game }, previous) => {
   if (game !== previous.game) save(game);
 });
