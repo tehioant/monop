@@ -90,7 +90,7 @@ function Entry(props: {
         <>
           <Text style={styles.label}>Your name, as the other players see it</Text>
           <TextInput
-            style={styles.input}
+            style={[styles.input, styles.name]}
             value={session.name}
             onChangeText={onName}
             placeholder="Your name"
@@ -178,6 +178,7 @@ const styles = StyleSheet.create({
     borderColor: colors.line,
     padding: 12,
   },
+  name: { letterSpacing: 0 },
   error: { color: '#b91c1c', fontSize: 15, fontWeight: '600' },
   code: { color: colors.ink, fontSize: 44, fontWeight: '800', letterSpacing: 6, textAlign: 'center' },
   seat: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', minHeight: 40 },
