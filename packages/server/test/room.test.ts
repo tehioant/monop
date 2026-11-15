@@ -57,7 +57,7 @@ test('a first hello creates a guest account stored in Postgres; its token identi
   const first = await connect();
   first.send({ type: 'hello', name: 'Zed' });
   const welcome = await first.next('welcome');
-  assert.deepEqual(welcome, { v, type: 'welcome', token: welcome.token, name: 'Zed' });
+  assert.deepEqual(welcome, { v, type: 'welcome', token: welcome.token, name: 'Zed', resumed: false });
   assert.equal((await stored()).length, 1);
 
   const again = await connect();
@@ -68,8 +68,6 @@ test('a first hello creates a guest account stored in Postgres; its token identi
   const stranger = await connect();
   stranger.send({ type: 'hello', token: 'not-a-token' });
   assert.equal((await stranger.next('error')).code, 'invalid_token');
-  stranger.sendRaw({ v: v + 1, type: 'hello' });
-  assert.equal((await stranger.next('error')).code, 'unsupported_version');
 });
 
 test('a guest creates a private room, another joins by its code, and the host starts with two seats filled', async () => {

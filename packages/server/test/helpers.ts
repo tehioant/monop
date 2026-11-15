@@ -88,9 +88,9 @@ export async function startTestServer(options: Pick<ServerOptions, 'newGame' | '
 }
 
 /** A seat held by a person, as a `room` message lists it. */
-export const person = (name: string) => ({ name, bot: false });
+export const person = (name: string) => ({ name, bot: false, status: 'connected' });
 /** A seat held by a bot. */
-export const seated = (name: string) => ({ name, bot: true });
+export const seated = (name: string) => ({ name, bot: true, status: 'connected' });
 
 export type Received<Type extends ServerMessage['type']> = Versioned<Extract<ServerMessage, { type: Type }>>;
 
@@ -98,12 +98,15 @@ export type Received<Type extends ServerMessage['type']> = Versioned<Extract<Ser
 export class Client {
   /** Every message received so far, as sent on the wire. */
   readonly raw: string[] = [];
+  /** Settles once the connection is closed, by either end. */
+  readonly closed: Promise<void>;
   #read = 0;
   #wake = (): void => {};
   #socket: WebSocket;
 
   private constructor(socket: WebSocket) {
     this.#socket = socket;
+    this.closed = new Promise((resolve) => socket.addEventListener('close', () => resolve()));
     socket.addEventListener('message', (event) => {
       this.raw.push(event.data as string);
       this.#wake();

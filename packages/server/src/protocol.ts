@@ -4,8 +4,18 @@
 
 import type { Action, PlayerId, PlayerView } from '@atlas/engine';
 
-/** Bumped on every incompatible change. Every message, in both directions, carries it as `v`. */
+/**
+ * Bumped on every incompatible change. Every message, in both directions, carries it as `v`.
+ * A client message with another `v` is refused with the error `unsupported_version`, which tells an outdated app
+ * to update: that error keeps its shape in every version.
+ */
 export const PROTOCOL_VERSION = 1;
+
+/**
+ * A client sends something, a `ping` if nothing else, at least this often. The server closes a connection it has
+ * not heard from for twice as long; a client that has heard nothing for as long can take its connection for lost.
+ */
+export const HEARTBEAT_MS = 5000;
 
 /** A display name is trimmed and cut to this many characters. */
 export const MAX_NAME_LENGTH = 20;
@@ -18,6 +28,8 @@ export type ClientMessage =
    * on, kept with the account; without it the account keeps the name it has.
    */
   | { type: 'hello'; token?: string; name?: string }
+  /** Answered with `pong`, at any time. Keeps the connection open (see `HEARTBEAT_MS`). */
+  | { type: 'ping' }
   | { type: 'createRoom'; countriesToWin: number }
   | { type: 'joinRoom'; code: string }
   /** Host only, in the lobby: a bot takes the next seat. */
@@ -27,19 +39,33 @@ export type ClientMessage =
   /** Host only. */
   | { type: 'startGame' }
   /** `action` must be one of the legal actions received with the state numbered `stateVersion`. */
-  | { type: 'intent'; stateVersion: number; action: Action };
+  | { type: 'intent'; stateVersion: number; action: Action }
+  /**
+   * In a room: asks for the `room` and, once the game has started, the current `state` again. For a client that
+   * received a `state` whose version does not follow the one it had.
+   */
+  | { type: 'resync' };
 
 export type ServerMessage =
   /**
-   * Answer to `hello`. The client keeps `token` and sends it in later hellos. If the account holds a seat in a
-   * game in progress and nobody is connected to that seat, the client is put back in it: a `room` and a `state`
-   * follow.
+   * Answer to `hello`. The client keeps `token` and sends it in later hellos. `resumed` tells whether the account
+   * holds a seat in a game in progress: the client is then put back in it, and a `room` and a `state` follow.
    */
-  | { type: 'welcome'; token: string; name: string }
-  /** The lobby, sent to everyone in it whenever it changes. `players` is in seat order; seat 0 is the host. */
-  | { type: 'room'; code: string; countriesToWin: number; players: { name: string; bot: boolean }[]; you: PlayerId }
+  | { type: 'welcome'; token: string; name: string; resumed: boolean }
+  /**
+   * The room, sent to everyone in it whenever it changes: in the lobby, and during the game when a player's
+   * connection is lost or comes back. `players` is in seat order; seat 0 is the host.
+   */
+  | { type: 'room'; code: string; countriesToWin: number; players: RoomPlayer[]; you: PlayerId }
   /** The host has removed the receiver from the lobby: they are in no room any more. */
   | { type: 'removed' }
+  /**
+   * Another connection of the receiver's account has taken its seat (the same player, connected again): this
+   * connection is in no room any more, and the server closes it.
+   */
+  | { type: 'replaced' }
+  /** Answer to `ping`. */
+  | { type: 'pong' }
   /**
    * The game as the receiving player may see it, sent to every player when the game starts and after every
    * applied intent. `stateVersion` starts at 1 and grows by 1 each time. After a server restart the game is back
@@ -49,6 +75,13 @@ export type ServerMessage =
   | { type: 'state'; stateVersion: number; view: PlayerView; legalActions: Action[] }
   /** The client's last message was refused and changed nothing. */
   | { type: 'error'; code: ErrorCode; message: string };
+
+export interface RoomPlayer {
+  name: string;
+  bot: boolean;
+  /** Whether the player's connection is there. A bot is always `connected`; so is everyone in a lobby. */
+  status: 'connected' | 'disconnected';
+}
 
 export type ErrorCode =
   | 'bad_message'

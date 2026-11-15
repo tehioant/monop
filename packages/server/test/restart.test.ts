@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { after, before, test } from 'node:test';
-import { act, Client, newGame, nextStates, startTestServer, type Players, type TestServer } from './helpers.ts';
+import { act, Client, newGame, nextStates, person, startTestServer, type Players, type TestServer } from './helpers.ts';
 
 let server: TestServer;
 const clients: Client[] = [];
@@ -48,12 +48,16 @@ test('a game survives a server restart in mid-turn, is finished by its players, 
   await server.restart();
 
   // Each player is back in their seat, whoever connects first, with the game as it was when the turn passed.
+  // Nobody is connected to a restored game: the first one back sees the other disconnected until they come.
   const boAgain = await hello({ token: bo.token });
+  const alone = await boAgain.client.next('room');
+  assert.deepEqual(alone.players, [{ ...person('Ada'), status: 'disconnected' }, person('Bo')]);
+  const boState = await boAgain.client.next('state');
   const adaAgain = await hello({ token: ada.token });
   players = [adaAgain.client, boAgain.client];
   assert.deepEqual(await players[0].next('room'), { ...lobby, you: 0 });
   assert.deepEqual(await players[1].next('room'), lobby);
-  states = await nextStates(players);
+  states = [await players[0].next('state'), boState];
   assert.deepEqual(states, turnStart);
 
   t.mock.timers.setTime(startedAt + 754_000);

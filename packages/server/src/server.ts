@@ -15,7 +15,7 @@ import {
   saveSnapshot,
   type Sql,
 } from './db.ts';
-import { MAX_NAME_LENGTH, PROTOCOL_VERSION, type ServerMessage } from './protocol.ts';
+import { HEARTBEAT_MS, MAX_NAME_LENGTH, PROTOCOL_VERSION, type ServerMessage } from './protocol.ts';
 import { Rejection, Rooms, type Member } from './rooms.ts';
 
 export interface ServerOptions {
@@ -64,11 +64,19 @@ export async function startServer(options: ServerOptions): Promise<Server> {
 
   const app = Fastify();
   await app.register(websocket, { options: { maxPayload: MAX_MESSAGE_BYTES } });
-  app.get('/ws', { websocket: true }, (socket) => serve(socket, sql, rooms));
+  // The connections heard from since the last sweep. One that is not among them at the next sweep is taken for
+  // dead and closed, which is how the server learns of a connection lost without a goodbye.
+  const heard = new Set<WebSocket>();
+  app.get('/ws', { websocket: true }, (socket) => serve(socket, sql, rooms, () => heard.add(socket)));
+  const sweep = setInterval(() => {
+    for (const socket of app.websocketServer.clients) if (!heard.has(socket)) socket.terminate();
+    heard.clear();
+  }, 2 * HEARTBEAT_MS);
   await app.listen({ port, host });
   return {
     port: (app.server.address() as AddressInfo).port,
     async close() {
+      clearInterval(sweep);
       await app.close();
       await saved;
       await sql.end();
@@ -76,10 +84,11 @@ export async function startServer(options: ServerOptions): Promise<Server> {
   };
 }
 
-/** One client connection. Its messages are handled strictly one after the other. */
-function serve(socket: WebSocket, sql: Sql, rooms: Rooms): void {
+/** One client connection. Its messages are handled strictly one after the other. `alive` is called for each. */
+function serve(socket: WebSocket, sql: Sql, rooms: Rooms, alive: () => void): void {
   let member: Member | undefined;
   let queue = Promise.resolve();
+  alive();
 
   const send = (message: ServerMessage): void => {
     if (socket.readyState === socket.OPEN) socket.send(JSON.stringify({ v: PROTOCOL_VERSION, ...message }));
@@ -98,14 +107,15 @@ function serve(socket: WebSocket, sql: Sql, rooms: Rooms): void {
       const guest = wanted || 'Guest';
       account = { name: guest, ...(await createAccount(sql, guest)) };
     }
-    member = { account: account.id, name: account.name, send };
-    send({ type: 'welcome', token: account.token, name: account.name });
+    member = { account: account.id, name: account.name, send, close: () => socket.close() };
+    send({ type: 'welcome', token: account.token, name: account.name, resumed: rooms.playing(account.id) });
     rooms.resume(member);
   };
 
   const handle = async (text: string): Promise<void> => {
     const message = parse(text);
     if (message.type === 'hello') return hello(message.token, message.name);
+    if (message.type === 'ping') return send({ type: 'pong' });
     if (!member) throw new Rejection('bad_message', 'Say hello first');
     switch (message.type) {
       case 'createRoom':
@@ -120,12 +130,15 @@ function serve(socket: WebSocket, sql: Sql, rooms: Rooms): void {
         return rooms.start(member);
       case 'intent':
         return rooms.intent(member, message.stateVersion, message.action);
+      case 'resync':
+        return rooms.resync(member);
       default:
         throw new Rejection('bad_message', 'Unknown message type');
     }
   };
 
   socket.on('message', (data) => {
+    alive();
     queue = queue
       .then(() => handle(data.toString()))
       .catch((error: unknown) => {

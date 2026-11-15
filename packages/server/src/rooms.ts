@@ -10,7 +10,7 @@ import {
   type GameState,
   type PlayerId,
 } from '@atlas/engine';
-import type { ErrorCode, ServerMessage } from './protocol.ts';
+import type { ErrorCode, RoomPlayer, ServerMessage } from './protocol.ts';
 
 /** Who holds a seat: an account id, or null for a bot, and the display name it plays under. */
 export interface Player {
@@ -18,10 +18,15 @@ export interface Player {
   name: string;
 }
 
-/** A player's connection: who they are and a way to reach them. `send` does nothing once the connection is gone. */
+/** A player's connection: who they are and a way to reach them. Both calls do nothing once the connection is gone. */
 export interface Member extends Player {
   send(message: ServerMessage): void;
+  /** Ends the connection. */
+  close(): void;
 }
+
+/** A seat nobody is connected to: a bot's, or a person's in a game restored from its snapshot. */
+const absent = (player: Player): Member => ({ ...player, send() {}, close() {} });
 
 /** A room whose game is in progress, as saved at a turn boundary. */
 export interface Snapshot {
@@ -86,7 +91,7 @@ export class Rooms {
   #bot: Bot;
   #store: RoomStore;
   #byCode = new Map<string, Room>();
-  /** The room of every connected member. */
+  /** The room of every connected member. A person whose seat is not in it is disconnected. */
   #byMember = new Map<Member, Room>();
 
   /**
@@ -103,7 +108,7 @@ export class Rooms {
     this.#bot = bot;
     this.#store = store;
     for (const { code, countriesToWin, players, startedAt, stateVersion, game } of snapshots) {
-      const members = players.map((player) => ({ ...player, send() {} }));
+      const members = players.map(absent);
       const room = { code, countriesToWin, members, game, stateVersion, startedAt: startedAt.getTime() };
       this.#byCode.set(code, room);
       // A game saved at the start of a bot's turn has nobody else to move it on.
@@ -111,23 +116,40 @@ export class Rooms {
     }
   }
 
+  /** Whether the account holds a seat in a game in progress, which `resume` would put a connection back in. */
+  playing(account: string): boolean {
+    return this.#seatOf(account) !== undefined;
+  }
+
   /**
-   * Puts a member who has just connected back in the seat their account holds in a game in progress, if nobody
-   * is connected to that seat: they receive the room, then the current state.
+   * Puts a member who has just connected back in the seat their account holds in a game in progress, if any:
+   * they receive the room, then the current state, and the other players see them connected.
+   * A connection that still held the seat is told that it has been replaced, and closed: the newest one wins,
+   * since the old one may be dead without the server knowing.
    */
   resume(member: Member): void {
-    for (const room of this.#byCode.values()) {
-      if (!room.game || isOver(room.game)) continue;
-      const seat = room.members.findIndex((held) => held.account === member.account && !this.#byMember.has(held));
-      if (seat < 0) continue;
-      // Like the seats, the names of a game are final once it has started.
-      member.name = room.members[seat]!.name;
-      room.members[seat] = member;
-      this.#byMember.set(member, room);
-      member.send(lobbyFor(room, seat));
-      member.send(stateFor(room, room.game, seat));
-      return;
+    const held = this.#seatOf(member.account!);
+    if (!held) return;
+    const { room, seat } = held;
+    const previous = room.members[seat]!;
+    if (this.#byMember.delete(previous)) {
+      previous.send({ type: 'replaced' });
+      previous.close();
     }
+    // Like the seats, the names of a game are final once it has started.
+    member.name = previous.name;
+    room.members[seat] = member;
+    this.#byMember.set(member, room);
+    this.#sendRoom(room);
+    member.send(stateFor(room, room.game!, seat));
+  }
+
+  /** The member asks for what they should already have: their room and, once the game has started, its state. */
+  resync(member: Member): void {
+    const room = this.#roomOf(member);
+    const seat = room.members.indexOf(member);
+    member.send(this.#roomFor(room, seat));
+    if (room.game) member.send(stateFor(room, room.game, seat));
   }
 
   create(member: Member, countriesToWin: unknown): void {
@@ -159,8 +181,8 @@ export class Rooms {
     const taken = new Set(room.members.map(({ name }) => name));
     let number = 1;
     while (taken.has(`Bot ${number}`)) number++;
-    room.members.push({ account: null, name: `Bot ${number}`, send() {} });
-    sendLobby(room);
+    room.members.push(absent({ account: null, name: `Bot ${number}` }));
+    this.#sendRoom(room);
   }
 
   /** The host empties a seat of their lobby other than their own: its player is told, and is in no room any more. */
@@ -172,7 +194,7 @@ export class Rooms {
     const [removed] = room.members.splice(seat, 1);
     this.#byMember.delete(removed!);
     removed!.send({ type: 'removed' });
-    sendLobby(room);
+    this.#sendRoom(room);
   }
 
   start(member: Member): void {
@@ -203,7 +225,8 @@ export class Rooms {
 
   /**
    * The member's connection is gone: frees their lobby seat, and drops a room nobody is connected to.
-   * A game in progress keeps its room and its seats, so that its players can come back (see `resume`).
+   * A game in progress keeps its room and its seats, so that its players can come back (see `resume`); the
+   * other players see the member disconnected.
    */
   leave(member: Member): void {
     const room = this.#byMember.get(member);
@@ -214,8 +237,8 @@ export class Rooms {
       // The host's seat goes to the next person, never to a bot.
       const host = room.members.findIndex(isPerson);
       if (host > 0) room.members.unshift(...room.members.splice(host, 1));
-      sendLobby(room);
     }
+    this.#sendRoom(room);
     const inProgress = room.game && !isOver(room.game);
     if (!inProgress && !room.members.some((other) => this.#byMember.has(other))) this.#byCode.delete(room.code);
   }
@@ -257,7 +280,30 @@ export class Rooms {
   #seat(room: Room, member: Member): void {
     room.members.push(member);
     this.#byMember.set(member, room);
-    sendLobby(room);
+    this.#sendRoom(room);
+  }
+
+  /** The seat the account holds in a game in progress, if any. */
+  #seatOf(account: string): { room: Room; seat: PlayerId } | undefined {
+    for (const room of this.#byCode.values()) {
+      if (!room.game || isOver(room.game)) continue;
+      const seat = room.members.findIndex((held) => held.account === account);
+      if (seat >= 0) return { room, seat };
+    }
+    return undefined;
+  }
+
+  #sendRoom(room: Room): void {
+    room.members.forEach((member, you) => member.send(this.#roomFor(room, you)));
+  }
+
+  #roomFor(room: Room, you: PlayerId): ServerMessage {
+    const players = room.members.map((member): RoomPlayer => ({
+      name: member.name,
+      bot: !isPerson(member),
+      status: !isPerson(member) || this.#byMember.has(member) ? 'connected' : 'disconnected',
+    }));
+    return { type: 'room', code: room.code, countriesToWin: room.countriesToWin, players, you };
   }
 
   #roomOf(member: Member): Room {
@@ -285,15 +331,6 @@ function isPerson(player: Player): boolean {
 
 function isOver(game: GameState): boolean {
   return game.phase.kind === 'over';
-}
-
-function sendLobby(room: Room): void {
-  room.members.forEach((member, you) => member.send(lobbyFor(room, you)));
-}
-
-function lobbyFor(room: Room, you: PlayerId): ServerMessage {
-  const players = room.members.map((member) => ({ name: member.name, bot: !isPerson(member) }));
-  return { type: 'room', code: room.code, countriesToWin: room.countriesToWin, players, you };
 }
 
 /** A player gets their own view and legal actions; the full state never leaves the server. */
