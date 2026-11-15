@@ -2,21 +2,8 @@
 // Like `actions.ts`, all of it is read off the view and the legal actions. A choice exists exactly when the
 // engine listed an action for it, and picking is the caller's state only: nothing is sent before a confirm.
 
-import { RULES, type Action, type ActionId, type CardId, type Effect, type PlayerView } from '@atlas/engine';
-import { actionLabel, bankTotal, cardInfo, countryPerk, countrySize, title } from './actions.ts';
-
-/** What each action card does, for the prompt of a selected card. A new action card fails to compile here. */
-const EFFECTS: Record<ActionId, string> = {
-  windfall: `draw ${RULES.windfallDraws} cards from the deck`,
-  levy: `every opponent pays you ${RULES.levyAmount}`,
-  debt: `one opponent pays you ${RULES.debtAmount}`,
-  toll: 'every opponent pays you the toll of one of your countries',
-  raid: "take a city from an opponent's incomplete country",
-  exchange: "swap one of your cities for an opponent's, incomplete countries only",
-  seizure: "take an opponent's complete country, upgrades included",
-  upgrade: `attach it to one of your complete countries, its toll rises by ${RULES.upgradeToll}`,
-  veto: 'cancels a card played against you; it cannot be played on your own turn',
-};
+import type { Action, CardId, Effect, PlayerView } from '@atlas/engine';
+import { actionLabel, bankTotal, cardInfo, countrySize, title } from './actions.ts';
 
 /** An action seen as its fields: the prompts go by which fields an action carries, not by its card. */
 type Aimed = { type: string; card: CardId; target: number; country: string; city: CardId; give: CardId; take: CardId };
@@ -42,7 +29,6 @@ export interface Step {
 }
 
 export interface CardPrompt {
-  title: string;
   /** Actions with nothing to choose (bank, lay a city, a card with no target): sent as they are. */
   direct: Action[];
   /** What is left to choose for the other actions; empty when the card has none. */
@@ -123,14 +109,6 @@ function shape(action: Action): string {
   return Object.keys(action).filter((field) => field !== 'type' && field !== 'card').sort().join(',');
 }
 
-function cardTitle(card: CardId): string {
-  const { name, action, country } = cardInfo(card);
-  if (action) return `${name}: ${EFFECTS[action]}`;
-  const perk = country && countryPerk(country);
-  if (perk) return `${name}: ${title(country)}, ${countrySize(country)} cities. Held complete: ${perk.text}`;
-  return name;
-}
-
 /**
  * The prompt of a selected card, from the legal actions that use it (`groupActions().byCard`) and the picks made
  * so far. Every one of those actions is either in `direct` or reachable as `chosen` by picking one option per step.
@@ -138,7 +116,6 @@ function cardTitle(card: CardId): string {
  */
 export function cardPrompt(
   view: PlayerView,
-  card: CardId,
   actions: readonly Action[],
   picks: Picks,
   names: readonly string[],
@@ -184,7 +161,6 @@ export function cardPrompt(
   const chosen = slots.every((slot) => picked[slot] !== undefined) ? keyed.find(({ keys }) => fits(keys)) : undefined;
   const missing = steps.find((step) => picked[step.slot] === undefined);
   return {
-    title: cardTitle(card),
     direct,
     steps,
     chosen: (chosen?.action as Action | undefined) ?? null,

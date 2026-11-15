@@ -147,8 +147,14 @@ export function promptText(view: PlayerView, names: readonly string[]): string {
   return `Your move: ${words(kind).toLowerCase()}${details(rest, names)}`;
 }
 
+/** Every card the viewer can see on the table: their hand, the Market, the discard top, every bank and country. */
+export function shownCards(view: PlayerView): Set<CardId> {
+  const laid = view.players.flatMap(({ bank, table }) => [...bank, ...table.flatMap((stack) => [...stack.cities, ...stack.upgrades])]);
+  return new Set([...view.hand, ...view.market, ...laid, ...(view.discardTop === null ? [] : [view.discardTop])]);
+}
+
 export interface ActionGroups {
-  /** Actions that use a card the viewer can tap: in their hand, in the Market, in their bank or laid by them. */
+  /** Actions that use a card the viewer acts with: in their hand, in the Market, in their bank or laid by them. */
   byCard: Map<CardId, Action[]>;
   /** Every other action, offered as a plain button. */
   general: Action[];
@@ -156,11 +162,13 @@ export interface ActionGroups {
 
 /**
  * Splits the legal actions by the control that offers them. Every action lands in exactly one place.
- * The cards listed here are the ones `Table` draws as tappable: a zone added to one belongs in the other.
+ * The cards listed here are the ones `Table` draws as `tappable`: a zone added to one belongs in the other.
+ * (Any other card it draws can be tapped too, but only to be read.)
  */
 export function groupActions(view: PlayerView, legal: readonly Action[]): ActionGroups {
   const me = view.players[view.viewer]!;
-  const tappable = new Set([...view.hand, ...view.market, ...me.bank, ...me.table.flatMap((stack) => stack.cities)]);
+  const laid = me.table.flatMap((stack) => [...stack.cities, ...stack.upgrades]);
+  const tappable = new Set([...view.hand, ...view.market, ...me.bank, ...laid]);
   const groups: ActionGroups = { byCard: new Map(), general: [] };
   for (const action of legal) {
     if ('card' in action && tappable.has(action.card)) {

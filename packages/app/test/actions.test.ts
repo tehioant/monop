@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { applyAction, createGame, viewFor, type Action, type PlayerView } from '@atlas/engine';
-import { actionLabel, groupActions, logLine, promptText } from '../src/table/actions.ts';
+import { actionLabel, groupActions, logLine, promptText, shownCards } from '../src/table/actions.ts';
 
 const names = ['You', 'Bot 1', 'Bot 2'];
 
@@ -83,4 +83,27 @@ test('every legal action is offered once: on its card if the viewer can tap it, 
     ['cairo', [legal[4]]],
   ]);
   assert.deepEqual(general, [legal[5], legal[6]]);
+});
+
+test('the cards shown are those the viewer can see on the table: never another hand, never the deck', () => {
+  const deck = [
+    ...['cairo', 'alexandria', 'coin-1-1', 'coin-1-2', 'coin-1-3'],
+    ...['coin-2-1', 'coin-2-2', 'coin-2-3', 'coin-2-4', 'coin-2-5'],
+    ...['tokyo', 'coin-3-1', 'coin-3-2'],
+    ...['upgrade-1', 'coin-4-1', 'coin-4-2', 'coin-5-1', 'coin-5-2'],
+  ];
+  const draw: Action = { type: 'draw' };
+  const turns: [number, Action[]][] = [
+    [0, [draw, draw, { type: 'lay', card: 'cairo' }, { type: 'lay', card: 'alexandria' }]],
+    [0, [{ type: 'play', card: 'upgrade-1', country: 'egypt' }, { type: 'endTurn' }]],
+    [1, [draw, draw, { type: 'bank', card: 'coin-2-1' }]],
+  ];
+  let state = createGame({ players: 2, countriesToWin: 3 }, 1, { deck });
+  for (const [player, actions] of turns) for (const action of actions) state = applyAction(state, player, action);
+  const view = viewFor(state, 0);
+  // The discard pile is still empty: its top card is shown too, once there is one.
+  const shown = shownCards({ ...view, discardTop: 'windfall-1' });
+  const expected = ['cairo', 'alexandria', 'upgrade-1', 'coin-2-1', 'windfall-1', ...view.hand, ...view.market];
+  assert.deepEqual([...shown].sort(), expected.sort());
+  assert.deepEqual([view.hand.length, view.market.length], [4, 3]);
 });
