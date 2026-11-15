@@ -10,6 +10,7 @@ export default function Home() {
       <Text style={styles.tagline}>Collect countries, city by city.</Text>
       <Button label="Solo game" onPress={() => router.push('/solo/new')} />
       <Button label="Play online" onPress={() => router.push('/online')} />
+      <Button quiet label="Settings" onPress={() => router.push('/settings')} />
     </View>
   );
 }
