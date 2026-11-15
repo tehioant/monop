@@ -2,7 +2,16 @@
 
 import assert from 'node:assert/strict';
 import { randomBytes } from 'node:crypto';
-import { CARDS, COUNTRIES, createGame, RULES, type CardId, type GameOptions, type GameState } from '@atlas/engine';
+import {
+  CARDS,
+  COUNTRIES,
+  createGame,
+  RULES,
+  type Action,
+  type CardId,
+  type GameOptions,
+  type GameState,
+} from '@atlas/engine';
 import postgres from 'postgres';
 import { LOCAL_DATABASE_URL, type Sql } from '../src/db.ts';
 import { PROTOCOL_VERSION, type ClientMessage, type ServerMessage, type Versioned } from '../src/protocol.ts';
@@ -145,10 +154,14 @@ type States = Awaited<ReturnType<typeof nextStates>>;
  * that follows. Seat 0 lays every city it can; seat 1 only draws and passes.
  */
 export async function act(players: Players, states: States): Promise<States> {
-  const preferred = [['lay', 'draw', 'endTurn'], ['draw', 'endTurn']];
+  const preferred = [['lay', 'draw', 'endTurn'], ['draw', 'endTurn']] as const;
   const seat = states.findIndex((state) => state.legalActions.length > 0);
   const { stateVersion, legalActions } = states[seat]!;
-  const action = preferred[seat]!.map((type) => legalActions.find((a) => a.type === type)).find(Boolean);
-  players[seat]!.send({ type: 'intent', stateVersion, action: action ?? legalActions[0]! });
+  players[seat]!.send({ type: 'intent', stateVersion, action: prefer(legalActions, preferred[seat]!) });
   return nextStates(players);
+}
+
+/** The legal action of the first of `types` that has one, or else the first legal action. */
+export function prefer(legalActions: readonly Action[], types: readonly Action['type'][]): Action {
+  return types.map((type) => legalActions.find((action) => action.type === type)).find(Boolean) ?? legalActions[0]!;
 }
