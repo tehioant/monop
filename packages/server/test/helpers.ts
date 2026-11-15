@@ -44,7 +44,7 @@ export interface TestServer {
  * server of DATABASE_URL (by default the local development container) and dropped by `close`.
  * Call once per test file.
  */
-export async function startTestServer(options: Pick<ServerOptions, 'newGame'> = {}): Promise<TestServer> {
+export async function startTestServer(options: Pick<ServerOptions, 'newGame' | 'bot'> = {}): Promise<TestServer> {
   const adminUrl = process.env.DATABASE_URL ?? LOCAL_DATABASE_URL;
   const admin = postgres(adminUrl, { max: 1, connect_timeout: 5, onnotice: () => {} });
   const name = `atlas_test_${randomBytes(6).toString('hex')}`;
@@ -77,6 +77,9 @@ export async function startTestServer(options: Pick<ServerOptions, 'newGame'> = 
     },
   };
 }
+
+/** A seat held by a person, as a `room` message lists it. */
+export const person = (name: string) => ({ name, bot: false });
 
 type Received<Type extends ServerMessage['type']> = Versioned<Extract<ServerMessage, { type: Type }>>;
 
