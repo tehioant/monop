@@ -209,3 +209,37 @@ test('the Veto prompt says what is at stake, to the target and to the player who
   );
   assert.equal(stakes({ type: 'play', card: 'toll-1', country: 'france' }), 'Ann plays Toll: you pay 2. Cancel it with a Veto?');
 });
+
+test('a debt the payable cards cannot cover takes them all, and goes on with what that frees', () => {
+  // Bob holds Australia complete with an upgrade and has banked 1: worth 6 in all, 3 of it payable. Ann's Debt asks 5.
+  const deck = [
+    ...['debt-1', 'coin-2-1', 'coin-2-2', 'coin-2-3', 'coin-2-4'],
+    ...['sydney', 'melbourne', 'upgrade-1', 'coin-1-1', 'coin-1-2'],
+    ...['coin-3-1', 'coin-3-2', 'coin-3-3'], // the Market
+    ...['coin-1-3', 'coin-1-4', 'coin-1-5', 'coin-1-6', 'coin-2-5', 'coin-4-1'],
+  ];
+  const state = act(
+    createGame({ players: 2, countriesToWin: 3 }, 1, { deck }),
+    ...[draw, draw, end],
+    ...[draw, draw, lay('sydney'), lay('melbourne'), { type: 'play', card: 'upgrade-1', country: 'australia' } as const, bank('coin-1-1'), end],
+    ...[draw, draw, { type: 'play', card: 'debt-1', target: 1 } as const],
+  );
+  const at = (s: GameState, picked: CardId[]) => payPrompt(viewFor(s, 1), legalActions(s, 1), picked, names)!;
+  assert.deepEqual(at(state, ['coin-1-1', 'sydney']).actions, []);
+  const all = at(state, ['coin-1-1', 'sydney', 'melbourne']);
+  assert.deepEqual([all.owed, all.total, all.actions.length], [5, 3, 3]);
+
+  // Breaking the country drops its upgrade into the bank: the prompt comes back for the rest.
+  const rest = at(act(state, ...all.actions), []);
+  assert.deepEqual([rest.owed, rest.cards.map((card) => card.label)], [2, ['Upgrade (3)']]);
+});
+
+test('an action aimed in a way the table has no wording for still gets its options and its confirm', () => {
+  const embargo = (region: string) => ({ type: 'tradeEmbargo', card: 'windfall-1', region }) as unknown as Action;
+  const view = viewFor(annToPlay(), 0);
+  const prompt = cardPrompt(view, 'windfall-1', [embargo('north'), embargo('south')], {}, names);
+  assert.deepEqual(labels(prompt), [['Choose', [null, 'Trade embargo Windfall (region: North)', 'Trade embargo Windfall (region: South)']]]);
+  const south = prompt.steps[0]!.groups[0]!.options[1]!.key;
+  const picked = cardPrompt(view, 'windfall-1', [embargo('north'), embargo('south')], { aim: south }, names);
+  assert.deepEqual([picked.chosen, picked.confirm], [embargo('south'), 'Trade embargo Windfall (region: South)']);
+});
