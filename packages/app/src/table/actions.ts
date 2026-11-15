@@ -53,11 +53,11 @@ export function completeCount(table: Stacks): number {
   return table.filter((stack) => stack.complete).length;
 }
 
-const countrySizes = new Map<string, number>(COUNTRIES.map((country) => [country.id, country.cities.length]));
+const countries = new Map<string, (typeof COUNTRIES)[number]>(COUNTRIES.map((country) => [country.id, country]));
 
 /** Number of cities that complete a country; 0 if unknown. */
 export function countrySize(country: string): number {
-  return countrySizes.get(country) ?? 0;
+  return countries.get(country)?.cities.length ?? 0;
 }
 
 /** What a country gives the player who holds it complete: a short label for a card or a country, and the full text. */
@@ -67,11 +67,9 @@ const PERKS: Record<PerkId, { label: string; text: string }> = {
   vetoReturn: { label: 'Veto back', text: 'the first Veto you play returns to your hand' },
 };
 
-const countryPerks = new Map<string, PerkId>(COUNTRIES.map((country) => [country.id, country.perk]));
-
 /** The perk of a country, in words; undefined if unknown. */
 export function countryPerk(country: string): { label: string; text: string } | undefined {
-  const perk = countryPerks.get(country);
+  const perk = countries.get(country)?.perk;
   return perk && PERKS[perk];
 }
 
@@ -82,7 +80,7 @@ export function title(id: string): string {
 }
 
 /** Words for a camelCase name: 'endTurn' -> 'End turn'. */
-export function words(name: string): string {
+function words(name: string): string {
   const spaced = name.replace(/[A-Z]/g, (letter) => ` ${letter.toLowerCase()}`);
   return spaced.charAt(0).toUpperCase() + spaced.slice(1);
 }

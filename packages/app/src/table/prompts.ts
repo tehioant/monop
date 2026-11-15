@@ -3,7 +3,7 @@
 // engine listed an action for it, and picking is the caller's state only: nothing is sent before a confirm.
 
 import { RULES, type Action, type ActionId, type CardId, type Effect, type PlayerView } from '@atlas/engine';
-import { actionLabel, bankTotal, cardInfo, countryPerk, countrySize, title, words } from './actions.ts';
+import { actionLabel, bankTotal, cardInfo, countryPerk, countrySize, title } from './actions.ts';
 
 /** What each action card does, for the prompt of a selected card. A new action card fails to compile here. */
 const EFFECTS: Record<ActionId, string> = {
@@ -19,7 +19,7 @@ const EFFECTS: Record<ActionId, string> = {
 };
 
 /** An action seen as its fields: the prompts go by which fields an action carries, not by its card. */
-type Aimed = { type: string; card: CardId; target?: number; country?: string; city?: CardId; give?: CardId; take?: CardId };
+type Aimed = { type: string; card: CardId; target: number; country: string; city: CardId; give: CardId; take: CardId };
 
 /** A pick is made in a slot: the own city an Exchange gives, or everything else the action is aimed at. */
 export type Slot = 'give' | 'aim';
@@ -49,16 +49,13 @@ export interface CardPrompt {
   steps: Step[];
   /** The action the picks add up to, once every step has one. */
   chosen: Action | null;
-}
-
-/** The fields an action is aimed with, as one word: 'city,target' for a Raid, 'country' for a Toll. */
-function shape(action: Action): string {
-  return Object.keys(action).filter((field) => field !== 'type' && field !== 'card').sort().join(',');
+  /** The words of the confirm button: what `chosen` does, or what is still to pick. Null without steps. */
+  confirm: string | null;
 }
 
 /** The country one of a player's laid cities is in. */
-function laidIn(view: PlayerView, seat: number, city: CardId | undefined): string | undefined {
-  return view.players[seat]?.table.find((stack) => stack.cities.includes(city!))?.country;
+function laidIn(view: PlayerView, seat: number, city: CardId): string | undefined {
+  return view.players[seat]?.table.find((stack) => stack.cities.includes(city))?.country;
 }
 
 function stackLabel(view: PlayerView, seat: number, country: string): string {
@@ -67,49 +64,63 @@ function stackLabel(view: PlayerView, seat: number, country: string): string {
   return stack ? `${progress}${stack.complete ? ' ✓' : ''} · toll ${stack.toll}` : progress;
 }
 
-const STEP_TITLES: Record<string, string> = {
-  'city,target': 'Take which city?',
-  'give,take,target': 'For which city?',
-  'country,target': 'Take which country?',
-  country: 'Which country?',
-  target: 'Which opponent?',
-};
-
-function describe(view: PlayerView, slot: Slot, action: Action, names: readonly string[]): Omit<Option, 'key' | 'picked'> & { seat: number | null } {
-  const { target, country, city, give, take } = action as Aimed;
-  if (slot === 'give') return { seat: null, label: cardInfo(give!).name, country: laidIn(view, view.viewer, give) };
-  switch (shape(action)) {
-    case 'city,target':
-    case 'give,take,target':
-      return { seat: target!, label: cardInfo((city ?? take)!).name, country: laidIn(view, target!, city ?? take) };
-    case 'country,target':
-    case 'country':
-      return { seat: target ?? null, label: stackLabel(view, target ?? view.viewer, country!), country };
-    case 'target':
-      return { seat: null, label: `${names[target!]} · bank ${bankTotal(view.players[target!]?.bank ?? [])}` };
-    default:
-      return { seat: null, label: actionLabel(action, names) };
-  }
+/** How one way of aiming an action is asked for, offered and confirmed. */
+interface Aim {
+  ask: string;
+  /** One option: its owner (null for the viewer's own things and for opponents themselves), label and country. */
+  option: (action: Aimed, view: PlayerView, names: readonly string[]) => Omit<Option, 'key' | 'picked'> & { seat: number | null };
+  /** One line for the whole action, on the button that sends it. */
+  confirm: (action: Aimed, names: readonly string[]) => string;
 }
 
-/** One line for the action a confirm would send. */
-export function confirmLabel(action: Action, names: readonly string[]): string {
-  const { card, target, country, city, give, take } = action as Aimed;
-  const them = names[target ?? -1];
-  switch (shape(action)) {
-    case 'city,target':
-      return `Take ${cardInfo(city!).name} from ${them}`;
-    case 'give,take,target':
-      return `Give ${cardInfo(give!).name} for ${them}'s ${cardInfo(take!).name}`;
-    case 'country,target':
-      return `Take ${title(country!)} from ${them}`;
-    case 'country':
-      return `${words(action.type)} ${cardInfo(card).name}: ${title(country!)}`;
-    case 'target':
-      return `${words(action.type)} ${cardInfo(card).name}: ${them}`;
-    default:
-      return actionLabel(action, names);
-  }
+/** The verb and the card, as on any other button: 'Play Toll'. */
+const head = ({ type, card }: Aimed, names: readonly string[]) => actionLabel({ type, card } as Action, names);
+
+/** The ways to aim an action that have their own wording, by the fields the action carries besides its card. */
+const AIMS: Record<string, Aim> = {
+  'city,target': {
+    ask: 'Take which city?',
+    option: ({ target, city }, view) => ({ seat: target, label: cardInfo(city).name, country: laidIn(view, target, city) }),
+    confirm: ({ target, city }, names) => `Take ${cardInfo(city).name} from ${names[target]}`,
+  },
+  'give,take,target': {
+    ask: 'For which city?',
+    option: ({ target, take }, view) => ({ seat: target, label: cardInfo(take).name, country: laidIn(view, target, take) }),
+    confirm: ({ target, give, take }, names) => `Give ${cardInfo(give).name} for ${names[target]}'s ${cardInfo(take).name}`,
+  },
+  'country,target': {
+    ask: 'Take which country?',
+    option: ({ target, country }, view) => ({ seat: target, label: stackLabel(view, target, country), country }),
+    confirm: ({ target, country }, names) => `Take ${title(country)} from ${names[target]}`,
+  },
+  country: {
+    ask: 'Which country?',
+    option: ({ country }, view) => ({ seat: null, label: stackLabel(view, view.viewer, country), country }),
+    confirm: (action, names) => `${head(action, names)}: ${title(action.country)}`,
+  },
+  target: {
+    ask: 'Which opponent?',
+    option: ({ target }, view, names) => ({ seat: null, label: `${names[target]} · bank ${bankTotal(view.players[target]?.bank ?? [])}` }),
+    confirm: (action, names) => `${head(action, names)}: ${names[action.target]}`,
+  },
+};
+
+/** Any other action: it reads as `actionLabel` words it, so a new way of aiming still gets its options. */
+const OTHER: Aim = {
+  ask: 'Choose',
+  option: (action, _view, names) => ({ seat: null, label: actionLabel(action as Action, names) }),
+  confirm: (action, names) => actionLabel(action as Action, names),
+};
+
+/** The own city an Exchange gives: picked on its own, before what it is given for. */
+const GIVE: Pick<Aim, 'ask' | 'option'> = {
+  ask: 'Give which of your cities?',
+  option: ({ give }, view) => ({ seat: null, label: cardInfo(give).name, country: laidIn(view, view.viewer, give) }),
+};
+
+/** The fields an action is aimed with, as one word: 'city,target' for a Raid, 'country' for a Toll, '' for none. */
+function shape(action: Action): string {
+  return Object.keys(action).filter((field) => field !== 'type' && field !== 'card').sort().join(',');
 }
 
 function cardTitle(card: CardId): string {
@@ -135,12 +146,12 @@ export function cardPrompt(
   const direct = actions.filter((action) => shape(action) === '');
   const aimed = actions.filter((action) => shape(action) !== '');
   // The city given is picked on its own when every action has one (an Exchange); it is part of the aim otherwise.
-  const slots: Slot[] = aimed.length > 0 && aimed.every((action) => 'give' in action) ? ['give', 'aim'] : ['aim'];
+  const split = aimed.every((action) => 'give' in action);
+  const slots: Slot[] = aimed.length === 0 ? [] : split ? ['give', 'aim'] : ['aim'];
   const keyed = aimed.map((action) => {
     const { card: _card, give, ...rest } = action as Aimed;
-    const keys: Record<Slot, string> =
-      slots.length > 1 ? { give: give!, aim: JSON.stringify(rest) } : { give: '', aim: JSON.stringify({ ...rest, give }) };
-    return { action, keys };
+    const keys: Record<Slot, string> = split ? { give, aim: JSON.stringify(rest) } : { give: '', aim: JSON.stringify({ ...rest, give }) };
+    return { action: action as Aimed, aim: AIMS[shape(action)] ?? OTHER, keys };
   });
 
   const picked: Picks = {};
@@ -155,26 +166,30 @@ export function cardPrompt(
     slots.every((other) => other === slot || picked[other] === undefined || picked[other] === keys[other]);
 
   const steps = slots.map((slot): Step => {
-    const options = new Map<string, Option & { seat: number | null }>();
-    for (const { action, keys } of keyed) {
-      if (!fits(keys, slot) || options.has(keys[slot])) continue;
-      options.set(keys[slot], { ...describe(view, slot, action, names), key: keys[slot], picked: picked[slot] === keys[slot] });
+    const groups = new Map<number | null, Option[]>();
+    const seen = new Set<string>();
+    let title = '';
+    for (const { action, aim, keys } of keyed) {
+      const key = keys[slot];
+      if (seen.has(key) || !fits(keys, slot)) continue;
+      const { ask, option } = slot === 'give' ? GIVE : aim;
+      if (seen.size === 0) title = ask;
+      seen.add(key);
+      const { seat, ...rest } = option(action, view, names);
+      groups.set(seat, [...(groups.get(seat) ?? []), { ...rest, key, picked: picked[slot] === key }]);
     }
-    const seats = [...new Set([...options.values()].map((option) => option.seat))];
-    const first = keyed.find(({ keys }) => options.has(keys[slot]))?.action;
-    return {
-      slot,
-      title: slot === 'give' ? 'Give which of your cities?' : (STEP_TITLES[first ? shape(first) : ''] ?? 'Choose'),
-      groups: seats.map((seat) => ({
-        seat,
-        options: [...options.values()].filter((option) => option.seat === seat).map(({ seat: _seat, ...option }) => option),
-      })),
-    };
+    return { slot, title, groups: [...groups].map(([seat, options]) => ({ seat, options })) };
   });
 
-  const complete = slots.every((slot) => picked[slot] !== undefined);
-  const chosen = complete ? keyed.find(({ keys }) => fits(keys))?.action : undefined;
-  return { title: cardTitle(card), direct, steps: aimed.length > 0 ? steps : [], chosen: chosen ?? null };
+  const chosen = slots.every((slot) => picked[slot] !== undefined) ? keyed.find(({ keys }) => fits(keys)) : undefined;
+  const missing = steps.find((step) => picked[step.slot] === undefined);
+  return {
+    title: cardTitle(card),
+    direct,
+    steps,
+    chosen: (chosen?.action as Action | undefined) ?? null,
+    confirm: chosen ? chosen.aim.confirm(chosen.action, names) : (missing?.title ?? null),
+  };
 }
 
 export interface PayPrompt {
@@ -183,8 +198,14 @@ export interface PayPrompt {
   owed: number;
   /** What the picked cards are worth together. */
   total: number;
-  /** Every card that can be paid with, with its worth; `key` is the card. */
-  cards: Option[];
+  /** The running total against what is owed, in words. */
+  summary: string;
+  /**
+   * Every card that can be paid with, with its worth; `key` is the card. A card is `disabled` once the picked
+   * ones cover what is owed: every picked card is then needed when its turn to be paid comes, so the game
+   * never refuses one because the debt is already settled.
+   */
+  cards: (Option & { disabled: boolean })[];
   /**
    * The payments a confirm makes, one card each, in the order to send them: the next one once the game has
    * answered the last. Empty until the picked cards cover what is owed, or are all there is to pay with.
@@ -209,35 +230,33 @@ export function payPrompt(
     text: `You owe ${phase.owed} to ${names[phase.receiver]}`,
     owed: phase.owed,
     total,
+    summary: `Selected ${total} of ${phase.owed}${total > phase.owed ? ` (${total - phase.owed} over)` : ''}`,
     cards: payable.map(({ card }) => {
       const { name, kind, value } = cardInfo(card);
+      const isPicked = chosen.some((action) => action.card === card);
       return {
         key: card,
         label: kind === 'coin' ? name : `${name} (${value})`,
         country: laidIn(view, viewer, card),
-        picked: chosen.some((action) => action.card === card),
+        picked: isPicked,
+        disabled: !isPicked && total >= phase.owed,
       };
     }),
     actions: enough ? chosen : [],
   };
 }
 
-/**
- * The picked cards after a tap on `card`. A card is added only while more is owed than is picked, so every
- * picked card is needed when its turn to be paid comes: the game never refuses one for being paid already.
- */
-export function togglePay(prompt: PayPrompt, picked: readonly CardId[], card: CardId): CardId[] {
+/** The picked cards after a tap on `card`: put back if it was picked, added unless it is disabled or not payable. */
+export function togglePay(prompt: PayPrompt, picked: readonly CardId[], card: CardId): readonly CardId[] {
   if (picked.includes(card)) return picked.filter((id) => id !== card);
-  const payable = prompt.cards.some((option) => option.key === card);
-  return payable && prompt.total < prompt.owed ? [...picked, card] : [...picked];
+  return prompt.cards.some((option) => option.key === card && !option.disabled) ? [...picked, card] : picked;
 }
 
 export interface VetoPrompt {
   text: string;
   /** Answer with a Veto: one of the viewer's, they are all alike. */
   veto: Action | undefined;
-  /** Let the card, or the other player's Veto, stand. */
-  decline: Action | undefined;
+  /** The words for declining: letting the card, or the other player's Veto, stand. */
   declineLabel: string;
 }
 
@@ -270,7 +289,6 @@ export function vetoPrompt(view: PlayerView, legal: readonly Action[], names: re
   return {
     text,
     veto: legal.find((action) => action.type === 'play'),
-    decline: legal.find((action) => action.type === 'decline'),
     declineLabel: targeted ? 'Let it happen' : 'Accept the Veto',
   };
 }

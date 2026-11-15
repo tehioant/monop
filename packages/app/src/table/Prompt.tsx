@@ -6,10 +6,8 @@ import type { ReactNode } from 'react';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import { actionLabel } from './actions.ts';
 import { Button, Choice, shared } from './parts.tsx';
-import { confirmLabel, type CardPrompt, type Option, type PayPrompt, type Slot, type VetoPrompt } from './prompts.ts';
+import type { CardPrompt, PayPrompt, Slot, VetoPrompt } from './prompts.ts';
 import { colors, countryColor } from './theme.ts';
-
-const picked = (options: readonly Option[]) => options.some((option) => option.picked);
 
 /** A selected card: its text, what it can do at once, and the targets to pick before confirming. */
 export function CardPanel({
@@ -25,17 +23,16 @@ export function CardPanel({
   onAction: (action: Action) => void;
   onCancel: () => void;
 }) {
-  const { chosen, steps } = prompt;
-  const missing = steps.find((step) => !step.groups.some((group) => picked(group.options)));
+  const { chosen, confirm, steps } = prompt;
   return (
-    <Panel title={prompt.title}>
+    <PromptPanel title={prompt.title}>
       {steps.length > 0 && (
         <ScrollView style={styles.scroll} contentContainerStyle={styles.steps}>
           {steps.map((step) => (
             <View key={step.slot} style={styles.step}>
               <Text style={shared.small}>{step.title}</Text>
               {step.groups.map((group) => (
-                <View key={String(group.seat)} style={styles.group}>
+                <View key={String(group.seat)} style={[shared.wrap, styles.group]}>
                   {group.seat !== null && <Text style={styles.owner}>{names[group.seat]}</Text>}
                   {group.options.map((option) => (
                     <Choice
@@ -59,14 +56,8 @@ export function CardPanel({
         ))}
       </View>
       {/* On its own line, so that nothing moves when its label changes. */}
-      {steps.length > 0 && (
-        <Button
-          label={chosen ? confirmLabel(chosen, names) : (missing?.title ?? 'Choose')}
-          disabled={!chosen}
-          onPress={() => chosen && onAction(chosen)}
-        />
-      )}
-    </Panel>
+      {confirm !== null && <Button label={confirm} disabled={!chosen} onPress={() => chosen && onAction(chosen)} />}
+    </PromptPanel>
   );
 }
 
@@ -78,14 +69,12 @@ export function PayPanel({
   onConfirm,
 }: {
   prompt: PayPrompt;
-  /** Given for the cards a tap can pick or put back. */
-  onToggle: (card: string) => (() => void) | undefined;
+  onToggle: (card: string) => void;
   onClear: () => void;
   onConfirm: () => void;
 }) {
-  const { owed, total } = prompt;
   return (
-    <Panel title={`Selected ${total} of ${owed}${total > owed ? ` (${total - owed} over)` : ''}`}>
+    <PromptPanel title={prompt.summary}>
       <Text style={shared.small}>No change is given. Pay with banked cards and laid cities, never from your hand.</Text>
       <ScrollView style={styles.scroll} contentContainerStyle={shared.wrap}>
         {prompt.cards.map((card) => (
@@ -94,30 +83,50 @@ export function PayPanel({
             label={card.label}
             picked={card.picked}
             color={card.country && countryColor(card.country)}
-            onPress={onToggle(card.key)}
+            onPress={card.disabled ? undefined : () => onToggle(card.key)}
           />
         ))}
       </ScrollView>
       <View style={shared.wrap}>
-        <Button quiet label="Clear" disabled={total === 0} onPress={onClear} />
-        <Button label={`Pay ${total}`} disabled={prompt.actions.length === 0} onPress={onConfirm} />
+        <Button quiet label="Clear" disabled={prompt.total === 0} onPress={onClear} />
+        <Button label={`Pay ${prompt.total}`} disabled={prompt.actions.length === 0} onPress={onConfirm} />
       </View>
-    </Panel>
+    </PromptPanel>
   );
 }
 
-/** A Veto question: answer with a Veto, or let things stand. The question itself is the table's prompt line. */
-export function VetoPanel({ prompt, onAction }: { prompt: VetoPrompt; onAction: (action: Action) => void }) {
-  const { veto, decline } = prompt;
+/**
+ * A Veto question: answer with a Veto, or let things stand. The question itself is the table's prompt line.
+ * `general` are the actions the table offers as plain buttons: declining is one of them, worded for the question.
+ */
+export function VetoPanel({
+  prompt,
+  general,
+  names,
+  onAction,
+}: {
+  prompt: VetoPrompt;
+  general: readonly Action[];
+  names: readonly string[];
+  onAction: (action: Action) => void;
+}) {
+  const { veto } = prompt;
   return (
-    <View style={[styles.panel, shared.wrap]}>
-      {decline && <Button quiet label={prompt.declineLabel} onPress={() => onAction(decline)} />}
+    <View style={[shared.wrap, styles.panel]}>
+      {general.map((action, i) => (
+        <Button
+          key={i}
+          quiet
+          label={action.type === 'decline' ? prompt.declineLabel : actionLabel(action, names)}
+          onPress={() => onAction(action)}
+        />
+      ))}
       {veto && <Button label="Play Veto" onPress={() => onAction(veto)} />}
     </View>
   );
 }
 
-function Panel({ title, children }: { title: string; children: ReactNode }) {
+function PromptPanel({ title, children }: { title: string; children: ReactNode }) {
   return (
     <View style={styles.panel}>
       <Text style={styles.title}>{title}</Text>
@@ -133,6 +142,6 @@ const styles = StyleSheet.create({
   scroll: { flexGrow: 0, flexShrink: 1, maxHeight: 220 },
   steps: { gap: 8 },
   step: { gap: 4 },
-  group: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 6 },
+  group: { alignItems: 'center' },
   owner: { color: colors.ink, fontSize: 12, fontWeight: '700' },
 });

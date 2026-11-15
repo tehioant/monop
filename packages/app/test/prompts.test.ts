@@ -3,7 +3,7 @@ import { test } from 'node:test';
 import { createBot, DIFFICULTIES } from '@atlas/bots';
 import { applyAction, createGame, legalActions, viewFor, type Action, type CardId, type GameState } from '@atlas/engine';
 import { groupActions } from '../src/table/actions.ts';
-import { cardPrompt, confirmLabel, payPrompt, togglePay, vetoPrompt, type Picks } from '../src/table/prompts.ts';
+import { cardPrompt, payPrompt, togglePay, vetoPrompt, type Picks } from '../src/table/prompts.ts';
 
 const names = ['Ann', 'Bob', 'Cy'];
 
@@ -60,7 +60,7 @@ test('a card with nothing to choose is played or banked as it is', () => {
   assert.equal(prompt.title, 'Windfall: draw 2 cards from the deck');
   assert.deepEqual(prompt.direct, [{ type: 'play', card: 'windfall-1' }, bank('windfall-1')]);
   assert.deepEqual(prompt.steps, []);
-  assert.equal(prompt.chosen, null);
+  assert.deepEqual([prompt.chosen, prompt.confirm], [null, null]);
 });
 
 test('a card that needs a target lists them by opponent, and designates an action once one is picked', () => {
@@ -68,12 +68,12 @@ test('a card that needs a target lists them by opponent, and designates an actio
   const raid = promptOf(state, 'raid-1');
   assert.deepEqual(raid.direct, [bank('raid-1')]);
   assert.deepEqual(labels(raid), [['Take which city?', [1, 'London'], [2, 'Tokyo']]]);
-  assert.equal(raid.chosen, null);
+  assert.deepEqual([raid.chosen, raid.confirm], [null, 'Take which city?']);
   const tokyo = raid.steps[0]!.groups[1]!.options[0]!;
   assert.equal(tokyo.country, 'japan');
   const picked = promptOf(state, 'raid-1', { aim: tokyo.key });
   assert.deepEqual(picked.chosen, { type: 'play', card: 'raid-1', target: 2, city: 'tokyo' });
-  assert.equal(confirmLabel(picked.chosen!, names), 'Take Tokyo from Cy');
+  assert.equal(picked.confirm, 'Take Tokyo from Cy');
   assert.deepEqual(picked.steps[0]!.groups.flatMap(({ options }) => options.map((option) => option.picked)), [false, true]);
 
   assert.deepEqual(labels(promptOf(state, 'debt-1')), [['Which opponent?', [null, 'Bob · bank 6', 'Cy · bank 0']]]);
@@ -88,10 +88,11 @@ test('an Exchange is two picks, not a list of every pair', () => {
   ]);
   const give = prompt.steps[0]!.groups[0]!.options[1]!.key;
   const aim = prompt.steps[1]!.groups[0]!.options[0]!.key;
-  assert.equal(promptOf(state, 'exchange-1', { give }).chosen, null);
-  const { chosen } = promptOf(state, 'exchange-1', { give, aim });
+  assert.deepEqual([prompt.chosen, prompt.confirm], [null, 'Give which of your cities?']);
+  assert.deepEqual([promptOf(state, 'exchange-1', { give }).chosen, promptOf(state, 'exchange-1', { give }).confirm], [null, 'For which city?']);
+  const { chosen, confirm } = promptOf(state, 'exchange-1', { give, aim });
   assert.deepEqual(chosen, { type: 'play', card: 'exchange-1', target: 1, give: 'lyon', take: 'london' });
-  assert.equal(confirmLabel(chosen!, names), "Give Lyon for Bob's London");
+  assert.equal(confirm, "Give Lyon for Bob's London");
 });
 
 test('a single target is picked already, and a pick that names no option counts as none', () => {
@@ -99,11 +100,15 @@ test('a single target is picked already, and a pick that names no option counts 
   const toll = promptOf(state, 'toll-1', { aim: 'gone' });
   assert.deepEqual(labels(toll), [['Which country?', [null, 'France 2/3 · toll 2']]]);
   assert.deepEqual(toll.chosen, { type: 'play', card: 'toll-1', country: 'france' });
-  assert.equal(confirmLabel(toll.chosen!, names), 'Play Toll: France');
+  assert.equal(toll.confirm, 'Play Toll: France');
 
   const seizure = promptOf(state, 'seizure-1');
   assert.deepEqual(labels(seizure), [['Take which country?', [2, 'Australia 2/2 ✓ · toll 2']]]);
-  assert.equal(confirmLabel(seizure.chosen!, names), 'Take Australia from Cy');
+  assert.deepEqual(seizure.chosen, { type: 'play', card: 'seizure-1', target: 2, country: 'australia' });
+  assert.equal(seizure.confirm, 'Take Australia from Cy');
+
+  const debt = promptOf(state, 'debt-1');
+  assert.equal(promptOf(state, 'debt-1', { aim: debt.steps[0]!.groups[0]!.options[1]!.key }).confirm, 'Play Debt: Cy');
 });
 
 test('a city card says what its country gives once complete', () => {
@@ -145,16 +150,16 @@ test('the payment prompt adds up the picked cards, and sends them only once they
   const state = act(annToPlay(), { type: 'play', card: 'debt-1', target: 1 }, { type: 'decline' });
   const view = viewFor(state, 1);
   const legal = legalActions(state, 1);
-  const at = (picked: CardId[]) => payPrompt(view, legal, picked, names)!;
+  const at = (picked: readonly CardId[]) => payPrompt(view, legal, picked, names)!;
   assert.equal(payPrompt(viewFor(state, 0), legalActions(state, 0), [], names), null);
 
   const none = at([]);
   assert.equal(none.text, 'You owe 5 to Ann');
-  assert.deepEqual([none.owed, none.total, none.actions], [5, 0, []]);
-  assert.deepEqual(none.cards.map(({ key, label, country, picked }) => [key, label, country, picked]), [
-    ['coin-5-1', 'Coin 5', undefined, false],
-    ['coin-1-1', 'Coin 1', undefined, false],
-    ['london', 'London (2)', 'uk', false],
+  assert.deepEqual([none.owed, none.total, none.summary, none.actions], [5, 0, 'Selected 0 of 5', []]);
+  assert.deepEqual(none.cards, [
+    { key: 'coin-5-1', label: 'Coin 5', country: undefined, picked: false, disabled: false },
+    { key: 'coin-1-1', label: 'Coin 1', country: undefined, picked: false, disabled: false },
+    { key: 'london', label: 'London (2)', country: 'uk', picked: false, disabled: false },
   ]);
 
   // Short of the amount: nothing to send yet. Covered: no further card can be added, so none is ever refused.
@@ -163,8 +168,9 @@ test('the payment prompt adds up the picked cards, and sends them only once they
   assert.deepEqual([at(picked).total, at(picked).actions], [3, []]);
   picked = togglePay(at(picked), picked, 'coin-5-1');
   const over = at(picked);
-  assert.equal(over.total, 8);
+  assert.deepEqual([over.total, over.summary], [8, 'Selected 8 of 5 (3 over)']);
   assert.deepEqual(over.actions, [{ type: 'pay', card: 'coin-1-1' }, { type: 'pay', card: 'london' }, { type: 'pay', card: 'coin-5-1' }]);
+  assert.deepEqual(at(['coin-5-1']).cards.map((card) => card.disabled), [false, true, true]);
   assert.deepEqual(togglePay(at(['coin-5-1']), ['coin-5-1'], 'london'), ['coin-5-1']);
   assert.deepEqual(togglePay(over, picked, 'london'), ['coin-1-1', 'coin-5-1']);
   assert.deepEqual(togglePay(none, [], 'veto-1'), []);
@@ -178,7 +184,7 @@ test('the Veto prompt says what is at stake, to the target and to the player who
   const asked = act(annToPlay(), { type: 'play', card: 'debt-1', target: 1 });
   const bob = vetoPrompt(viewFor(asked, 1), legalActions(asked, 1), names)!;
   assert.equal(bob.text, 'Ann plays Debt: you pay 5. Cancel it with a Veto?');
-  assert.deepEqual([bob.veto, bob.decline, bob.declineLabel], [{ type: 'play', card: 'veto-1' }, { type: 'decline' }, 'Let it happen']);
+  assert.deepEqual([bob.veto, bob.declineLabel], [{ type: 'play', card: 'veto-1' }, 'Let it happen']);
   assert.equal(vetoPrompt(viewFor(asked, 0), legalActions(asked, 0), names), null);
 
   const vetoed = act(asked, bob.veto!);
