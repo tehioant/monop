@@ -11,14 +11,14 @@ import {
   offline,
   receive,
   type Game,
-  type Request,
+  type RoomRequest,
   type Room,
   type Session,
 } from '../src/online/session.ts';
 
 // Message fixtures, as the server sends them.
-const create: Request = { type: 'createRoom', countriesToWin: 3 };
-const join: Request = { type: 'joinRoom', code: 'bcdfg' };
+const create: RoomRequest = { type: 'createRoom', countriesToWin: 3 };
+const join: RoomRequest = { type: 'joinRoom', code: 'bcdfg' };
 const welcome: ServerMessage = { type: 'welcome', token: 'issued', name: 'Guest' };
 const room: Room = { type: 'room', code: 'BCDFG', countriesToWin: 3, players: [{ name: 'Ada' }, { name: 'Bo' }], you: 1 };
 const game = createGame({ players: 2, countriesToWin: 3 }, 1);

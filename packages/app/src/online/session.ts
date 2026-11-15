@@ -7,13 +7,13 @@ import { PROTOCOL_VERSION, type ClientMessage, type ErrorCode, type ServerMessag
 export type Room = Extract<ServerMessage, { type: 'room' }>;
 export type Game = Extract<ServerMessage, { type: 'state' }>;
 /** What a player goes online for. */
-export type Request = Extract<ClientMessage, { type: 'createRoom' | 'joinRoom' }>;
+export type RoomRequest = Extract<ClientMessage, { type: 'createRoom' | 'joinRoom' }>;
 
 export interface Session {
   /** The guest token the server issued; null until the first welcome. */
   token: string | null;
   /** The request the server has not answered yet. */
-  request: Request | null;
+  request: RoomRequest | null;
   /** The last lobby received. The players' names by seat come from it, during the game too. */
   room: Room | null;
   /** The last state received: the table is drawn from its view and legal actions. */

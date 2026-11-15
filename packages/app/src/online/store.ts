@@ -5,7 +5,7 @@ import type { Action } from '@atlas/engine';
 import type { ClientMessage } from '@atlas/server/protocol';
 import * as SecureStore from 'expo-secure-store';
 import { create } from 'zustand';
-import { decode, disconnected, encode, hello, intent, offline, receive, type Request, type Session } from './session.ts';
+import { decode, disconnected, encode, hello, intent, offline, receive, type RoomRequest, type Session } from './session.ts';
 
 /**
  * The game server's WebSocket endpoint. Set EXPO_PUBLIC_SERVER_URL when starting or building the app;
@@ -33,7 +33,7 @@ export const useOnline = create<OnlineStore>((set, get) => {
   const send = (message: ClientMessage) => socket?.send(encode(message));
 
   /** Opens a new connection, says hello, and sends `request` once welcomed. */
-  const connect = (request: Request) => {
+  const connect = (request: RoomRequest) => {
     get().leave();
     const token = get().session.token ?? SecureStore.getItem(TOKEN_KEY);
     set({ session: { ...offline(token), request } });
