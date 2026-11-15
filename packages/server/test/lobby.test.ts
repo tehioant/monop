@@ -3,7 +3,16 @@ import { after, before, test } from 'node:test';
 import { createBot, type Bot } from '@atlas/bots';
 import { CARDS, createGame, RULES, type Action, type PlayerView } from '@atlas/engine';
 import { PROTOCOL_VERSION as v } from '../src/protocol.ts';
-import { Client, newGame, person, prefer, startTestServer, type TestServer } from './helpers.ts';
+import {
+  Client,
+  newGame,
+  person,
+  prefer,
+  seated,
+  startTestServer,
+  type Received,
+  type TestServer,
+} from './helpers.ts';
 
 let server: TestServer;
 const clients: Client[] = [];
@@ -47,10 +56,7 @@ async function lobby(...members: Client[]) {
   return rooms[0]!.players;
 }
 
-/** A seat held by a bot, as a `room` message lists it. */
-const seated = (name: string) => ({ name, bot: true });
-
-type State = Awaited<ReturnType<typeof Client.prototype.next<'state'>>>;
+type State = Received<'state'>;
 
 /** Sends the preferred legal action of `state`, if it has any, and reads the state that follows. */
 async function step(client: Client, state: State, types: Action['type'][]): Promise<State> {

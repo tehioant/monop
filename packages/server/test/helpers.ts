@@ -89,8 +89,10 @@ export async function startTestServer(options: Pick<ServerOptions, 'newGame' | '
 
 /** A seat held by a person, as a `room` message lists it. */
 export const person = (name: string) => ({ name, bot: false });
+/** A seat held by a bot. */
+export const seated = (name: string) => ({ name, bot: true });
 
-type Received<Type extends ServerMessage['type']> = Versioned<Extract<ServerMessage, { type: Type }>>;
+export type Received<Type extends ServerMessage['type']> = Versioned<Extract<ServerMessage, { type: Type }>>;
 
 /** A scripted client: sends messages and reads what the server sends back, strictly in order. */
 export class Client {

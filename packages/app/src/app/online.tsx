@@ -1,6 +1,7 @@
 // Online play, one screen that follows the server: create or join a room, its lobby, the table, the results.
 
 import { RULES } from '@atlas/engine';
+import { MAX_NAME_LENGTH } from '@atlas/server/protocol';
 import { router } from 'expo-router';
 import { useEffect, useState } from 'react';
 import { StyleSheet, Text, TextInput, View } from 'react-native';
@@ -16,8 +17,6 @@ import { colors } from '../table/theme.ts';
 const DEFAULT_COUNTRIES = Math.min(...RULES.countriesToWin);
 const MIN_PLAYERS = Math.min(...RULES.playerCounts);
 const MAX_PLAYERS = Math.max(...RULES.playerCounts);
-/** The server cuts a longer name. */
-const MAX_NAME_LENGTH = 20;
 
 const home = () => router.dismissTo('/');
 

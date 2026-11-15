@@ -15,7 +15,7 @@ import {
   saveSnapshot,
   type Sql,
 } from './db.ts';
-import { PROTOCOL_VERSION, type ServerMessage } from './protocol.ts';
+import { MAX_NAME_LENGTH, PROTOCOL_VERSION, type ServerMessage } from './protocol.ts';
 import { Rejection, Rooms, type Member } from './rooms.ts';
 
 export interface ServerOptions {
@@ -36,7 +36,6 @@ export interface Server {
 
 /** The level of the bots a host seats: the middle one, as a solo game starts with. */
 const BOT_LEVEL: Difficulty = 'normal';
-const MAX_NAME_LENGTH = 20;
 const MAX_MESSAGE_BYTES = 16 * 1024;
 
 /**

@@ -1,10 +1,14 @@
 // The WebSocket protocol: JSON text messages, one object per message.
-// Types only (plus the version number), so a client can import this file without the server's dependencies.
+// Types only (plus the version number and a limit), so a client can import this file without the server's
+// dependencies.
 
 import type { Action, PlayerId, PlayerView } from '@atlas/engine';
 
 /** Bumped on every incompatible change. Every message, in both directions, carries it as `v`. */
 export const PROTOCOL_VERSION = 1;
+
+/** A display name is trimmed and cut to this many characters. */
+export const MAX_NAME_LENGTH = 20;
 
 export type Versioned<Message> = Message & { v: number };
 
