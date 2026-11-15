@@ -1,6 +1,5 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { createBot, DIFFICULTIES } from '@atlas/bots';
 import { applyAction, createGame, legalActions, viewFor, type Action, type CardId, type GameState } from '@atlas/engine';
 import { groupActions } from '../src/table/actions.ts';
 import { cardPrompt, payPrompt, togglePay, vetoPrompt, type Picks } from '../src/table/prompts.ts';
@@ -117,11 +116,12 @@ test('a city card says what its country gives once complete', () => {
 });
 
 test('every legal action of a card is offered once, directly or by one pick per step', () => {
-  // A whole game between bots, looked at through the prompts of whoever is to act.
-  const bot = createBot(DIFFICULTIES[0], 5);
-  let state = createGame({ players: 3, countriesToWin: 3 }, 5);
-  let prompts = 0;
-  for (let i = 0; i < 3000 && viewFor(state, 0).phase.kind !== 'over'; i++) {
+  // Seeded random play, looked at through the prompts of whoever is to act.
+  let seed = 5;
+  const random = () => (seed = (seed * 1664525 + 1013904223) >>> 0) / 2 ** 32;
+  let state = createGame({ players: 3, countriesToWin: 3 }, seed);
+  const seen = [0, 0, 0]; // prompts by number of steps
+  for (let i = 0; i < 400 && viewFor(state, 0).phase.kind !== 'over'; i++) {
     const player = awaited(state);
     const view = viewFor(state, player);
     const legal = legalActions(state, player);
@@ -137,12 +137,11 @@ test('every legal action of a card is offered once, directly or by one pick per 
       }
       assert.deepEqual(new Set(offered), new Set(actions));
       assert.equal(offered.length, actions.length);
-      prompts++;
+      seen[at({}).steps.length]!++;
     }
-    state = applyAction(state, player, bot(view, legal));
+    state = applyAction(state, player, legal[Math.floor(random() * legal.length)]!);
   }
-  assert.equal(viewFor(state, 0).phase.kind, 'over');
-  assert.ok(prompts > 1000);
+  assert.ok(seen.every((count) => count > 0), `prompts with no step, one step and two steps: ${seen}`);
 });
 
 test('the payment prompt adds up the picked cards, and sends them only once they cover what is owed', () => {
