@@ -2,10 +2,12 @@
 // legal actions, and holds no rules: a control exists exactly when the engine listed an action for it.
 
 import type { Action, CardId, PlayerView } from '@atlas/engine';
-import { Fragment, useState } from 'react';
+import { Fragment, useEffect, useState } from 'react';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import { actionLabel, bankTotal, cardInfo, completeCount, groupActions, logLine, promptText } from './actions.ts';
 import { Button, CARD_HEIGHT, CardView, Chip, CountryView, Panel, shared, type Tappable } from './parts.tsx';
+import { CardPanel, PayPanel, VetoPanel } from './Prompt.tsx';
+import { cardPrompt, payPrompt, togglePay, vetoPrompt, type PayPrompt, type Picks } from './prompts.ts';
 import { colors, countryColor } from './theme.ts';
 
 export interface TableProps {
@@ -20,25 +22,104 @@ export interface TableProps {
 
 const LOG_ENTRIES = 4;
 
+/** What the player has picked but not sent: all of it is dropped by a cancel, and nothing reaches the game. */
+interface Selection {
+  /** The length of the log the picks were made at: they are void as soon as anything happens in the game. */
+  at: number;
+  card: CardId | null;
+  /** The targets picked for `card`. */
+  picks: Picks;
+  /** The cards picked to pay with, in order. */
+  paying: readonly CardId[];
+}
+
+const NOTHING: Omit<Selection, 'at'> = { card: null, picks: {}, paying: [] };
+
 export function Table({ view, legal, names, onAction }: TableProps) {
-  const [selected, setSelected] = useState<CardId | null>(null);
+  const [selection, setSelection] = useState<Selection>({ ...NOTHING, at: 0 });
+  /** Confirmed payments still to send. */
+  const [queue, setQueue] = useState<CardId[]>([]);
+  const now = view.log.length;
+  const { card: selected, picks, paying } = selection.at === now ? selection : NOTHING;
+  const select = (change: Partial<Selection>) => setSelection({ card: selected, picks, paying, ...change, at: now });
+  /** Sends an action; what was picked for it has served. */
+  const send = (action: Action) => {
+    select(NOTHING);
+    onAction(action);
+  };
+
   const { byCard, general } = groupActions(view, legal);
-  // A selection that outlived its actions (the card was played, the phase moved on) counts as none.
   const selectedActions = selected === null ? undefined : byCard.get(selected);
+  const pay = payPrompt(view, legal, paying, names);
+  const veto = vetoPrompt(view, legal, names);
   const me = view.players[view.viewer]!;
   const opponents = view.players.map((_, i) => (view.viewer + i) % view.players.length).slice(1);
   const waitingOn = view.phase.kind === 'over' ? null : view.phase.player;
 
-  const act = (action: Action) => {
-    setSelected(null);
-    onAction(action);
+  // A payment of several cards goes out one card per view: the next once the game has answered the last.
+  // A card the game no longer asks for (the debt is settled, the game is over) ends it.
+  useEffect(() => {
+    if (queue.length === 0) return;
+    const next = legal.find((action) => action.type === 'pay' && action.card === queue[0]);
+    setQueue(next ? queue.slice(1) : []);
+    if (next) onAction(next);
+  }, [now]);
+  const confirmPayment = ([first, ...rest]: PayPrompt['actions']) => {
+    setQueue(rest.map((action) => action.card));
+    if (first) send(first);
   };
+
   /** A card of the viewer's or of the Market: it can be tapped exactly when it has a legal action. */
-  const tappable = (id: CardId): Tappable => ({
-    id,
-    selected: selectedActions !== undefined && id === selected,
-    onPress: byCard.has(id) ? () => setSelected(id === selected ? null : id) : undefined,
-  });
+  const tappable = (id: CardId): Tappable => {
+    if (queue.length > 0) return { id };
+    // While the viewer owes, their cards are picked to pay with, and none is selected for anything else.
+    if (pay) {
+      const card = pay.cards.find((payable) => payable.key === id);
+      const onPress = card && !card.disabled ? () => select({ paying: togglePay(pay, paying, id) }) : undefined;
+      return { id, selected: card?.picked, onPress };
+    }
+    return {
+      id,
+      selected: selectedActions !== undefined && id === selected,
+      onPress: byCard.has(id) ? () => select({ card: id === selected ? null : id, picks: {} }) : undefined,
+    };
+  };
+  const perkActive = (seat: number, country: string) =>
+    view.perks.some((perk) => perk.country === country && perk.activeFor.includes(seat));
+
+  /** What is asked of the viewer under their hand: a payment, the targets of the selected card, a Veto, or buttons. */
+  const prompt = () => {
+    if (queue.length > 0) return null;
+    if (pay) {
+      return (
+        <PayPanel
+          prompt={pay}
+          onToggle={(card) => select({ paying: togglePay(pay, paying, card) })}
+          onClear={() => select({ paying: [] })}
+          onConfirm={() => confirmPayment(pay.actions)}
+        />
+      );
+    }
+    if (selected !== null && selectedActions) {
+      return (
+        <CardPanel
+          prompt={cardPrompt(view, selected, selectedActions, picks, names)}
+          names={names}
+          onPick={(slot, key) => select({ picks: { ...picks, [slot]: key } })}
+          onAction={send}
+          onCancel={() => select(NOTHING)}
+        />
+      );
+    }
+    if (veto) return <VetoPanel prompt={veto} general={general} names={names} onAction={send} />;
+    return (
+      <View style={[shared.wrap, styles.buttons]}>
+        {general.map((action, i) => (
+          <Button key={i} label={actionLabel(action, names)} onPress={() => send(action)} />
+        ))}
+      </View>
+    );
+  };
 
   return (
     <View style={styles.table}>
@@ -81,7 +162,7 @@ export function Table({ view, legal, names, onAction }: TableProps) {
               {player.table.length > 0 && (
                 <View style={shared.wrap}>
                   {player.table.map((stack) => (
-                    <CountryView key={stack.country} stack={stack} />
+                    <CountryView key={stack.country} stack={stack} active={perkActive(seat, stack.country)} />
                   ))}
                 </View>
               )}
@@ -102,7 +183,7 @@ export function Table({ view, legal, names, onAction }: TableProps) {
             {/* Each country, then its cities, in one flat row that wraps: a country never splits oddly. */}
             {me.table.map((stack) => (
               <Fragment key={stack.country}>
-                <CountryView stack={stack} />
+                <CountryView stack={stack} active={perkActive(view.viewer, stack.country)} />
                 {stack.cities.map((id) => (
                   <Chip key={id} {...tappable(id)} color={countryColor(stack.country)} />
                 ))}
@@ -119,18 +200,13 @@ export function Table({ view, legal, names, onAction }: TableProps) {
         )}
       </Panel>
 
-      <Text style={styles.prompt}>{promptText(view, names)}</Text>
+      <Text style={styles.prompt}>{pay?.text ?? veto?.text ?? promptText(view, names)}</Text>
       <ScrollView horizontal style={styles.hand} contentContainerStyle={styles.cards}>
         {view.hand.map((id) => (
           <CardView key={id} {...tappable(id)} />
         ))}
       </ScrollView>
-      <ScrollView style={styles.actions} contentContainerStyle={shared.wrap}>
-        {selectedActions && <Button quiet label="Cancel" onPress={() => setSelected(null)} />}
-        {(selectedActions ?? general).map((action, i) => (
-          <Button key={i} label={actionLabel(action, names)} onPress={() => act(action)} />
-        ))}
-      </ScrollView>
+      <View style={styles.actions}>{prompt()}</View>
     </View>
   );
 }
@@ -154,6 +230,8 @@ const styles = StyleSheet.create({
   prompt: { color: colors.ink, fontSize: 14, fontWeight: '600', paddingHorizontal: 12, paddingTop: 8 },
   // As tall as a card, even when empty, so that nothing moves when the last card is played.
   hand: { flexGrow: 0, flexShrink: 0, height: CARD_HEIGHT + 16, paddingHorizontal: 12, paddingVertical: 8 },
-  // Room for two rows, so that the hand does not move on most selections; more rows push it up, then scroll.
-  actions: { flexGrow: 0, flexShrink: 0, minHeight: 96, maxHeight: 200, paddingHorizontal: 12 },
+  // Room for two rows of buttons, so that the hand does not move on most selections; a longer prompt pushes it up.
+  // On a screen too short for it all, the choices of a prompt give way and scroll: its buttons stay in view.
+  actions: { flexShrink: 1, minHeight: 96 },
+  buttons: { paddingHorizontal: 12 },
 });
