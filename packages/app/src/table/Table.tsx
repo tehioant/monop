@@ -29,8 +29,8 @@ const LOG_ENTRIES = 4;
 
 /** What the player has picked but not sent: all of it is dropped by a cancel, and nothing reaches the game. */
 interface Selection {
-  /** The length of the log the picks were made at: they are void as soon as anything happens in the game. */
-  at: number;
+  /** The view the picks were made in: authoritative corrections also invalidate them. */
+  at: PlayerView;
   /** The card tapped last. Its text stays up for as long as the card is on the table, whatever happens in the game. */
   card: CardId | null;
   /** The targets picked for `card`. */
@@ -89,11 +89,11 @@ function spot(zone: Zone, viewer: number): { anchor: string; across: number; dow
 }
 
 export function Table({ view, legal, names, onAction }: TableProps) {
-  const [selection, setSelection] = useState<Selection>({ ...NOTHING, at: 0 });
+  const [selection, setSelection] = useState<Selection>({ ...NOTHING, at: view });
   const [logOpen, setLogOpen] = useState(false);
   const [seen, setSeen] = useState({ view, step: stepBetween(view, view) });
   // A new view: what changed since the last one is worked out once, as it comes in.
-  if (seen.view.log.length !== view.log.length) setSeen({ view, step: stepBetween(seen.view, view) });
+  if (seen.view !== view) setSeen({ view, step: stepBetween(seen.view, view) });
   const { step } = seen;
   const [flights, setFlights] = useState<Flight[]>([]);
   /** The views that cards fly between, measured when a card moves. */
@@ -110,10 +110,10 @@ export function Table({ view, legal, names, onAction }: TableProps) {
   /** The opponents whose area is expanded. */
   const [expanded, setExpanded] = useState<readonly number[]>([]);
   const now = view.log.length;
-  const fresh = selection.at === now;
+  const fresh = selection.at === view;
   const { picks, paying } = fresh ? selection : NOTHING;
   const selected = selection.card !== null && shownCards(view).has(selection.card) ? selection.card : null;
-  const select = (change: Partial<Selection>) => setSelection({ card: selected, picks, paying, ...change, at: now });
+  const select = (change: Partial<Selection>) => setSelection({ card: selected, picks, paying, ...change, at: view });
   /** Sends an action; what was picked for it has served. */
   const send = (action: Action) => {
     select(NOTHING);

@@ -16,6 +16,20 @@ test('own holdings and prompts have a scrollable area independent of the opponen
   assert.equal(nodes(tree).filter((node) => node.props?.accessibilityLabel?.endsWith('show cities and bank')).length, 4);
 });
 
+test('same-log corrections invalidate pending card choices', () => {
+  const runtime = hooks();
+  const { Table } = loadComponent(new URL('../src/table/Table.tsx', import.meta.url).pathname, {
+    react: runtime.react, 'react-native': native, 'react-native-reanimated': animated,
+    '../settings/feedback.ts': { signal() {} },
+  });
+  let view = { ...viewFor(createGame({ players: 2, countriesToWin: 3 }, 1), 0), hand: ['sydney'] };
+  const render = () => runtime.render(() => Table({ view, legal: [{ type: 'bank', card: 'sydney' }], names: ['You', 'Bot'], onAction() {} }));
+  nodes(render()).find((node) => node.type?.name === 'CardView' && node.props.id === 'sydney').props.onPress();
+  assert.ok(nodes(render()).some((node) => node.type?.name === 'CardPanel'));
+  view = { ...view, deckSize: view.deckSize - 1 };
+  assert.equal(nodes(render()).some((node) => node.type?.name === 'CardPanel'), false);
+});
+
 test('Table measures its board viewport and emits a flight for a newly drawn card', async () => {
   const runtime = hooks();
   const { Table } = loadComponent(new URL('../src/table/Table.tsx', import.meta.url).pathname, {
