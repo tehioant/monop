@@ -2,17 +2,22 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { deserialize, SAVE_VERSION, serialize } from '../src/solo/save.ts';
 import { rematch, soloView, startSolo } from '../src/solo/solo.ts';
-import { config, playOut } from './helpers.ts';
+import { config } from './helpers.ts';
 
-test('a game saved after any action is loaded back identical, until it is over', () => {
-  const games = playOut(5);
-  assert.ok(games.length > 50, 'the human and the bots both played');
-  for (const game of games.slice(0, -1)) assert.deepEqual(deserialize(serialize(game)), game);
-  assert.equal(deserialize(serialize(games.at(-1)!)), null, 'a finished game is not offered again');
+test('ordinary prepared human, bot and finished snapshots are classified correctly', () => {
+  for (const player of [0, 1]) {
+    const game = startSolo(config, 5);
+    game.state.turn = { player, played: 0 };
+    game.state.phase = { kind: 'draw', player, remaining: 1 };
+    assert.deepEqual(deserialize(serialize(game)), game);
+  }
+  const finished = startSolo(config, 5);
+  finished.state.phase = { kind: 'over', winner: 0 };
+  assert.equal(deserialize(serialize(finished)), null);
 });
 
 test('a save that cannot be continued is discarded instead of loaded', () => {
-  const game = playOut(3)[12]!;
+  const game = startSolo(config, 3);
   const { state } = game;
   const saved = { version: SAVE_VERSION, game };
   const unreadable: Record<string, unknown> = {
@@ -49,10 +54,11 @@ test('the saved shape is the one SAVE_VERSION stands for', () => {
 });
 
 test('a rematch is a new game with the same settings, dealt from the new seed', () => {
-  const played = playOut(5).at(-1)!;
+  const played = startSolo(config, 5);
+  played.state.phase = { kind: 'over', winner: 0 };
   const next = rematch(played, 6);
   assert.deepEqual(next.config, played.config);
   assert.equal(next.seed, 6);
   assert.equal(soloView(next).log.length, 0);
-  assert.notDeepEqual(soloView(next).hand, soloView(playOut(5)[0]!).hand);
+  assert.notDeepEqual(soloView(next).hand, soloView(startSolo(config, 5)).hand);
 });

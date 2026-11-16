@@ -4,6 +4,7 @@ import { StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { botToMove, soloLegal, soloNames, soloView, type SoloGame } from '../../solo/solo.ts';
 import { useSolo } from '../../solo/store.ts';
+import { SaveStatus } from '../../solo/SaveStatus.tsx';
 import { Button } from '../../table/parts.tsx';
 import { Table } from '../../table/Table.tsx';
 import { usePaced } from '../../table/usePaced.ts';
@@ -15,17 +16,17 @@ export default function SoloTable() {
 }
 
 function Playing({ game }: { game: SoloGame }) {
-  const { play, stepBot } = useSolo();
+  const { play, stepBot, saveError, retrySave } = useSolo();
   // The bots play at once, one action after the other; what they did is shown at a pace the player can follow.
   const incoming = useMemo(() => soloView(game), [game]);
   const { view, legal, settled } = usePaced(incoming, soloLegal(game));
   const over = view.phase.kind === 'over' && settled;
 
   useEffect(() => {
-    if (!botToMove(game)) return;
+    if (saveError || !botToMove(game)) return;
     const timer = setTimeout(stepBot);
     return () => clearTimeout(timer);
-  }, [game, stepBot]);
+  }, [game, stepBot, saveError]);
 
   useEffect(() => {
     if (over) router.replace('/solo/results');
@@ -34,6 +35,7 @@ function Playing({ game }: { game: SoloGame }) {
   return (
     <SafeAreaView style={styles.screen}>
       <View style={styles.bar}>
+        <SaveStatus error={saveError} retry={retrySave} />
         <Button quiet label="Settings" onPress={() => router.push('/settings')} />
         <Button quiet label="Quit" onPress={() => router.replace('/')} />
       </View>

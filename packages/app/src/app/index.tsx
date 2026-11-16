@@ -2,6 +2,7 @@ import { router } from 'expo-router';
 import { Alert, StyleSheet, Text, View } from 'react-native';
 import { inProgress } from '../solo/solo.ts';
 import { useSolo } from '../solo/store.ts';
+import { SaveStatus } from '../solo/SaveStatus.tsx';
 import { Button } from '../table/parts.tsx';
 import { colors } from '../table/theme.ts';
 
@@ -9,6 +10,8 @@ export default function Home() {
   // The solo game saved on the device, or left a moment ago. There is one at a time.
   const saved = useSolo(({ game }) => game !== null && inProgress(game));
   const abandon = useSolo((solo) => solo.abandon);
+  const saveError = useSolo((solo) => solo.saveError);
+  const retrySave = useSolo((solo) => solo.retrySave);
 
   const confirmAbandon = () =>
     Alert.alert('Abandon the solo game?', 'The game in progress will be lost.', [
@@ -20,6 +23,7 @@ export default function Home() {
     <View style={styles.home}>
       <Text style={styles.title}>Atlas</Text>
       <Text style={styles.tagline}>Collect countries, city by city.</Text>
+      <SaveStatus error={saveError} retry={retrySave} />
       {saved ? (
         <>
           <Button label="Resume solo game" onPress={() => router.push('/solo/table')} />
