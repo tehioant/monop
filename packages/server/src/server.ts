@@ -85,13 +85,22 @@ export async function startServer(options: ServerOptions): Promise<Server> {
 }
 
 /** One client connection. Its messages are handled strictly one after the other. `alive` is called for each. */
-function serve(socket: WebSocket, sql: Sql, rooms: Rooms, alive: () => void): void {
+export function serve(socket: WebSocket, sql: Sql, rooms: Rooms, alive: () => void): void {
   let member: Member | undefined;
   let queue = Promise.resolve();
   alive();
 
+  let warned = false;
+  const warn = () => {
+    if (warned) return;
+    warned = true;
+    console.warn('[atlas:socket] Connection operation failed.');
+  };
+  const close = () => { try { socket.close(); } catch { warn(); } };
   const send = (message: ServerMessage): void => {
-    if (socket.readyState === socket.OPEN) socket.send(JSON.stringify({ v: PROTOCOL_VERSION, ...message }));
+    try {
+      if (socket.readyState === socket.OPEN) socket.send(JSON.stringify({ v: PROTOCOL_VERSION, ...message }));
+    } catch { warn(); close(); }
   };
 
   const hello = async (token: unknown, name: unknown): Promise<void> => {
@@ -107,7 +116,7 @@ function serve(socket: WebSocket, sql: Sql, rooms: Rooms, alive: () => void): vo
       const guest = wanted || 'Guest';
       account = { name: guest, ...(await createAccount(sql, guest)) };
     }
-    member = { account: account.id, name: account.name, send, close: () => socket.close() };
+    member = { account: account.id, name: account.name, send, close };
     send({ type: 'welcome', token: account.token, name: account.name, resumed: rooms.playing(account.id) });
     rooms.resume(member);
   };
@@ -143,14 +152,14 @@ function serve(socket: WebSocket, sql: Sql, rooms: Rooms, alive: () => void): vo
       .then(() => handle(data.toString()))
       .catch((error: unknown) => {
         if (error instanceof Rejection) return send({ type: 'error', code: error.code, message: error.message });
-        console.error(error);
+        warn();
         send({ type: 'error', code: 'internal', message: 'Internal error' });
       });
   });
   socket.on('close', () => {
     queue = queue.then(() => {
       if (member) rooms.leave(member);
-    });
+    }).catch(() => { warn(); });
   });
 }
 

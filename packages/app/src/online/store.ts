@@ -39,12 +39,20 @@ interface OnlineStore {
 }
 
 export const useOnline = create<OnlineStore>((set, get) => {
+  let warned = false;
+  const warn = () => {
+    if (warned) return;
+    warned = true;
+    console.warn('[atlas:online] Device storage unavailable; session remains in memory.');
+  };
+  const read = (key: string) => { try { return SecureStore.getItem(key); } catch { warn(); return null; } };
+  const write = (key: string, value: string) => { try { SecureStore.setItem(key, value); } catch { warn(); } };
   const server = connection(
     () => new WebSocket(SERVER_URL) as Socket,
     () => get().session,
     (session) => {
       const { token } = get().session;
-      if (session.token !== null && session.token !== token) SecureStore.setItem(TOKEN_KEY, session.token);
+      if (session.token !== null && session.token !== token) write(TOKEN_KEY, session.token);
       set({ session });
     },
   );
@@ -52,18 +60,18 @@ export const useOnline = create<OnlineStore>((set, get) => {
   /** Opens a new connection, which says hello and sends `request` once welcomed. */
   const connect = (request: RoomRequest) => {
     const name = get().session.name.trim() || defaultName();
-    SecureStore.setItem(NAME_KEY, name);
-    const token = get().session.token ?? SecureStore.getItem(TOKEN_KEY);
+    write(NAME_KEY, name);
+    const token = get().session.token ?? read(TOKEN_KEY);
     set({ session: { ...offline(name, token), request } });
     server.open();
   };
 
   return {
-    session: offline(SecureStore.getItem(NAME_KEY) ?? defaultName(), null),
+    session: offline(read(NAME_KEY) ?? defaultName(), null),
     setName: (name) => set({ session: { ...get().session, name } }),
     resume: () => {
       // Only an account the server has already issued can hold a seat.
-      if (get().session.token ?? SecureStore.getItem(TOKEN_KEY)) connect({ type: 'resync' });
+      if (get().session.token ?? read(TOKEN_KEY)) connect({ type: 'resync' });
     },
     createRoom: (countriesToWin) => connect({ type: 'createRoom', countriesToWin }),
     joinRoom: (code) => connect({ type: 'joinRoom', code }),
@@ -71,8 +79,8 @@ export const useOnline = create<OnlineStore>((set, get) => {
     removePlayer: (seat) => server.send({ type: 'removePlayer', seat }),
     startGame: () => server.send({ type: 'startGame' }),
     play: (action) => {
-      const { game } = get().session;
-      if (game) server.send(intent(game, action));
+      const { game, synced, lost } = get().session;
+      if (game && synced && lost === null) server.send(intent(game, action));
     },
     leave: () => {
       server.close();

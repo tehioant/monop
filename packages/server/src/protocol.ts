@@ -9,7 +9,9 @@ import type { Action, PlayerId, PlayerView } from '@atlas/engine';
  * A client message with another `v` is refused with the error `unsupported_version`, which tells an outdated app
  * to update: that error keeps its shape in every version.
  */
-export const PROTOCOL_VERSION = 1;
+// Version 2 requires welcome.resumed and per-seat status, and supports resync.
+// A v2 client cannot safely recover against v1 (which rejects resync).
+export const PROTOCOL_VERSION = 2;
 
 /**
  * A client sends something, a `ping` if nothing else, at least this often. The server closes a connection it has

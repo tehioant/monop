@@ -141,7 +141,7 @@ test('an intent carries the version of the state it was chosen from, and every m
 test('a connection lost during a game is opened again: the game stays on screen until the server gives it again', () => {
   const playing = after({ ...offline('Bo', 'issued'), request: join }, welcome, room, state(3, 1)).session;
   const lost = disconnected(playing);
-  assert.deepEqual(lost, { ...playing, request: resync, lost: 0 });
+  assert.deepEqual(lost, { ...playing, synced: false, request: resync, lost: 0 });
   // Each failed attempt counts, and the wait before the next one grows up to a limit.
   assert.equal(disconnected(disconnected(lost)).lost, 2);
   assert.deepEqual([0, 1, 2, 3, 4, 5, 9].map(backoff), [500, 1000, 2000, 4000, 8000, 8000, 8000]);

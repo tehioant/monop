@@ -91,6 +91,7 @@ export function receive(session: Session, message: ServerMessage): { session: Se
     case 'error':
       // The server does not know the stored token: start again as a new guest.
       if (message.code === 'invalid_token') {
+        if (session.token === null) return out('invalid_token');
         const guest = { ...session, token: null };
         return { session: guest, send: [hello(guest)] };
       }
