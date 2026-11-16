@@ -169,3 +169,24 @@ test('lost and unsynced sessions cannot send stale intents, including before rep
   assert.equal(online.session.lost, null);
   server.close();
 });
+
+for (const packet of ['incomplete view', 'unknown phase', 'unknown action', 'malformed room']) {
+  test(`nested wire ${packet} is refused by the connection without replacing last good data`, (t) => {
+    const { sockets, online, server, tick } = preparedSession(t);
+    t.mock.method(console, 'warn', () => {});
+    const bad = structuredClone({ v: PROTOCOL_VERSION, ...state }) as any;
+    if (packet === 'incomplete view') bad.view = { players: [], hand: [], log: [], phase: { kind: 'not-a-phase' } };
+    if (packet === 'unknown phase') bad.view.phase = { kind: 'not-a-phase', player: 0 };
+    if (packet === 'unknown action') bad.legalActions = [{ type: 'not-an-action' }];
+    const message = packet === 'malformed room' ? { v: PROTOCOL_VERSION, ...room, countriesToWin: null } : bad;
+    assert.doesNotThrow(() => sockets[0]!.onmessage?.({ data: JSON.stringify(message) }));
+    assert.equal(online.session.game, state);
+    assert.equal(online.session.room, room);
+    assert.equal(online.session.synced, false);
+    assert.equal(online.session.lost, 0);
+    assert.equal(sockets[0]!.readyState, 3);
+    tick(499); assert.equal(sockets.length, 1);
+    tick(1); assert.equal(sockets.length, 2);
+    server.close();
+  });
+}

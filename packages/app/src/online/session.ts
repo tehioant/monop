@@ -2,6 +2,7 @@
 // sends back. The store (`store.ts`) owns the connection and keeps the token on the device.
 
 import type { Action } from '@atlas/engine';
+import { validRoom, validState } from './wire.ts';
 import { PROTOCOL_VERSION, type ClientMessage, type ErrorCode, type ServerMessage } from '@atlas/server/protocol';
 
 export type Room = Extract<ServerMessage, { type: 'room' }>;
@@ -137,13 +138,8 @@ export function decode(text: string): ServerMessage {
   const valid = (() => {
     switch (message.type) {
       case 'welcome': return typeof message.token === 'string' && typeof message.name === 'string' && typeof message.resumed === 'boolean';
-      case 'room': return typeof message.code === 'string' && Number.isInteger(message.you) &&
-        Array.isArray(message.players) && message.you >= 0 && message.you < message.players.length &&
-        message.players.every((p: any) => p && typeof p.name === 'string' && typeof p.bot === 'boolean' && ['connected', 'disconnected'].includes(p.status));
-      case 'state': return Number.isSafeInteger(message.stateVersion) && message.stateVersion >= 0 &&
-        message.view && Array.isArray(message.view.players) && Array.isArray(message.view.hand) &&
-        Array.isArray(message.view.log) && message.view.phase && typeof message.view.phase.kind === 'string' &&
-        Array.isArray(message.legalActions);
+      case 'room': return validRoom(message);
+      case 'state': return validState(message);
       case 'error': return typeof message.code === 'string' && typeof message.message === 'string';
       case 'removed': case 'replaced': case 'pong': return true;
       default: return false;
