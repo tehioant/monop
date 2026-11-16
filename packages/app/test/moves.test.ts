@@ -20,7 +20,10 @@ function game(): GameState {
     ...['coin-1-2', 'coin-1-3', 'coin-1-4', 'coin-1-5', 'coin-2-3', 'coin-2-4', 'coin-2-5'],
     ...['coin-4-1', 'coin-4-2', 'coin-4-3', 'coin-3-3', 'coin-3-4'],
   ];
-  return createGame({ players: 2, countriesToWin: 3 }, 1, { deck });
+  // Prepared ordinary round: opening compensation is not the movement contract under test.
+  const state = createGame({ players: 2, countriesToWin: 3 }, 1, { deck });
+  return { ...state, phase: { kind: 'draw', player: 0, remaining: 2 },
+    log: [{ type: 'endTurn', player: 0 }, { type: 'endTurn', player: 1 }] };
 }
 
 /** The actions of the game, each by the player the game then waits on. */
