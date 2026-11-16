@@ -40,7 +40,7 @@ test('an authoritative same-log correction cancels the rest of a confirmed payme
   let view: PlayerView = { ...initial, phase: { kind: 'pay', player: 0, receiver: 1, owed: 3, amount: 3, queue: [] },
     players: initial.players.map((player, seat) => seat === 0 ? { ...player, bank: ['coin-1-1', 'coin-2-1'] } : player) };
   const legal = [{ type: 'pay', card: 'coin-1-1' }, { type: 'pay', card: 'coin-2-1' }];
-  const render = () => runtime.render(() => Table({ view, legal, names: ['You', 'Bot'], onAction: (action: any) => sent.push(action) }));
+  const render = () => runtime.render(() => Table({ view, legal, names: ['You', 'Bot'], onAction: (action: any) => { sent.push(action); } }));
   render(); runtime.flush();
   for (const id of ['coin-1-1', 'coin-2-1']) {
     nodes(render()).find((node) => node.type?.name === 'Chip' && node.props.id === id).props.onPress();
@@ -64,7 +64,7 @@ test('an ordinary payment response sends the next confirmed card exactly once', 
   let view: PlayerView = { ...initial, phase: { kind: 'pay', player: 0, receiver: 1, owed: 3, amount: 3, queue: [] },
     players: initial.players.map((player, seat) => seat === 0 ? { ...player, bank: ['coin-1-1', 'coin-2-1'] } : player) };
   let legal = [{ type: 'pay', card: 'coin-1-1' }, { type: 'pay', card: 'coin-2-1' }];
-  const render = () => runtime.render(() => Table({ view, legal, names: ['You', 'Bot'], onAction: (action: any) => sent.push(action) }));
+  const render = () => runtime.render(() => Table({ view, legal, names: ['You', 'Bot'], onAction: (action: any) => { sent.push(action); } }));
   render(); runtime.flush();
   for (const id of ['coin-1-1', 'coin-2-1']) {
     nodes(render()).find((node) => node.type?.name === 'Chip' && node.props.id === id).props.onPress();
@@ -124,7 +124,7 @@ for (const failure of ['measure', 'frame', 'scroll']) {
     });
     let view: PlayerView = viewFor(createGame({ players: 2, countriesToWin: 3 }, 1), 0);
     const action = { type: 'endTurn' };
-    const render = () => runtime.render(() => Table({ view, legal: [action], names: ['You', 'Bot'], onAction: (a: any) => sent.push(a) }));
+    const render = () => runtime.render(() => Table({ view, legal: [action], names: ['You', 'Bot'], onAction: (a: any) => { sent.push(a); } }));
     const mount = (tree: any) => nodes(tree).forEach(({ props }) => {
       const node = {
         measureInWindow(done: any) { if (failure === 'measure') throw new Error('private native details'); done(10, 20, 300, 200); },
@@ -144,5 +144,59 @@ for (const failure of ['measure', 'frame', 'scroll']) {
       assert.deepEqual(sent, [action]);
       assert.deepEqual(warnings, [['[atlas:flights] Card animation unavailable; gameplay continues.']]);
     } finally { runtime.unmount(); console.warn = warn; globalThis.requestAnimationFrame = frame; }
+  });
+}
+
+for (const outcome of ['first refusal', 'later refusal', 'accepted boolean', 'online void']) {
+  test(`three-card payment reconciles ${outcome} without replay or duplicate sends`, () => {
+    const runtime = hooks(); const sent: string[] = [];
+    const { Table } = loadComponent(new URL('../src/table/Table.tsx', import.meta.url).pathname, {
+      react: runtime.react, 'react-native': native, 'react-native-reanimated': animated,
+      '../settings/feedback.ts': { signal() {} },
+    });
+    const cards = ['coin-1-1', 'coin-2-1', 'coin-3-1'];
+    const initial = viewFor(createGame({ players: 2, countriesToWin: 3 }, 1), 0);
+    let view: PlayerView = { ...initial, phase: { kind: 'pay', player: 0, receiver: 1, owed: 6, amount: 6, queue: [] },
+      players: initial.players.map((player, seat) => seat === 0 ? { ...player, bank: cards } : player) };
+    let refusing = outcome.includes('refusal');
+    const refused = outcome === 'later refusal' ? cards[1] : cards[0];
+    const render = () => runtime.render(() => Table({ view,
+      legal: view.players[0]!.bank.map(card => ({ type: 'pay', card })), names: ['You', 'Bot'],
+      onAction(action: any) { sent.push(action.card); return outcome === 'online void' ? undefined : !(refusing && action.card === refused); },
+    }));
+    const settle = () => { render(); runtime.flush(); render(); runtime.flush(); };
+    const panel = () => nodes(render()).find(node => node.type?.name === 'PayPanel');
+    const confirm = () => {
+      for (const card of view.players[0]!.bank) panel().props.onToggle(card);
+      panel().props.onConfirm(); settle();
+    };
+    const answer = (card: string, owed: number) => {
+      view = { ...view, phase: { kind: 'pay', player: 0, receiver: 1, owed, amount: 6, queue: [] },
+        players: view.players.map((player, seat) => seat === 0 ? { ...player, bank: player.bank.filter(id => id !== card) } : player),
+        log: [...view.log, { type: 'pay', player: 0, card }] };
+      settle();
+    };
+    try {
+      settle(); confirm(); assert.deepEqual(sent, [cards[0]]);
+      if (outcome === 'later refusal') { answer(cards[0]!, 5); assert.deepEqual(sent, cards.slice(0, 2)); }
+      if (refusing) {
+        const unchanged = view; const attempts = [...sent];
+        assert.ok(panel(), 'explicit refusal must reopen PayPanel without a new authoritative view');
+        assert.ok(view.players[0]!.bank.includes(refused!), 'refused card remains available');
+        assert.equal(panel().props.prompt.actions.length, 0, 'refused intent must require a new selection and confirmation');
+        refusing = false; settle(); settle();
+        assert.equal(view, unchanged); assert.deepEqual(sent, attempts, 'storage recovery alone must not replay intent');
+        confirm(); assert.deepEqual(sent, [...attempts, view.players[0]!.bank[0]], 'only reconfirmation resends refused card');
+      }
+      const remaining = [...view.players[0]!.bank];
+      let owed = outcome === 'later refusal' ? 5 : 6;
+      for (let i = 0; i < remaining.length; i++) {
+        const before = sent.length;
+        owed -= Number(remaining[i]!.split('-')[1]);
+        answer(remaining[i]!, owed); settle();
+        assert.equal(sent.length, before + (i + 1 < remaining.length ? 1 : 0), 'each accepted response advances at most one card');
+      }
+      assert.deepEqual(sent, outcome === 'first refusal' ? [cards[0], ...cards] : outcome === 'later refusal' ? [cards[0], cards[1], cards[1], cards[2]] : cards);
+    } finally { runtime.unmount(); }
   });
 }

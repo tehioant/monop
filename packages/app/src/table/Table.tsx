@@ -22,8 +22,8 @@ export interface TableProps {
   legal: readonly Action[];
   /** Display names by seat. */
   names: readonly string[];
-  /** Called with one of the elements of `legal`. */
-  onAction: (action: Action) => void;
+  /** Called with one of the elements of `legal`; explicit false refuses the action. */
+  onAction: (action: Action) => boolean | void;
 }
 
 const LOG_ENTRIES = 4;
@@ -121,7 +121,7 @@ export function Table({ view, legal, names, onAction }: TableProps) {
   /** Sends an action; what was picked for it has served. */
   const send = (action: Action) => {
     select(NOTHING);
-    onAction(action);
+    return onAction(action);
   };
 
   const { byCard, general } = groupActions(view, legal);
@@ -138,11 +138,11 @@ export function Table({ view, legal, names, onAction }: TableProps) {
     if (queue.length === 0) return;
     const next = legal.find((action) => action.type === 'pay' && action.card === queue[0]);
     setQueue(next ? queue.slice(1) : []);
-    if (next) onAction(next);
+    if (next && onAction(next) === false) setQueue([]);
   }, [now]);
   const confirmPayment = ([first, ...rest]: PayPrompt['actions']) => {
     setQueue(rest.map((action) => action.card));
-    if (first) send(first);
+    if (first && send(first) === false) setQueue([]);
   };
 
   /** Brings into view the opponent whose cards move and the card that reaches the viewer's hand. */

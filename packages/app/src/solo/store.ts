@@ -11,7 +11,7 @@ interface SoloStore {
   start: (config: SoloConfig) => boolean;
   rematch: () => boolean;
   abandon: () => boolean;
-  play: (action: Action) => void;
+  play: (action: Action) => boolean;
   stepBot: () => void;
   retrySave: () => void;
 }
@@ -89,7 +89,7 @@ export const useSolo = create<SoloStore>((set, get) => {
       return game ? update(rematch(game, newSeed(game.seed))) : false;
     },
     abandon: () => update(null),
-    play: (action) => { const { game } = get(); if (game) update(playHuman(game, action)); },
+    play: (action) => { const { game } = get(); return game ? update(playHuman(game, action)) : false; },
     stepBot: () => { const { game } = get(); if (game && botToMove(game)) update(playBot(game)); },
     retrySave: () => {
       if (!blocked) { update(get().game); return; }

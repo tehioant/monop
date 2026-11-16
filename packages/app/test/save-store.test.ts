@@ -37,7 +37,7 @@ test('native store saves new starts and each human or bot action, and reloads id
   for (const player of [0, 1]) {
     const game = prepared(player); const io = device(game); const store = io.load();
     assert.deepEqual(store.getState().game, game);
-    if (player === 0) store.getState().play({ type: 'draw' }); else store.getState().stepBot();
+    if (player === 0) assert.equal(store.getState().play({ type: 'draw' }), true); else store.getState().stepBot();
     assert.notDeepEqual(store.getState().game, game);
     assert.deepEqual(io.load().getState().game, store.getState().game);
   }
@@ -64,11 +64,14 @@ test('unreadable saves refuse replacement or deletion until a successful retry',
 test('failed writes and failed installation retain the previous save without an existing backup', () => {
   for (const failure of ['write', 'move', 'copy']) {
     const game = prepared(); const io = device(game); const store = io.load(); io.faults.add(failure);
-    store.getState().play({ type: 'draw' });
+    assert.equal(store.getState().play({ type: 'draw' }), false);
     assert.ok(store.getState().saveError);
     io.faults.clear();
     assert.deepEqual(io.load().getState().game, game);
+    const unchanged = store.getState().game;
     store.getState().retrySave(); assert.equal(store.getState().saveError, null);
+    assert.equal(store.getState().game, unchanged, 'retry must not replay the refused action');
+    assert.equal(store.getState().play({ type: 'draw' }), true);
   }
 });
 
