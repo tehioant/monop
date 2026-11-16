@@ -92,8 +92,6 @@ export function Table({ view, legal, names, onAction }: TableProps) {
   const [selection, setSelection] = useState<Selection>({ ...NOTHING, at: view });
   const [logOpen, setLogOpen] = useState(false);
   const [seen, setSeen] = useState({ view, step: stepBetween(view, view) });
-  // A new view: what changed since the last one is worked out once, as it comes in.
-  if (seen.view !== view) setSeen({ view, step: stepBetween(seen.view, view) });
   const { step } = seen;
   const [flights, setFlights] = useState<Flight[]>([]);
   /** The views that cards fly between, measured when a card moves. */
@@ -107,6 +105,11 @@ export function Table({ view, legal, names, onAction }: TableProps) {
   const scrolled = useRef({ board: 0, height: 0, touched: 0, hand: 0, rows: {} as Record<number, { y: number; height: number }> });
   /** Confirmed payments still to send. */
   const [queue, setQueue] = useState<CardId[]>([]);
+  // Corrections and resets invalidate confirmed intent before a later view can advance it.
+  if (seen.view !== view) {
+    setSeen({ view, step: stepBetween(seen.view, view) });
+    if (view.log.length <= seen.view.log.length || view.viewer !== seen.view.viewer) setQueue([]);
+  }
   /** The opponents whose area is expanded. */
   const [expanded, setExpanded] = useState<readonly number[]>([]);
   const now = view.log.length;

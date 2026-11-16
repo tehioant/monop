@@ -30,6 +30,57 @@ test('same-log corrections invalidate pending card choices', () => {
   assert.equal(nodes(render()).some((node) => node.type?.name === 'CardPanel'), false);
 });
 
+test('an authoritative same-log correction cancels the rest of a confirmed payment', () => {
+  const runtime = hooks(); const sent: any[] = [];
+  const { Table } = loadComponent(new URL('../src/table/Table.tsx', import.meta.url).pathname, {
+    react: runtime.react, 'react-native': native, 'react-native-reanimated': animated,
+    '../settings/feedback.ts': { signal() {} },
+  });
+  const initial = viewFor(createGame({ players: 2, countriesToWin: 3 }, 1), 0);
+  let view: PlayerView = { ...initial, phase: { kind: 'pay', player: 0, receiver: 1, owed: 3, amount: 3, queue: [] },
+    players: initial.players.map((player, seat) => seat === 0 ? { ...player, bank: ['coin-1-1', 'coin-2-1'] } : player) };
+  const legal = [{ type: 'pay', card: 'coin-1-1' }, { type: 'pay', card: 'coin-2-1' }];
+  const render = () => runtime.render(() => Table({ view, legal, names: ['You', 'Bot'], onAction: (action: any) => sent.push(action) }));
+  render(); runtime.flush();
+  for (const id of ['coin-1-1', 'coin-2-1']) {
+    nodes(render()).find((node) => node.type?.name === 'Chip' && node.props.id === id).props.onPress();
+  }
+  nodes(render()).find((node) => node.type?.name === 'PayPanel').props.onConfirm();
+  assert.equal(sent.length, 1);
+  view = { ...view, deckSize: view.deckSize - 1 }; render(); runtime.flush(); render();
+  view = { ...view, log: [...view.log, { type: 'pay', player: 0, card: 'coin-1-1' }] };
+  render(); runtime.flush();
+  assert.equal(sent.length, 1, 'correction must cancel old queued intent before a later view arrives');
+  runtime.unmount();
+});
+
+test('an ordinary payment response sends the next confirmed card exactly once', () => {
+  const runtime = hooks(); const sent: any[] = [];
+  const { Table } = loadComponent(new URL('../src/table/Table.tsx', import.meta.url).pathname, {
+    react: runtime.react, 'react-native': native, 'react-native-reanimated': animated,
+    '../settings/feedback.ts': { signal() {} },
+  });
+  const initial = viewFor(createGame({ players: 2, countriesToWin: 3 }, 1), 0);
+  let view: PlayerView = { ...initial, phase: { kind: 'pay', player: 0, receiver: 1, owed: 3, amount: 3, queue: [] },
+    players: initial.players.map((player, seat) => seat === 0 ? { ...player, bank: ['coin-1-1', 'coin-2-1'] } : player) };
+  let legal = [{ type: 'pay', card: 'coin-1-1' }, { type: 'pay', card: 'coin-2-1' }];
+  const render = () => runtime.render(() => Table({ view, legal, names: ['You', 'Bot'], onAction: (action: any) => sent.push(action) }));
+  render(); runtime.flush();
+  for (const id of ['coin-1-1', 'coin-2-1']) {
+    nodes(render()).find((node) => node.type?.name === 'Chip' && node.props.id === id).props.onPress();
+  }
+  nodes(render()).find((node) => node.type?.name === 'PayPanel').props.onConfirm();
+  render(); runtime.flush();
+  assert.deepEqual(sent, [{ type: 'pay', card: 'coin-1-1' }]);
+  view = { ...view, phase: { kind: 'pay', player: 0, receiver: 1, owed: 2, amount: 3, queue: [] },
+    players: view.players.map((player, seat) => seat === 0 ? { ...player, bank: ['coin-2-1'] } : player),
+    log: [...view.log, { type: 'pay', player: 0, card: 'coin-1-1' }] };
+  legal = [{ type: 'pay', card: 'coin-2-1' }];
+  render(); runtime.flush(); render(); runtime.flush();
+  assert.deepEqual(sent, [{ type: 'pay', card: 'coin-1-1' }, { type: 'pay', card: 'coin-2-1' }]);
+  runtime.unmount();
+});
+
 test('Table measures its board viewport and emits a flight for a newly drawn card', async () => {
   const runtime = hooks();
   const { Table } = loadComponent(new URL('../src/table/Table.tsx', import.meta.url).pathname, {
