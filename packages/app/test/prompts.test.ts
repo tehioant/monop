@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { applyAction, createGame, legalActions, viewFor, type Action, type CardId, type GameState } from '@atlas/engine';
+import { applyAction, CARDS, createGame, legalActions, viewFor, type Action, type CardId, type GameState } from '@atlas/engine';
 import { groupActions } from '../src/table/actions.ts';
 import { cardPrompt, payPrompt, togglePay, vetoPrompt, type Picks } from '../src/table/prompts.ts';
 
@@ -28,20 +28,24 @@ const bank = (card: CardId): Action => ({ type: 'bank', card });
  * London and banked 6, with two Vetoes in hand; Cy holds Australia complete and Tokyo.
  */
 function annToPlay(): GameState {
-  const deck = [
-    ...['paris', 'lyon', 'raid-1', 'exchange-1', 'debt-1'],
-    ...['london', 'coin-5-1', 'coin-1-1', 'veto-1', 'veto-3'],
-    ...['sydney', 'melbourne', 'tokyo', 'coin-2-1', 'coin-2-2'],
-    ...['coin-3-1', 'coin-3-2', 'coin-3-3'], // the Market
-    ...['toll-1', 'windfall-1', 'coin-1-4', 'coin-1-5', 'coin-2-3', 'coin-2-4', 'seizure-1', 'veto-2'],
+  const state = createGame({ players: 3, countriesToWin: 3 }, 1);
+  state.players = [
+    { hand: ['raid-1', 'exchange-1', 'debt-1', 'toll-1', 'windfall-1', 'seizure-1', 'veto-2'], bank: [],
+      table: [{ country: 'france', cities: ['paris', 'lyon'], upgrades: [] }] },
+    { hand: ['veto-1', 'veto-3'], bank: ['coin-5-1', 'coin-1-1'],
+      table: [{ country: 'uk', cities: ['london'], upgrades: [] }] },
+    { hand: ['coin-2-1', 'coin-2-2'], bank: [], table: [
+      { country: 'australia', cities: ['sydney', 'melbourne'], upgrades: [] },
+      { country: 'japan', cities: ['tokyo'], upgrades: [] },
+    ] },
   ];
-  return act(
-    createGame({ players: 3, countriesToWin: 3 }, 1, { deck }),
-    ...[draw, draw, lay('paris'), lay('lyon'), end],
-    ...[draw, draw, lay('london'), bank('coin-5-1'), bank('coin-1-1'), end],
-    ...[draw, draw, lay('sydney'), lay('melbourne'), lay('tokyo'), end],
-    ...[draw, draw],
-  );
+  const placed = new Set(state.players.flatMap((player) => [
+    ...player.hand, ...player.bank, ...player.table.flatMap((stack) => stack.cities),
+  ]));
+  state.market = ['coin-3-1', 'coin-3-2', 'coin-3-3'];
+  state.deck = CARDS.map((card) => card.id).filter((card) => !placed.has(card) && !state.market.includes(card));
+  state.log = [0, 1, 2].map((player) => ({ type: 'endTurn', player }));
+  return state;
 }
 
 /** The prompt of one of the awaited player's cards. */
@@ -214,8 +218,8 @@ test('a debt the payable cards cannot cover takes them all, and goes on with wha
   ];
   const state = act(
     createGame({ players: 2, countriesToWin: 3 }, 1, { deck }),
-    ...[draw, draw, end],
-    ...[draw, draw, lay('sydney'), lay('melbourne'), { type: 'play', card: 'upgrade-1', country: 'australia' } as const, bank('coin-1-1'), end],
+    ...[end],
+    ...[draw, lay('sydney'), lay('melbourne'), { type: 'play', card: 'upgrade-1', country: 'australia' } as const, bank('coin-1-1'), end],
     ...[draw, draw, { type: 'play', card: 'debt-1', target: 1 } as const],
   );
   const at = (s: GameState, picked: CardId[]) => payPrompt(viewFor(s, 1), legalActions(s, 1), picked, names)!;

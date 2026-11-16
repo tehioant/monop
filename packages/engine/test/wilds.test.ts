@@ -103,7 +103,7 @@ test('wild cities count toward completing a country, but a country of wild citie
 test('moving a wild city to complete the last country needed wins at once', () => {
   const deck = stack(
     [['cairo', 'alexandria', 'sydney', 'wild-australia-japan', 'tokyo'], []],
-    ['wild-any-1', 'osaka'],
+    ['coin-1-1', 'wild-any-1', 'osaka'],
   );
   let game = drawAll(createGame({ players: 2, countriesToWin: 3 }, 1, { deck }));
   // Seat 1 only draws and passes, discarding when over the hand limit.

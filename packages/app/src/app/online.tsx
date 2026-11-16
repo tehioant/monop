@@ -1,18 +1,19 @@
 // Online play, one screen that follows the server: create or join a room, its lobby, the table, the results.
 
-import { RULES } from '@atlas/engine';
+import { RULES, type Action } from '@atlas/engine';
 import { MAX_NAME_LENGTH } from '@atlas/server/protocol';
 import { router } from 'expo-router';
 import { useEffect, useState } from 'react';
 import { StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import type { Room, Session } from '../online/session.ts';
+import type { Game, Room, Session } from '../online/session.ts';
 import { useOnline } from '../online/store.ts';
 import { Choice } from '../table/Choice.tsx';
 import { Button, Panel, shared } from '../table/parts.tsx';
 import { Results } from '../table/Results.tsx';
 import { Table } from '../table/Table.tsx';
 import { colors } from '../table/theme.ts';
+import { usePaced } from '../table/usePaced.ts';
 
 const DEFAULT_COUNTRIES = Math.min(...RULES.countriesToWin);
 const MIN_PLAYERS = Math.min(...RULES.playerCounts);
@@ -30,20 +31,22 @@ export default function Online() {
   if (!room) return <Entry session={session} onName={setName} onCreate={createRoom} onJoin={joinRoom} />;
   if (!game) return <Lobby room={room} onAddBot={addBot} onRemove={removePlayer} onStart={startGame} />;
 
-  const names = room.players.map((player) => player.name);
-  const over = game.view.phase.kind === 'over';
+  return <Playing game={game} names={room.players.map((player) => player.name)} onAction={play} />;
+}
+
+function Playing({ game, names, onAction }: { game: Game; names: string[]; onAction: (action: Action) => void }) {
+  // The server's states can come in a burst (a bot's whole turn): the table shows them one at a time.
+  const { view, legal, settled } = usePaced(game.view, game.legalActions);
+  const over = view.phase.kind === 'over' && settled;
   return (
     <SafeAreaView style={styles.game}>
       {!over && (
         <View style={styles.quit}>
+          <Button quiet label="Settings" onPress={() => router.push('/settings')} />
           <Button quiet label="Quit" onPress={home} />
         </View>
       )}
-      {over ? (
-        <Results view={game.view} names={names} />
-      ) : (
-        <Table view={game.view} legal={game.legalActions} names={names} onAction={play} />
-      )}
+      {over ? <Results view={view} names={names} /> : <Table view={view} legal={legal} names={names} onAction={onAction} />}
       {over && (
         <View style={styles.home}>
           <Button label="Home" onPress={home} />
@@ -182,6 +185,6 @@ const styles = StyleSheet.create({
   code: { color: colors.ink, fontSize: 44, fontWeight: '800', letterSpacing: 6, textAlign: 'center' },
   seat: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', minHeight: 40 },
   game: { flex: 1 },
-  quit: { flexDirection: 'row', justifyContent: 'flex-end', paddingHorizontal: 12 },
+  quit: { flexDirection: 'row', justifyContent: 'flex-end', gap: 8, paddingHorizontal: 12 },
   home: { padding: 16 },
 });

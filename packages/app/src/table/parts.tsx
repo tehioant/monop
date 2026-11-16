@@ -1,8 +1,9 @@
 // The pieces the table and the results screen are drawn from.
 
 import type { CardId, PlayerView } from '@atlas/engine';
-import type { ReactNode } from 'react';
+import type { ComponentRef, ReactNode, Ref } from 'react';
 import { Pressable, StyleSheet, Text, View, type ViewStyle } from 'react-native';
+import Animated, { ZoomIn } from 'react-native-reanimated';
 import { cardInfo, countryPerk, countrySize, title } from './actions.ts';
 import { colors, countryColor } from './theme.ts';
 
@@ -14,17 +15,31 @@ export interface Tappable {
   selected?: boolean;
   dimmed?: boolean;
   onPress?: () => void;
+  /** How long the card takes to get here, in ms, if it has just moved: it shows once it has landed. */
+  landing?: number;
 }
 
+export const CARD_WIDTH = 68;
 export const CARD_HEIGHT = 96;
 
+const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
+
+/**
+ * A card that has just moved here shows only once it has landed. Decided when the card is first drawn there.
+ * It grows into place rather than fades in: a fade would undo the dimming of a card that cannot be played.
+ */
+function landed(after: number | undefined) {
+  return after === undefined ? undefined : ZoomIn.delay(after).duration(140);
+}
+
 /** A card drawn from its data. */
-export function CardView({ id, selected, dimmed, onPress }: Tappable) {
+export function CardView({ id, selected, dimmed, onPress, landing }: Tappable) {
   const { name, kind, value, country } = cardInfo(id);
   const perk = country && countryPerk(country);
   const band = country ? countryColor(country) : kind === 'coin' ? colors.coin : colors.action;
   return (
-    <Pressable
+    <AnimatedPressable
+      entering={landed(landing)}
       onPress={onPress}
       disabled={!onPress}
       accessibilityLabel={name}
@@ -47,7 +62,7 @@ export function CardView({ id, selected, dimmed, onPress }: Tappable) {
       {/* What the city's country gives once complete: visible before the city is laid. */}
       {perk && <Text style={styles.cardPerk}>{perk.label}</Text>}
       <Text style={styles.cardValue}>{value}</Text>
-    </Pressable>
+    </AnimatedPressable>
   );
 }
 
@@ -73,8 +88,8 @@ export function CountryView({ stack, detail, active }: { stack: Stack; detail?: 
 }
 
 /** A card on the table, by name only. `color` outlines it: the country it is laid in. */
-export function Chip({ id, selected, dimmed, onPress, color }: Tappable & { color?: string }) {
-  return <Choice label={cardInfo(id).name} picked={selected} dimmed={dimmed} onPress={onPress} color={color} />;
+export function Chip({ id, selected, dimmed, onPress, landing, color }: Tappable & { color?: string }) {
+  return <Choice label={cardInfo(id).name} picked={selected} dimmed={dimmed} onPress={onPress} color={color} landing={landing} />;
 }
 
 /** Something to pick, by its label. Inert without `onPress`. */
@@ -84,15 +99,18 @@ export function Choice({
   onPress,
   color,
   dimmed,
+  landing,
 }: {
   label: string;
   picked?: boolean;
   onPress?: () => void;
   color?: string;
   dimmed?: boolean;
+  landing?: number;
 }) {
   return (
-    <Pressable
+    <AnimatedPressable
+      entering={landed(landing)}
       onPress={onPress}
       disabled={!onPress}
       style={[
@@ -103,13 +121,18 @@ export function Choice({
       ]}
     >
       <Text style={styles.chipText}>{label}</Text>
-    </Pressable>
+    </AnimatedPressable>
   );
 }
 
 /** A player's area. `highlighted` outlines it: the player to act, or the winner. */
-export function Panel({ highlighted, style, children }: { highlighted?: boolean; style?: ViewStyle; children: ReactNode }) {
-  return <View style={[styles.panel, highlighted && styles.highlighted, style]}>{children}</View>;
+export function Panel(props: { highlighted?: boolean; style?: ViewStyle; children: ReactNode; ref?: Ref<ComponentRef<typeof View>> }) {
+  const { highlighted, style, children, ref } = props;
+  return (
+    <View ref={ref} style={[styles.panel, highlighted && styles.highlighted, style]}>
+      {children}
+    </View>
+  );
 }
 
 export function Button({ label, onPress, quiet, disabled }: { label: string; onPress: () => void; quiet?: boolean; disabled?: boolean }) {
@@ -138,7 +161,7 @@ const styles = StyleSheet.create({
   },
   highlighted: { borderColor: colors.accent },
   card: {
-    width: 68,
+    width: CARD_WIDTH,
     height: CARD_HEIGHT,
     borderRadius: 8,
     borderWidth: 1,

@@ -33,6 +33,10 @@ test('each card that hits an opponent waits for their Veto, which cancels it; th
     ['coin-1-1', 'coin-1-2', 'exchange-1', 'seizure-1'],
   );
   let game = createGame({ players: 2, countriesToWin: 3 }, 1, { deck });
+  for (const card of ['exchange-1', 'seizure-1']) {
+    game.deck.splice(game.deck.indexOf(card), 1);
+    game.players[1]!.hand.push(card);
+  }
   game = turn(game, lay('cairo'), lay('alexandria'), lay('paris'));
   game = act(drawAll(game), lay('sydney'));
   const before = viewFor(game, 0);
