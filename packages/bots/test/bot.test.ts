@@ -118,8 +118,6 @@ test('a bot moves a wild city only where it completes more; an easy bot is somet
   const coin = viewFor(state, 0).hand.find((card) => card.startsWith('coin'))!;
   state = act(
     state,
-    DRAW,
-    DRAW,
     { type: 'lay', card: 'wild-any-1', country: 'france' },
     { type: 'lay', card: 'cairo' },
     { type: 'bank', card: coin },
@@ -142,7 +140,7 @@ test('a hard bot looks after its bank, keeps its Veto for a Seizure and pays in 
     1,
     { deck: deck(['levy-1', 'seizure-1'], ['cairo', 'alexandria', 'veto-1', 'coin-2-1', 'coin-5-1']) },
   );
-  state = act(state, DRAW, DRAW, END, DRAW, DRAW);
+  state = act(state, END, DRAW);
   // With nothing banked, coin comes before cities for a hard bot. A normal bot lays first.
   assert.deepEqual(choices(state, 'hard'), all({ type: 'bank', card: 'coin-5-1' }));
   assert.ok(choices(state, 'normal').filter((action) => action.type === 'lay').length > SEEDS.length / 2);
@@ -173,7 +171,7 @@ test('a hard bot aims at the leader; a normal bot does not tell two opponents wh
     1,
     { deck: deck(['debt-1'], ['coin-5-1'], ['cairo', 'alexandria', 'coin-5-2']) },
   );
-  state = act(state, DRAW, DRAW, END, DRAW, DRAW, { type: 'bank', card: 'coin-5-1' }, END);
+  state = act(state, END, DRAW, { type: 'bank', card: 'coin-5-1' }, END);
   // Seat 2 completes a country; both opponents of seat 0 can pay a Debt in full.
   state = act(state, DRAW, DRAW, { type: 'lay', card: 'cairo' }, { type: 'lay', card: 'alexandria' });
   state = act(state, { type: 'bank', card: 'coin-5-2' }, END, DRAW, DRAW);

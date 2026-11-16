@@ -160,8 +160,11 @@ test('a take that completes the last country needed wins at once, for the player
   );
   // Marseille for Kyoto completes a third country on both sides.
   const swap: Action = { type: 'play', card: 'exchange-1', target: 0, give: 'marseille', take: 'kyoto' };
+  const start = createGame({ players: 2, countriesToWin: 3 }, 1, { deck });
+  start.log = [0, 1].map((player) => ({ type: 'endTurn', player }));
+  start.phase = { kind: 'draw', player: 0, remaining: 2 };
   const game = playOut(
-    createGame({ players: 2, countriesToWin: 3 }, 1, { deck }),
+    start,
     (legal) =>
       legal.find((a) => a.type === 'lay') ??
       legal.find((a) => isDeepStrictEqual(a, swap)) ??
