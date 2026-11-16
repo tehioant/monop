@@ -74,7 +74,7 @@ export function receive(session: Session, message: ServerMessage): { session: Se
       return out(session.game ? 'ended' : null);
     }
     case 'room':
-      return { session: { ...session, request: null, room: message, lost: null }, send: [] };
+      return { session: { ...session, request: null, room: message, lost: session.game ? session.lost : null }, send: [] };
     case 'removed':
     case 'replaced':
       return out(message.type);
@@ -84,7 +84,7 @@ export function receive(session: Session, message: ServerMessage): { session: Se
       const known = session.game?.stateVersion ?? message.stateVersion;
       const follows = message.stateVersion === known || message.stateVersion === known + 1;
       if (session.synced && !follows) return { session: { ...session, synced: false }, send: [{ type: 'resync' }] };
-      return { session: { ...session, game: message, synced: true }, send: [] };
+      return { session: { ...session, game: message, synced: true, lost: null }, send: [] };
     }
     case 'pong':
       return { session, send: [] };
@@ -110,7 +110,7 @@ export function disconnected(session: Session): Session {
   if (game?.view.phase.kind === 'over') return session;
   if (!room) return { ...offline(session.name, session.token), error: 'disconnected' };
   const request: RoomRequest = game ? { type: 'resync' } : { type: 'joinRoom', code: room.code };
-  return { ...session, request, lost: lost === null ? 0 : lost + 1 };
+  return { ...session, synced: false, request, lost: lost === null ? 0 : lost + 1 };
 }
 
 /** How long to wait before opening the connection again, in milliseconds, after `failed` attempts in a row. */
@@ -128,5 +128,26 @@ export function encode(message: ClientMessage): string {
 }
 
 export function decode(text: string): ServerMessage {
-  return JSON.parse(text) as ServerMessage;
+  const message = JSON.parse(text);
+  if (!message || typeof message !== 'object' || Array.isArray(message)) throw Error('Invalid message');
+  // Version refusal retains its wire shape across versions.
+  if (message.type === 'error' && message.code === 'unsupported_version') return message;
+  if (message.v !== PROTOCOL_VERSION) return { type: 'error', code: 'unsupported_version', message: '' };
+  const valid = (() => {
+    switch (message.type) {
+      case 'welcome': return typeof message.token === 'string' && typeof message.name === 'string' && typeof message.resumed === 'boolean';
+      case 'room': return typeof message.code === 'string' && Number.isInteger(message.you) &&
+        Array.isArray(message.players) && message.you >= 0 && message.you < message.players.length &&
+        message.players.every((p: any) => p && typeof p.name === 'string' && typeof p.bot === 'boolean' && ['connected', 'disconnected'].includes(p.status));
+      case 'state': return Number.isSafeInteger(message.stateVersion) && message.stateVersion >= 0 &&
+        message.view && Array.isArray(message.view.players) && Array.isArray(message.view.hand) &&
+        Array.isArray(message.view.log) && message.view.phase && typeof message.view.phase.kind === 'string' &&
+        Array.isArray(message.legalActions);
+      case 'error': return typeof message.code === 'string' && typeof message.message === 'string';
+      case 'removed': case 'replaced': case 'pong': return true;
+      default: return false;
+    }
+  })();
+  if (!valid) throw Error('Invalid message');
+  return message as ServerMessage;
 }

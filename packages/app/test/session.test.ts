@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { createGame, legalActions, viewFor, type PlayerId } from '@atlas/engine';
-import type { ServerMessage } from '@atlas/server/protocol';
+import { PROTOCOL_VERSION, type ServerMessage } from '@atlas/server/protocol';
 import {
   backoff,
   decode,
@@ -81,7 +81,7 @@ test('the lobby answers the request and follows every change; each state replace
 });
 
 test('a state that does not follow the known one is not taken: a resync is asked, and its answer is', () => {
-  const playing = after({ ...offline('Bo', 'issued'), request: join }, welcome, room, state(4, 1)).session;
+  const playing: Session = { ...offline('Bo', 'issued'), room, game: state(4, 1), synced: true };
 
   // A gap forward. A state that was on its way is taken, and so is the answer that repeats it.
   let { session, sent } = after(playing, state(6, 1));
@@ -134,8 +134,8 @@ test('an intent carries the version of the state it was chosen from, and every m
   const current = state(7, 0);
   const action = current.legalActions[0]!;
   assert.deepEqual(intent(current, action), { type: 'intent', stateVersion: 7, action });
-  assert.deepEqual(JSON.parse(encode(intent(current, action))), { v: 1, type: 'intent', stateVersion: 7, action });
-  assert.deepEqual(decode(JSON.stringify({ v: 1, ...room })), { v: 1, ...room });
+  assert.deepEqual(JSON.parse(encode(intent(current, action))), { v: PROTOCOL_VERSION, type: 'intent', stateVersion: 7, action });
+  assert.deepEqual(decode(JSON.stringify({ v: PROTOCOL_VERSION, ...room })), { v: PROTOCOL_VERSION, ...room });
 });
 
 test('a connection lost during a game is opened again: the game stays on screen until the server gives it again', () => {

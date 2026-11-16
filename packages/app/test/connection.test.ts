@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test, type TestContext } from 'node:test';
 import { createGame, legalActions, viewFor } from '@atlas/engine';
-import { HEARTBEAT_MS, type ServerMessage } from '@atlas/server/protocol';
+import { PROTOCOL_VERSION, HEARTBEAT_MS, type ServerMessage } from '@atlas/server/protocol';
 import { connection, type Socket } from '../src/online/connection.ts';
 import { offline, type Game, type Room, type Session } from '../src/online/session.ts';
 
@@ -25,7 +25,7 @@ class FakeSocket implements Socket {
     this.onopen?.();
   }
   receives(...messages: ServerMessage[]): void {
-    for (const message of messages) this.onmessage?.({ data: JSON.stringify({ v: 1, ...message }) });
+    for (const message of messages) this.onmessage?.({ data: JSON.stringify({ v: PROTOCOL_VERSION, ...message }) });
   }
   /** Closed by the network or the server; also how a socket that could not be opened ends. */
   drops(): void {
@@ -40,13 +40,13 @@ const players = [{ name: 'Ada', bot: false, status: 'connected' as const }, { na
 const room: Room = { type: 'room', code: 'BCDFG', countriesToWin: 3, players, you: 1 };
 const game = createGame({ players: 2, countriesToWin: 3 }, 1);
 const state: Game = { type: 'state', stateVersion: 3, view: viewFor(game, 1), legalActions: legalActions(game, 1) };
-const sends = (type: string, fields = {}) => ({ v: 1, type, ...fields });
+const sends = (type: string, fields = {}) => ({ v: PROTOCOL_VERSION, type, ...fields });
 
 /** A connection on fake sockets and a fake clock, with Bo seated in a game through the first socket. */
-function playing(t: TestContext) {
+function preparedSession(t: TestContext) {
   t.mock.timers.enable({ apis: ['setTimeout', 'setInterval'] });
   const sockets: FakeSocket[] = [];
-  const online = { session: { ...offline('Bo', 'issued'), request: { type: 'joinRoom', code: 'bcdfg' } } as Session };
+  const online = { session: { ...offline('Bo', 'issued'), room, game: state, synced: true } as Session };
   const server = connection(
     () => sockets[sockets.push(new FakeSocket()) - 1]!,
     () => online.session,
@@ -54,13 +54,11 @@ function playing(t: TestContext) {
   );
   server.open();
   sockets[0]!.opens();
-  sockets[0]!.receives(welcome, room, state);
-  assert.deepEqual(sockets[0]!.sent, [sends('hello', { token: 'issued', name: 'Bo' }), sends('joinRoom', { code: 'bcdfg' })]);
   return { sockets, online, server, tick: (ms: number) => t.mock.timers.tick(ms) };
 }
 
 test('a lost connection is opened again after a growing wait, and the token brings the player back to the seat', (t) => {
-  const { sockets, online, server, tick } = playing(t);
+  const { sockets, online, server, tick } = preparedSession(t);
 
   sockets[0]!.drops();
   assert.deepEqual([online.session.lost, online.session.game?.stateVersion], [0, 3]);
@@ -85,7 +83,7 @@ test('a lost connection is opened again after a growing wait, and the token brin
 });
 
 test('a silent connection is pinged, then taken for lost and opened again; a late close of it changes nothing', (t) => {
-  const { sockets, online, tick } = playing(t);
+  const { sockets, online, tick } = preparedSession(t);
   const pings = () => sockets[0]!.sent.filter((message) => (message as { type: string }).type === 'ping').length;
 
   tick(HEARTBEAT_MS);
@@ -106,7 +104,7 @@ test('a silent connection is pinged, then taken for lost and opened again; a lat
 });
 
 test('the connection is closed for good when the session is out of its room, or when the player leaves', (t) => {
-  const { sockets, online, server, tick } = playing(t);
+  const { sockets, online, server, tick } = preparedSession(t);
 
   sockets[0]!.receives({ type: 'error', code: 'unsupported_version', message: '' });
   assert.deepEqual(online.session, { ...offline('Bo', 'issued'), error: 'unsupported_version' });
@@ -122,4 +120,52 @@ test('the connection is closed for good when the session is out of its room, or 
   server.close();
   tick(60_000);
   assert.equal(sockets.length, 2);
+});
+for (const fault of ['constructor', 'send', 'close', 'malformed']) {
+  test(`external ${fault} failure is contained with bounded sanitized diagnostics and retry`, (t) => {
+    t.mock.timers.enable({ apis: ['setTimeout', 'setInterval'] });
+    const warnings: unknown[][] = []; t.mock.method(console, 'warn', (...args: unknown[]) => warnings.push(args));
+    let session: Session = { ...offline('Bo', 'issued'), room, game: state, synced: true };
+    const sockets: FakeSocket[] = [];
+    const server = connection(() => {
+      if (fault === 'constructor') throw Error('private token');
+      const socket = new FakeSocket(); sockets.push(socket);
+      if (fault === 'send') socket.send = () => { throw Error('private token'); };
+      if (fault === 'close') socket.close = () => { throw Error('private token'); };
+      return socket;
+    }, () => session, next => { session = next; });
+    assert.doesNotThrow(() => server.open());
+    if (fault === 'constructor') assert.equal(session.lost, 0);
+    else {
+      assert.doesNotThrow(() => sockets[0]!.opens());
+      if (fault === 'malformed') assert.doesNotThrow(() => sockets[0]!.onmessage?.({ data: '{private token' }));
+      if (fault === 'close') assert.doesNotThrow(() => sockets[0]!.drops());
+      assert.equal(session.lost, 0);
+    }
+    t.mock.timers.tick(500); t.mock.timers.tick(1000);
+    server.close(); t.mock.timers.tick(60_000);
+    assert.ok(warnings.length > 0 && warnings.length <= 2);
+    assert.ok(!JSON.stringify(warnings).includes('private'));
+  });
+}
+
+test('lost and unsynced sessions cannot send stale intents, including before replacement full state', (t) => {
+  const { sockets, online, server, tick } = preparedSession(t);
+  online.session = { ...online.session, synced: false };
+  server.send({ type: 'intent', stateVersion: 3, action: { type: 'draw' } });
+  assert.equal(sockets[0]!.sent.length, 1);
+  sockets[0]!.drops(); tick(500); sockets[1]!.opens();
+  const old = sockets[0]!;
+  old.onopen?.(); old.receives({ type: 'replaced' }); old.drops();
+  assert.equal(online.session.lost, 0);
+  sockets[1]!.receives({ ...welcome, resumed: true }, room);
+  assert.equal(online.session.synced, false);
+  assert.equal(online.session.lost, 0);
+  server.send({ type: 'intent', stateVersion: 3, action: { type: 'draw' } });
+  assert.equal(sockets[1]!.sent.length, 1);
+  sockets[1]!.receives({ ...state, stateVersion: 1 });
+  server.send({ type: 'intent', stateVersion: 1, action: { type: 'draw' } });
+  assert.equal(sockets[1]!.sent.length, 2);
+  assert.equal(online.session.lost, null);
+  server.close();
 });

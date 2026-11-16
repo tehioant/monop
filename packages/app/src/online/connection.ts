@@ -36,8 +36,18 @@ export function connection(socket: () => Socket, get: () => Session, set: (sessi
   let beat: ReturnType<typeof setInterval> | undefined;
   let retry: ReturnType<typeof setTimeout> | undefined;
 
+  const warned = new Set<string>();
+  const warn = (kind: string) => {
+    if (warned.has(kind)) return;
+    warned.add(kind);
+    console.warn(`[atlas:online] ${kind}; connection unavailable.`);
+  };
   const send = (message: ClientMessage) => {
-    if (current?.readyState === OPEN) current.send(encode(message));
+    const session = get();
+    if (message.type === 'intent' && (!session.synced || session.lost !== null)) return;
+    try {
+      if (current?.readyState === OPEN) current.send(encode(message));
+    } catch { warn('Send failed'); lost(); }
   };
 
   const close = () => {
@@ -45,7 +55,7 @@ export function connection(socket: () => Socket, get: () => Session, set: (sessi
     clearTimeout(retry);
     const closed = current;
     current = null;
-    closed?.close();
+    try { closed?.close(); } catch { warn('Close failed'); }
   };
 
   /** The connection is gone: the session says whether another one is to be opened. */
@@ -58,7 +68,8 @@ export function connection(socket: () => Socket, get: () => Session, set: (sessi
 
   const open = () => {
     close();
-    const opened = socket();
+    let opened: Socket;
+    try { opened = socket(); } catch { warn('Open failed'); lost(); return; }
     current = opened;
     /** Heartbeats since the server was last heard from. */
     let missed = 0;
@@ -66,7 +77,10 @@ export function connection(socket: () => Socket, get: () => Session, set: (sessi
     opened.onmessage = (event) => {
       if (opened !== current) return;
       missed = 0;
-      const { session, send: answers } = receive(get(), decode(String(event.data)));
+      let result;
+      try { result = receive(get(), decode(String(event.data))); }
+      catch { warn('Invalid message'); lost(); return; }
+      const { session, send: answers } = result;
       set(session);
       answers.forEach(send);
       if (!session.room && !session.request) close();
