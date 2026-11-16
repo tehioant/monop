@@ -1,18 +1,19 @@
 // Online play, one screen that follows the server: create or join a room, its lobby, the table, the results.
 
-import { RULES } from '@atlas/engine';
+import { RULES, type Action } from '@atlas/engine';
 import { MAX_NAME_LENGTH } from '@atlas/server/protocol';
 import { router } from 'expo-router';
 import { useEffect, useState } from 'react';
 import { StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import type { Room, Session } from '../online/session.ts';
+import type { Game, Room, Session } from '../online/session.ts';
 import { useOnline } from '../online/store.ts';
 import { Choice } from '../table/Choice.tsx';
 import { Button, Panel, shared } from '../table/parts.tsx';
 import { Results } from '../table/Results.tsx';
 import { Table } from '../table/Table.tsx';
 import { colors } from '../table/theme.ts';
+import { usePaced } from '../table/usePaced.ts';
 
 const DEFAULT_COUNTRIES = Math.min(...RULES.countriesToWin);
 const MIN_PLAYERS = Math.min(...RULES.playerCounts);
@@ -40,22 +41,25 @@ export default function Online() {
     );
   }
 
+  return <Playing game={game} room={room} reconnecting={reconnecting || !session.synced} onAction={play} />;
+}
+
+function Playing({ game, room, reconnecting, onAction }: { game: Game; room: Room; reconnecting: boolean; onAction: (action: Action) => void }) {
   const names = room.players.map((player) => player.name);
-  const over = game.view.phase.kind === 'over';
+  // The server's states can come in a burst (a bot's whole turn): the table shows them one at a time.
+  const { view, legal, settled } = usePaced(game.view, game.legalActions);
+  const over = view.phase.kind === 'over' && settled;
   return (
     <SafeAreaView style={styles.game}>
       {!over && (
-        <View style={styles.bar}>
-          {reconnecting ? <Reconnecting /> : <Presence room={room} />}
+        <View style={styles.quit}>
+          {reconnecting && <Reconnecting />}
+          <Presence room={room} />
+          <Button quiet label="Settings" onPress={() => router.push('/settings')} />
           <Button quiet label="Quit" onPress={home} />
         </View>
       )}
-      {over ? (
-        <Results view={game.view} names={names} />
-      ) : (
-        // Nothing can be played until the server has given the game again.
-        <Table view={game.view} legal={reconnecting ? [] : game.legalActions} names={names} onAction={play} />
-      )}
+      {over ? <Results view={view} names={names} /> : <Table view={view} legal={reconnecting ? [] : legal} names={names} onAction={onAction} />}
       {over && (
         <View style={styles.home}>
           <Button label="Home" onPress={home} />
@@ -203,6 +207,7 @@ function Lobby(props: {
                 {seat === 0 ? '  host' : ''}
                 {seat === room.you ? '  you' : ''}
                 {player.bot ? '  bot' : ''}
+                {player.status === 'disconnected' ? '  offline' : '  connected'}
               </Text>
             </Text>
             {host && seat !== room.you && <Button quiet label="Remove" onPress={() => onRemove(seat)} />}
@@ -242,10 +247,10 @@ const styles = StyleSheet.create({
   code: { color: colors.ink, fontSize: 44, fontWeight: '800', letterSpacing: 6, textAlign: 'center' },
   seat: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', minHeight: 40 },
   game: { flex: 1 },
-  bar: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 12 },
+  quit: { flexDirection: 'row', justifyContent: 'flex-end', gap: 8, paddingHorizontal: 12 },
   presence: { flex: 1, flexDirection: 'row', flexWrap: 'wrap', columnGap: 12 },
   here: { color: '#15803d' },
   away: { color: '#b91c1c', fontWeight: '600' },
-  reconnecting: { flex: 1, color: '#b91c1c', fontSize: 15, fontWeight: '600' },
+  reconnecting: { color: '#b91c1c', fontSize: 15, fontWeight: '600' },
   home: { padding: 16 },
 });

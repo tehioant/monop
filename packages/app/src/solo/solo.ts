@@ -34,6 +34,16 @@ export function startSolo(config: SoloConfig, seed: number): SoloGame {
   return { config, seed, state: createGame(options, seed) };
 }
 
+/** A new game with the settings of `game`, dealt from `seed`. */
+export function rematch(game: SoloGame, seed: number): SoloGame {
+  return startSolo(game.config, seed);
+}
+
+/** False once the game is over. */
+export function inProgress(game: SoloGame): boolean {
+  return game.state.phase.kind !== 'over';
+}
+
 /** What the table shows: the human's view. */
 export function soloView(game: SoloGame): PlayerView {
   return viewFor(game.state, HUMAN);

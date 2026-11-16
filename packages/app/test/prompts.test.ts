@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { applyAction, createGame, legalActions, viewFor, type Action, type CardId, type GameState } from '@atlas/engine';
+import { applyAction, CARDS, createGame, legalActions, viewFor, type Action, type CardId, type GameState } from '@atlas/engine';
 import { groupActions } from '../src/table/actions.ts';
 import { cardPrompt, payPrompt, togglePay, vetoPrompt, type Picks } from '../src/table/prompts.ts';
 
@@ -28,27 +28,31 @@ const bank = (card: CardId): Action => ({ type: 'bank', card });
  * London and banked 6, with two Vetoes in hand; Cy holds Australia complete and Tokyo.
  */
 function annToPlay(): GameState {
-  const deck = [
-    ...['paris', 'lyon', 'raid-1', 'exchange-1', 'debt-1'],
-    ...['london', 'coin-5-1', 'coin-1-1', 'veto-1', 'veto-3'],
-    ...['sydney', 'melbourne', 'tokyo', 'coin-2-1', 'coin-2-2'],
-    ...['coin-3-1', 'coin-3-2', 'coin-3-3'], // the Market
-    ...['toll-1', 'windfall-1', 'coin-1-4', 'coin-1-5', 'coin-2-3', 'coin-2-4', 'seizure-1', 'veto-2'],
+  const state = createGame({ players: 3, countriesToWin: 3 }, 1);
+  state.players = [
+    { hand: ['raid-1', 'exchange-1', 'debt-1', 'toll-1', 'windfall-1', 'seizure-1', 'veto-2'], bank: [],
+      table: [{ country: 'france', cities: ['paris', 'lyon'], upgrades: [] }] },
+    { hand: ['veto-1', 'veto-3'], bank: ['coin-5-1', 'coin-1-1'],
+      table: [{ country: 'uk', cities: ['london'], upgrades: [] }] },
+    { hand: ['coin-2-1', 'coin-2-2'], bank: [], table: [
+      { country: 'australia', cities: ['sydney', 'melbourne'], upgrades: [] },
+      { country: 'japan', cities: ['tokyo'], upgrades: [] },
+    ] },
   ];
-  return act(
-    createGame({ players: 3, countriesToWin: 3 }, 1, { deck }),
-    ...[draw, draw, lay('paris'), lay('lyon'), end],
-    ...[draw, draw, lay('london'), bank('coin-5-1'), bank('coin-1-1'), end],
-    ...[draw, draw, lay('sydney'), lay('melbourne'), lay('tokyo'), end],
-    ...[draw, draw],
-  );
+  const placed = new Set(state.players.flatMap((player) => [
+    ...player.hand, ...player.bank, ...player.table.flatMap((stack) => stack.cities),
+  ]));
+  state.market = ['coin-3-1', 'coin-3-2', 'coin-3-3'];
+  state.deck = CARDS.map((card) => card.id).filter((card) => !placed.has(card) && !state.market.includes(card));
+  state.log = [0, 1, 2].map((player) => ({ type: 'endTurn', player }));
+  return state;
 }
 
 /** The prompt of one of the awaited player's cards. */
 function promptOf(state: GameState, card: CardId, picks: Picks = {}) {
   const view = viewFor(state, awaited(state));
   const actions = groupActions(view, legalActions(state, view.viewer)).byCard.get(card) ?? [];
-  return cardPrompt(view, card, actions, picks, names);
+  return cardPrompt(view, actions, picks, names);
 }
 
 const labels = (prompt: ReturnType<typeof promptOf>) =>
@@ -56,7 +60,6 @@ const labels = (prompt: ReturnType<typeof promptOf>) =>
 
 test('a card with nothing to choose is played or banked as it is', () => {
   const prompt = promptOf(annToPlay(), 'windfall-1');
-  assert.equal(prompt.title, 'Windfall: draw 2 cards from the deck');
   assert.deepEqual(prompt.direct, [{ type: 'play', card: 'windfall-1' }, bank('windfall-1')]);
   assert.deepEqual(prompt.steps, []);
   assert.deepEqual([prompt.chosen, prompt.confirm], [null, null]);
@@ -110,11 +113,6 @@ test('a single target is picked already, and a pick that names no option counts 
   assert.equal(promptOf(state, 'debt-1', { aim: debt.steps[0]!.groups[0]!.options[1]!.key }).confirm, 'Play Debt: Cy');
 });
 
-test('a city card says what its country gives once complete', () => {
-  const state = createGame({ players: 2, countriesToWin: 3 }, 1, { deck: ['paris', 'lyon', 'marseille', 'cairo', 'tokyo', 'rome', 'milan', 'naples', 'osaka', 'kyoto'] });
-  assert.equal(promptOf(state, 'paris').title, 'Paris: France, 3 cities. Held complete: the first Veto you play returns to your hand');
-});
-
 test('every legal action of a card is offered once, directly or by one pick per step', () => {
   // Seeded random play, looked at through the prompts of whoever is to act.
   let seed = 5;
@@ -126,7 +124,7 @@ test('every legal action of a card is offered once, directly or by one pick per 
     const view = viewFor(state, player);
     const legal = legalActions(state, player);
     for (const [card, actions] of groupActions(view, legal).byCard) {
-      const at = (picks: Picks) => cardPrompt(view, card, actions, picks, names);
+      const at = (picks: Picks) => cardPrompt(view, actions, picks, names);
       const offered = [...at({}).direct];
       const [first, second] = at({}).steps;
       for (const a of first?.groups.flatMap(({ options }) => options) ?? []) {
@@ -220,8 +218,8 @@ test('a debt the payable cards cannot cover takes them all, and goes on with wha
   ];
   const state = act(
     createGame({ players: 2, countriesToWin: 3 }, 1, { deck }),
-    ...[draw, draw, end],
-    ...[draw, draw, lay('sydney'), lay('melbourne'), { type: 'play', card: 'upgrade-1', country: 'australia' } as const, bank('coin-1-1'), end],
+    ...[end],
+    ...[draw, lay('sydney'), lay('melbourne'), { type: 'play', card: 'upgrade-1', country: 'australia' } as const, bank('coin-1-1'), end],
     ...[draw, draw, { type: 'play', card: 'debt-1', target: 1 } as const],
   );
   const at = (s: GameState, picked: CardId[]) => payPrompt(viewFor(s, 1), legalActions(s, 1), picked, names)!;
@@ -237,9 +235,9 @@ test('a debt the payable cards cannot cover takes them all, and goes on with wha
 test('an action aimed in a way the table has no wording for still gets its options and its confirm', () => {
   const embargo = (region: string) => ({ type: 'tradeEmbargo', card: 'windfall-1', region }) as unknown as Action;
   const view = viewFor(annToPlay(), 0);
-  const prompt = cardPrompt(view, 'windfall-1', [embargo('north'), embargo('south')], {}, names);
+  const prompt = cardPrompt(view, [embargo('north'), embargo('south')], {}, names);
   assert.deepEqual(labels(prompt), [['Choose', [null, 'Trade embargo Windfall (region: North)', 'Trade embargo Windfall (region: South)']]]);
   const south = prompt.steps[0]!.groups[0]!.options[1]!.key;
-  const picked = cardPrompt(view, 'windfall-1', [embargo('north'), embargo('south')], { aim: south }, names);
+  const picked = cardPrompt(view, [embargo('north'), embargo('south')], { aim: south }, names);
   assert.deepEqual([picked.chosen, picked.confirm], [embargo('south'), 'Trade embargo Windfall (region: South)']);
 });

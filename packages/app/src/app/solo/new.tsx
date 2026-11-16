@@ -5,6 +5,7 @@ import { useState } from 'react';
 import { StyleSheet, Text } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useSolo } from '../../solo/store.ts';
+import { SaveStatus } from '../../solo/SaveStatus.tsx';
 import { title } from '../../table/actions.ts';
 import { Choice } from '../../table/Choice.tsx';
 import { Button } from '../../table/parts.tsx';
@@ -18,6 +19,8 @@ const DEFAULT_COUNTRIES = Math.min(...RULES.countriesToWin);
 
 export default function NewSoloGame() {
   const start = useSolo((solo) => solo.start);
+  const saveError = useSolo((solo) => solo.saveError);
+  const retrySave = useSolo((solo) => solo.retrySave);
   const [bots, setBots] = useState(DEFAULT_BOTS);
   const [difficulty, setDifficulty] = useState(DEFAULT_DIFFICULTY);
   const [countriesToWin, setCountriesToWin] = useState(DEFAULT_COUNTRIES);
@@ -25,14 +28,14 @@ export default function NewSoloGame() {
   return (
     <SafeAreaView style={styles.screen}>
       <Text style={styles.title}>Solo game</Text>
+      <SaveStatus error={saveError} retry={retrySave} />
       <Choice label="Opponents" options={BOT_COUNTS} value={bots} onChange={setBots} />
       <Choice label="Difficulty" options={DIFFICULTIES} value={difficulty} onChange={setDifficulty} show={title} />
       <Choice label="Countries to win" options={RULES.countriesToWin} value={countriesToWin} onChange={setCountriesToWin} />
       <Button
         label="Start"
         onPress={() => {
-          start({ bots, difficulty, countriesToWin });
-          router.replace('/solo/table');
+          if (start({ bots, difficulty, countriesToWin })) router.replace('/solo/table');
         }}
       />
       <Button quiet label="Back" onPress={() => router.back()} />

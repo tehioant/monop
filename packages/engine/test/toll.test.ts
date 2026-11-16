@@ -76,7 +76,7 @@ test('wild cities count toward the toll of the country they are laid in; the top
       ['toll-1', 'toll-2', 'wild-egypt-italy', 'wild-any-1', 'wild-any-2'],
       ['coin-10-1', 'coin-5-1', 'coin-5-2'],
     ],
-    ['rome'],
+    ['coin-1-1', 'rome'],
   );
   let game = createGame({ players: 2, countriesToWin: 3 }, 1, { deck });
   game = turn(game, layAs('wild-egypt-italy', 'italy'), layAs('wild-any-1', 'italy'), layAs('wild-any-2', 'italy'));

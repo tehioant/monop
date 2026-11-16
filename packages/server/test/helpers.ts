@@ -29,8 +29,9 @@ const dealt = RULES.startingHand + RULES.marketSize;
 export const deck = [
   ...winning.slice(0, RULES.startingHand),
   ...others.slice(0, dealt),
+  others[dealt]!, // seat 1's first-turn draw must not take seat 0's missing city
   ...winning.slice(RULES.startingHand),
-  ...others.slice(dealt),
+  ...others.slice(dealt + 1),
 ];
 /** A game dealt from `deck`, for `startTestServer({ newGame })`. */
 export const newGame = (options: GameOptions): GameState => createGame(options, 1, { deck });
