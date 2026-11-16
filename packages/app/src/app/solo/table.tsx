@@ -1,5 +1,5 @@
 import { Redirect, router } from 'expo-router';
-import { useEffect } from 'react';
+import { useEffect, useMemo } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { botToMove, soloLegal, soloNames, soloView, type SoloGame } from '../../solo/solo.ts';
@@ -17,7 +17,8 @@ export default function SoloTable() {
 function Playing({ game }: { game: SoloGame }) {
   const { play, stepBot } = useSolo();
   // The bots play at once, one action after the other; what they did is shown at a pace the player can follow.
-  const { view, legal, settled } = usePaced(soloView(game), soloLegal(game));
+  const incoming = useMemo(() => soloView(game), [game]);
+  const { view, legal, settled } = usePaced(incoming, soloLegal(game));
   const over = view.phase.kind === 'over' && settled;
 
   useEffect(() => {

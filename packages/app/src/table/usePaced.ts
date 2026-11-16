@@ -25,14 +25,15 @@ export function usePaced(view: PlayerView, legal: readonly Action[]): Paced {
 
   useEffect(() => {
     setState((state) => {
-      const known = (state.pace.waiting.at(-1)?.state ?? state.pace.shown).log.length;
-      if (length === known) return state;
+      const latest = state.pace.waiting.at(-1)?.state ?? state.pace.shown;
+      const known = latest.log.length;
+      if (view === latest) return state;
       const now = Date.now();
       // A shorter log is another game, or a server that restarted from an earlier state: nothing to catch up on.
-      if (length < known) return { pace: start(view), now };
+      if (length <= known || view.viewer !== latest.viewer) return { pace: start(view), now };
       return { pace: push(state.pace, view, timing(view.log.slice(known), view.viewer), now), now };
     });
-  }, [length]);
+  }, [view]);
 
   useEffect(() => {
     if (settled(pace, now)) return;
@@ -48,7 +49,7 @@ export function usePaced(view: PlayerView, legal: readonly Action[]): Paced {
 
   return {
     view: pace.shown,
-    legal: pace.shown.log.length === length ? legal : NONE,
-    settled: settled(pace, now) && pace.shown.log.length === length,
+    legal: pace.shown === view ? legal : NONE,
+    settled: settled(pace, now) && pace.shown === view,
   };
 }

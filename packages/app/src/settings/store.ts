@@ -7,14 +7,21 @@ import { loadSettings, saveSettings, type Settings } from './settings.ts';
 
 interface SettingsStore {
   settings: Settings;
+  saveError: boolean;
   change: (change: Partial<Settings>) => void;
 }
 
 export const useSettings = create<SettingsStore>((set, get) => ({
   settings: loadSettings(SecureStore),
+  saveError: false,
   change: (change) => {
     const settings = { ...get().settings, ...change };
     set({ settings });
-    saveSettings(SecureStore, settings);
+    try {
+      saveSettings(SecureStore, settings);
+      set({ saveError: false });
+    } catch {
+      set({ saveError: true });
+    }
   },
 }));

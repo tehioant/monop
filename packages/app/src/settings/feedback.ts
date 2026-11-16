@@ -34,25 +34,25 @@ const HAPTICS: Record<Cue, (() => Promise<void>) | null> = {
 /** One player per sound file, made the first time it is heard. */
 const players = new Map<number, AudioPlayer>();
 
-function player(sound: number): AudioPlayer {
-  // A game's sounds are effects: silent when the phone is, and never in the way of the player's own music.
-  if (players.size === 0) void setAudioModeAsync({ playsInSilentMode: false, interruptionMode: 'mixWithOthers' });
+let audioMode: Promise<void> | undefined;
+
+async function play(sound: number): Promise<void> {
+  // A game's effects respect silent mode and the player's own music.
+  audioMode ??= setAudioModeAsync({ playsInSilentMode: false, interruptionMode: 'mixWithOthers' });
+  await audioMode;
+  if (!useSettings.getState().settings.sound) return;
   const made = players.get(sound) ?? createAudioPlayer(sound);
   players.set(sound, made);
-  return made;
+  await made.seekTo(0);
+  if (useSettings.getState().settings.sound) made.play();
 }
 
 /** Plays the sound of `cue` and its haptic, as far as the settings allow. Never throws: a game goes on without them. */
 export function signal(cue: Cue): void {
   const { sound, haptics } = useSettings.getState().settings;
-  if (sound) {
-    try {
-      const playing = player(SOUNDS[cue]);
-      void playing.seekTo(0).catch(() => {});
-      playing.play();
-    } catch {
-      // No sound on this device.
-    }
+  if (sound) void play(SOUNDS[cue]).catch(() => {});
+  if (haptics) {
+    // A missing native module may throw synchronously as well as reject its promise.
+    try { void HAPTICS[cue]?.().catch(() => {}); } catch { /* No haptics on this device. */ }
   }
-  if (haptics) void HAPTICS[cue]?.().catch(() => {});
 }

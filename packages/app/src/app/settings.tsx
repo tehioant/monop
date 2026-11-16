@@ -16,7 +16,7 @@ const SWITCHES: { name: keyof Settings; label: string; detail: string }[] = [
 ];
 
 export default function SettingsScreen() {
-  const { settings, change } = useSettings();
+  const { settings, change, saveError } = useSettings();
   return (
     <SafeAreaView style={styles.screen}>
       <Text style={styles.title}>Settings</Text>
@@ -40,6 +40,7 @@ export default function SettingsScreen() {
           </View>
         ))}
       </Panel>
+      {saveError && <Text style={shared.small}>Changes apply now but could not be saved. Try switching again.</Text>}
       <Button quiet label="Back" onPress={() => router.back()} />
     </SafeAreaView>
   );

@@ -29,7 +29,9 @@ export function start<T>(state: T): Pace<T> {
 
 /** A state comes in at `now`: shown at once if nothing is in its way, after the ones before it otherwise. */
 export function push<T>(pace: Pace<T>, state: T, timing: Timing, now: number): Pace<T> {
-  return advance({ ...pace, waiting: [...pace.waiting, { state, ...timing }] }, now);
+  // A long background/bot burst catches up to the latest eight steps, rather than minutes of backlog.
+  const waiting = [...pace.waiting, { state, ...timing }].slice(-8);
+  return advance({ ...pace, waiting }, now);
 }
 
 /** The pace at `now`: the next state is on screen if its time has come. To call again at `until`. */

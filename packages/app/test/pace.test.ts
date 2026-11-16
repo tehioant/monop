@@ -45,6 +45,15 @@ test("the viewer's own move is shown at once, but never ahead of the states befo
   assert.deepEqual(watch(behind, [100, 700, 701]), ['b', 'mine', 'mine'], 'c is shown, then mine right behind it');
 });
 
+test('an oversized burst bounds catch-up time while retaining the latest state', () => {
+  let pace = start('initial');
+  for (let i = 0; i < 100; i++) pace = push(pace, String(i), step, 0);
+  assert.ok(pace.waiting.length <= 8, 'a fast bot burst must not build an unbounded wait');
+  for (let now = 700; now <= 6300; now += 700) pace = advance(pace, now);
+  assert.equal(pace.shown, '99');
+  assert.equal(settled(pace, 6300), true);
+});
+
 test('a step is timed by what happened in it', () => {
   const entry = (type: string, player?: number) => ({ type, player }) as LogEntry;
   assert.deepEqual(timing([entry('draw', 1)], 0), { hold: QUICK_MS, urgent: false });

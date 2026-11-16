@@ -288,7 +288,7 @@ export function Table({ view, legal, names, onAction }: TableProps) {
   return (
     <View ref={anchor('table')} style={styles.table}>
       <ScrollView
-        ref={board}
+        ref={(node) => { board.current = node; anchor('board')(node); }}
         style={styles.scroll}
         contentContainerStyle={styles.board}
         scrollEventThrottle={16}
@@ -369,7 +369,7 @@ export function Table({ view, legal, names, onAction }: TableProps) {
       </ScrollView>
 
       {/* The player's own side of the table, with an edge of its own: the board scrolls behind it. */}
-      <View style={styles.own}>
+      <ScrollView style={styles.own} contentContainerStyle={styles.ownContent} nestedScrollEnabled>
         <Panel ref={anchor(`seat:${view.viewer}`)} highlighted={view.viewer === waitingOn} style={styles.mine}>
           <View style={styles.row}>
             <Text style={shared.name}>{names[view.viewer]}</Text>
@@ -399,7 +399,7 @@ export function Table({ view, legal, names, onAction }: TableProps) {
           {selected !== null && <CardText card={selected} onClose={selectedActions ? undefined : () => select({ card: null })} />}
           {prompt()}
         </View>
-      </View>
+      </ScrollView>
       <Flights flights={flights} />
       {logOpen && <LogSheet log={view.log} viewer={view.viewer} names={names} onClose={() => setLogOpen(false)} />}
     </View>
@@ -412,11 +412,11 @@ function countries(view: PlayerView, seat: number): string {
 
 const styles = StyleSheet.create({
   table: { flex: 1 },
-  // The board gives way first when space is short, down to a share of the table that the opponents stay reachable
-  // in; then what is asked of the player does (`actions`). Their own area and their hand keep their size.
+  // Opponents retain a reachable viewport; large own holdings and prompts scroll independently.
   scroll: { flex: 1, minHeight: '36%' },
   board: { paddingHorizontal: 12, paddingBottom: 8, gap: 8 },
-  own: { flexShrink: 1, paddingTop: 8, borderTopWidth: 1, borderTopColor: colors.line, backgroundColor: colors.background },
+  own: { flexGrow: 0, flexShrink: 1, borderTopWidth: 1, borderTopColor: colors.line, backgroundColor: colors.background },
+  ownContent: { paddingTop: 8 },
   row: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline', gap: 8 },
   middle: { flexDirection: 'row', gap: 8 },
   // The latest entries, beside the Market and no taller than it.
