@@ -5,6 +5,7 @@ import { createAudioPlayer, setAudioModeAsync, type AudioPlayer } from 'expo-aud
 import * as Haptics from 'expo-haptics';
 import type { Cue } from '../table/moves.ts';
 import { useSettings } from './store.ts';
+import { warnOnce } from '../warnOnce.ts';
 
 const card = require('../../assets/sounds/card.wav');
 
@@ -50,9 +51,11 @@ async function play(sound: number): Promise<void> {
 /** Plays the sound of `cue` and its haptic, as far as the settings allow. Never throws: a game goes on without them. */
 export function signal(cue: Cue): void {
   const { sound, haptics } = useSettings.getState().settings;
-  if (sound) void play(SOUNDS[cue]).catch(() => {});
+  if (sound) void play(SOUNDS[cue]).catch(() => warnOnce('audio', 'Feedback unavailable; gameplay continues.'));
   if (haptics) {
     // A missing native module may throw synchronously as well as reject its promise.
-    try { void HAPTICS[cue]?.().catch(() => {}); } catch { /* No haptics on this device. */ }
+    try {
+      void HAPTICS[cue]?.().catch(() => warnOnce('haptics', 'Feedback unavailable; gameplay continues.'));
+    } catch { warnOnce('haptics', 'Feedback unavailable; gameplay continues.'); }
   }
 }

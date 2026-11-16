@@ -5,6 +5,7 @@ import type { Action, CardId, PlayerView } from '@atlas/engine';
 import { Fragment, useEffect, useRef, useState, type ComponentRef } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { signal } from '../settings/feedback.ts';
+import { warnOnce } from '../warnOnce.ts';
 import { actionLabel, bankTotal, completeCount, groupActions, logLine, promptText, shownCards } from './actions.ts';
 import { FLIGHT_MS, Flights, STAGGER_MS, type Flight, type Point } from './Flights.tsx';
 import { sinceLastTurn } from './log.ts';
@@ -195,7 +196,7 @@ export function Table({ view, legal, names, onAction }: TableProps) {
       // The cards of the step before may still be in the air.
       setFlights((flying) => [...flying.slice(-6), ...taking]);
     };
-    void fly();
+    void fly().catch(() => warnOnce('flights', 'Card animation unavailable; gameplay continues.'));
     return () => {
       stale = true;
     };

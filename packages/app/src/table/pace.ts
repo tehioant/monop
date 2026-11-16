@@ -29,16 +29,22 @@ export function start<T>(state: T): Pace<T> {
 
 /** A state comes in at `now`: shown at once if nothing is in its way, after the ones before it otherwise. */
 export function push<T>(pace: Pace<T>, state: T, timing: Timing, now: number): Pace<T> {
-  // A long background/bot burst catches up to the latest eight steps, rather than minutes of backlog.
-  const waiting = [...pace.waiting, { state, ...timing }].slice(-8);
-  return advance({ ...pace, waiting }, now);
+  // Only a newly received own response may interrupt an already shown step, never queued steps.
+  const until = timing.urgent && pace.waiting.length === 0 ? now : pace.until;
+  const queued = [...pace.waiting, { state, ...timing }];
+  // Keep every state. Large bursts share a six-second catch-up budget; final results keep their dwell.
+  const perStep = Math.max(1, 6000 - Math.max(0, until - now)) / queued.length;
+  const waiting = queued.map((step) => ({
+    ...step, hold: step.hold === OVER_MS ? step.hold : Math.min(step.hold, perStep),
+  }));
+  return advance({ ...pace, until, waiting }, now);
 }
 
 /** The pace at `now`: the next state is on screen if its time has come. To call again at `until`. */
 export function advance<T>(pace: Pace<T>, now: number): Pace<T> {
   const [next, ...waiting] = pace.waiting;
-  if (!next || (now < pace.until && !next.urgent)) return pace;
-  return advance({ shown: next.state, until: now + next.hold, waiting }, now);
+  if (!next || now < pace.until) return pace;
+  return { shown: next.state, until: now + next.hold, waiting };
 }
 
 /** True once the latest state is on screen and has had its time there. */

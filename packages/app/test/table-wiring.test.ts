@@ -108,3 +108,41 @@ test('Table measures its board viewport and emits a flight for a newly drawn car
     assert.notDeepEqual(flights[0].from, flights[0].to);
   } finally { runtime.unmount(); globalThis.requestAnimationFrame = original; }
 });
+
+for (const failure of ['measure', 'frame', 'scroll']) {
+  test(`Table abandons decorative ${failure} failures with one sanitized warning and working actions`, async () => {
+    const runtime = hooks(); const warnings: unknown[][] = []; const sent: any[] = [];
+    const warn = console.warn; const frame = globalThis.requestAnimationFrame;
+    console.warn = (...args) => { warnings.push(args); };
+    globalThis.requestAnimationFrame = (fn) => {
+      if (failure === 'frame') throw new Error('private native details');
+      fn(0); return 1;
+    };
+    const { Table } = loadComponent(new URL('../src/table/Table.tsx', import.meta.url).pathname, {
+      react: runtime.react, 'react-native': native, 'react-native-reanimated': animated,
+      '../settings/feedback.ts': { signal() {} },
+    });
+    let view: PlayerView = viewFor(createGame({ players: 2, countriesToWin: 3 }, 1), 0);
+    const action = { type: 'endTurn' };
+    const render = () => runtime.render(() => Table({ view, legal: [action], names: ['You', 'Bot'], onAction: (a: any) => sent.push(a) }));
+    const mount = (tree: any) => nodes(tree).forEach(({ props }) => {
+      const node = {
+        measureInWindow(done: any) { if (failure === 'measure') throw new Error('private native details'); done(10, 20, 300, 200); },
+        scrollToEnd() { if (failure === 'scroll') throw new Error('private native details'); }, scrollTo() {},
+      };
+      if (typeof props?.ref === 'function') props.ref(node);
+      else if (props?.ref) props.ref.current = node;
+    });
+    try {
+      mount(render()); runtime.flush();
+      for (let i = 0; i < 3; i++) {
+        view = { ...view, hand: [...view.hand, 'coin-1-1'], log: [...view.log, { type: 'draw', player: 0 }] };
+        mount(render()); runtime.flush(); await new Promise(setImmediate);
+        assert.deepEqual(nodes(render()).find((n) => n.type?.name === 'Flights').props.flights, []);
+      }
+      nodes(render()).find((n) => n.type?.name === 'Button' && n.props.label === 'End turn').props.onPress();
+      assert.deepEqual(sent, [action]);
+      assert.deepEqual(warnings, [['[atlas:flights] Card animation unavailable; gameplay continues.']]);
+    } finally { runtime.unmount(); console.warn = warn; globalThis.requestAnimationFrame = frame; }
+  });
+}

@@ -42,16 +42,36 @@ test("the viewer's own move is shown at once, but never ahead of the states befo
   assert.equal(answered.until, 800);
 
   const behind = push(push(push(start('a'), 'b', step, 0), 'c', step, 0), 'mine', own, 100);
-  assert.deepEqual(watch(behind, [100, 700, 701]), ['b', 'mine', 'mine'], 'c is shown, then mine right behind it');
+  assert.deepEqual(watch(behind, [100, 700, 701, 1400]), ['b', 'c', 'c', 'mine'], 'queued c must actually remain on screen before mine');
 });
 
-test('an oversized burst bounds catch-up time while retaining the latest state', () => {
-  let pace = start('initial');
-  for (let i = 0; i < 100; i++) pace = push(pace, String(i), step, 0);
-  assert.ok(pace.waiting.length <= 8, 'a fast bot burst must not build an unbounded wait');
-  for (let now = 700; now <= 6300; now += 700) pace = advance(pace, now);
-  assert.equal(pace.shown, '99');
-  assert.equal(settled(pace, 6300), true);
+for (const count of [12, 100]) {
+  test(`all ${count} substantive burst states remain ordered with bounded catch-up and final dwell`, () => {
+    let pace = start('initial');
+    for (let i = 0; i < count; i++) pace = push(pace, String(i), step, 0);
+    pace = push(pace, 'over', { hold: OVER_MS, urgent: false }, 0);
+    const shown = [pace.shown]; let now = 0;
+    while (pace.waiting.length) {
+      assert.ok(pace.until > now, 'every state has a positive display interval');
+      now = pace.until;
+      pace = advance(pace, now);
+      shown.push(pace.shown);
+    }
+    assert.deepEqual(shown, [...Array.from({ length: count }, (_, i) => String(i)), 'over']);
+    assert.ok(now <= 6000, 'a prepared burst catches up within six seconds without deleting steps');
+    assert.equal(pace.until, now + OVER_MS);
+    assert.equal(settled(pace, pace.until - 1), false);
+    assert.equal(settled(pace, pace.until), true);
+  });
+}
+
+test('one advance never consumes a substantive state before an urgent follower', () => {
+  const pace = { shown: 'a', until: 700, waiting: [{ state: 'bank', ...step }, { state: 'own pay', ...own }] };
+  const next = advance(pace, 700);
+  assert.equal(next.shown, 'bank');
+  assert.deepEqual(next.waiting.map(({ state }) => state), ['own pay']);
+  assert.equal(advance(next, 701).shown, 'bank', 'queued urgency must not erase the newly shown step');
+  assert.equal(advance(next, 1400).shown, 'own pay');
 });
 
 test('a step is timed by what happened in it', () => {
