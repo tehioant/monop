@@ -16,7 +16,7 @@ import {
   type Sql,
 } from './db.ts';
 import { HEARTBEAT_MS, MAX_NAME_LENGTH, PROTOCOL_VERSION, type ServerMessage } from './protocol.ts';
-import { Rejection, Rooms, type Member } from './rooms.ts';
+import { Rejection, Rooms, type Member, type RoomTiming } from './rooms.ts';
 
 export interface ServerOptions {
   databaseUrl: string;
@@ -27,6 +27,7 @@ export interface ServerOptions {
   newGame?: (options: GameOptions) => GameState;
   /** Who plays the bot seats. Defaults to bots of level `BOT_LEVEL`, seeded at random; scripted games pass their own. */
   bot?: Bot;
+  timing?: RoomTiming;
 }
 
 export interface Server {
@@ -60,6 +61,7 @@ export async function startServer(options: ServerOptions): Promise<Server> {
       finish: (code, summary) => write(() => finishGame(sql, code, summary)),
     },
     await loadSnapshots(sql),
+    options.timing,
   );
 
   const app = Fastify();
@@ -77,6 +79,7 @@ export async function startServer(options: ServerOptions): Promise<Server> {
     port: (app.server.address() as AddressInfo).port,
     async close() {
       clearInterval(sweep);
+      rooms.stop();
       await app.close();
       await saved;
       await sql.end();

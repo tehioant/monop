@@ -10,7 +10,7 @@ import {
   type GameState,
   type PlayerId,
 } from '@atlas/engine';
-import type { ErrorCode, RoomPlayer, ServerMessage } from './protocol.ts';
+import type { Deadline, ErrorCode, RoomPlayer, ServerMessage } from './protocol.ts';
 
 /** Who holds a seat: an account id, or null for a bot, and the display name it plays under. */
 export interface Player {
@@ -75,7 +75,19 @@ interface Room {
   stateVersion: number;
   /** When the game started, in milliseconds since the epoch; 0 in the lobby. */
   startedAt: number;
+  turnEndsAt?: number;
+  deadline?: Deadline;
+  moveTimer?: ReturnType<typeof setTimeout>;
 }
+
+export interface RoomTiming {
+  turnMs: number;
+  responseMs: number;
+  graceMs: number;
+  abandonedMs: number;
+}
+
+export const DEFAULT_ROOM_TIMING: RoomTiming = { turnMs: 60_000, responseMs: 15_000, graceMs: 10_000, abandonedMs: 300_000 };
 
 // No vowels, so a code never spells a word; no I, L or O either.
 const CODE_LETTERS = 'BCDFGHJKMNPQRSTVWXYZ';
@@ -90,6 +102,7 @@ export class Rooms {
   #newGame: (options: GameOptions) => GameState;
   #bot: Bot;
   #store: RoomStore;
+  #timing: RoomTiming;
   #byCode = new Map<string, Room>();
   /** The room of every connected member. A person whose seat is not in it is disconnected. */
   #byMember = new Map<Member, Room>();
@@ -103,15 +116,18 @@ export class Rooms {
     bot: Bot,
     store: RoomStore,
     snapshots: Snapshot[] = [],
+    timing = DEFAULT_ROOM_TIMING,
   ) {
     this.#newGame = newGame;
     this.#bot = bot;
     this.#store = store;
+    this.#timing = timing;
     for (const { code, countriesToWin, players, startedAt, stateVersion, game } of snapshots) {
       const members = players.map(absent);
       const room = { code, countriesToWin, members, game, stateVersion, startedAt: startedAt.getTime() };
       this.#byCode.set(code, room);
       // A game saved at the start of a bot's turn has nobody else to move it on.
+      this.#setDeadline(room, game);
       this.#playBots(room);
     }
   }
@@ -215,6 +231,9 @@ export class Rooms {
     if (stateVersion !== room.stateVersion) {
       throw new Rejection('stale', `The game is at state version ${room.stateVersion}`);
     }
+    if (room.deadline && Date.now() >= room.deadline.at) {
+      throw new Rejection('stale', 'The action deadline has expired');
+    }
     const seat = room.members.indexOf(member);
     // The engine is given its own action back, never the client's data.
     const legal = legalActions(room.game, seat).find((candidate) => isDeepStrictEqual(candidate, action));
@@ -249,6 +268,7 @@ export class Rooms {
    */
   #advance(room: Room, game: GameState): void {
     const turnPassed = room.game?.turn.player !== game.turn.player;
+    this.#setDeadline(room, game, room.game);
     room.game = game;
     room.stateVersion++;
     room.members.forEach((member, seat) => member.send(stateFor(room, game, seat)));
@@ -264,6 +284,37 @@ export class Rooms {
     }
   }
 
+  #setDeadline(room: Room, game: GameState, previous?: GameState): void {
+    clearTimeout(room.moveTimer);
+    const { phase } = game;
+    if (phase.kind === 'over') {
+      delete room.deadline;
+      return;
+    }
+    const now = Date.now();
+    if (previous?.turn.player !== game.turn.player) room.turnEndsAt = now + this.#timing.turnMs;
+    if (phase.kind === 'pay' || phase.kind === 'veto') {
+      const before = previous?.phase;
+      if (room.deadline?.kind !== 'response' || before?.kind !== phase.kind || before.player !== phase.player) {
+        room.deadline = { kind: 'response', at: now + this.#timing.responseMs };
+      }
+    } else {
+      room.deadline = { kind: 'turn', at: room.turnEndsAt! };
+    }
+    const timer = setTimeout(() => {
+      if (room.moveTimer !== timer || this.#byCode.get(room.code) !== room || room.game !== game) return;
+      this.#botMove(room, game, phase.player);
+      this.#playBots(room);
+    }, Math.max(0, room.deadline.at - now));
+    room.moveTimer = timer;
+    timer.unref();
+  }
+
+  /** Cancels pending clock work before the server closes its connections and store. */
+  stop(): void {
+    for (const room of this.#byCode.values()) clearTimeout(room.moveTimer);
+  }
+
   /**
    * Plays the bots in the room's seats, one action after the other, until the game waits on a person or is over.
    * A bot is given what a player in its seat would be given: that seat's view and legal actions.
@@ -272,9 +323,15 @@ export class Rooms {
     for (let game = room.game!; game.phase.kind !== 'over'; game = room.game!) {
       const seat = game.phase.player;
       if (isPerson(room.members[seat]!)) return;
-      const action = this.#bot(viewFor(game, seat), legalActions(game, seat));
-      this.#advance(room, applyAction(game, seat, action));
+      this.#botMove(room, game, seat);
     }
+  }
+
+  #botMove(room: Room, game: GameState, seat: PlayerId): void {
+    // Reassignment alone cannot advance play. The bot still chooses among all progressing legal moves.
+    const legal = legalActions(game, seat).filter(action => action.type !== 'reassign');
+    const action = this.#bot(viewFor(game, seat), legal);
+    this.#advance(room, applyAction(game, seat, action));
   }
 
   #seat(room: Room, member: Member): void {
@@ -340,5 +397,6 @@ function stateFor(room: Room, game: GameState, seat: PlayerId): ServerMessage {
     stateVersion: room.stateVersion,
     view: viewFor(game, seat),
     legalActions: legalActions(game, seat),
+    ...(room.deadline && { deadline: room.deadline }),
   };
 }

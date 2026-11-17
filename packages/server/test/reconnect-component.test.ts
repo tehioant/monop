@@ -25,12 +25,12 @@ test('prepared current snapshot resumes original seat/private legal view; replac
   rooms.leave(old.member);
   assert.equal(newer.member.name, 'Ada');
   const expected = { type: 'state', stateVersion: 9, view: viewFor(game, 0), legalActions: legalActions(game, 0) };
-  assert.deepEqual(newer.messages.at(-1), expected);
-  rooms.resync(newer.member); assert.deepEqual(newer.messages.at(-1), expected);
+  assert.partialDeepStrictEqual(newer.messages.at(-1), expected);
+  rooms.resync(newer.member); assert.partialDeepStrictEqual(newer.messages.at(-1), expected);
   const room = newer.messages.at(-2); assert.equal(room?.type, 'room');
   if (room?.type === 'room') { assert.equal(room.you, 0); assert.deepEqual(room.players.map(p => p.status), ['connected', 'disconnected']); }
   const bo = member('b'); rooms.resume(bo.member);
-  assert.deepEqual(bo.messages.at(-1), { ...expected, view: viewFor(game, 1), legalActions: legalActions(game, 1) });
+  assert.partialDeepStrictEqual(bo.messages.at(-1), { ...expected, view: viewFor(game, 1), legalActions: legalActions(game, 1) });
 });
 
 class Socket extends EventEmitter {

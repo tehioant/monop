@@ -24,6 +24,12 @@ export const MAX_NAME_LENGTH = 20;
 
 export type Versioned<Message> = Message & { v: number };
 
+export interface Deadline {
+  kind: 'turn' | 'response';
+  /** Milliseconds since the epoch on the server. */
+  at: number;
+}
+
 export type ClientMessage =
   /**
    * Always first. Without a token a guest account is created. `name` is the display name to play under from now
@@ -74,7 +80,7 @@ export type ServerMessage =
    * at the start of the turn in progress, so the `state` that follows a `welcome` may have a lower `stateVersion`
    * than the last one received: it replaces whatever the client knew.
    */
-  | { type: 'state'; stateVersion: number; view: PlayerView; legalActions: Action[] }
+  | { type: 'state'; stateVersion: number; view: PlayerView; legalActions: Action[]; deadline?: Deadline }
   /** The client's last message was refused and changed nothing. */
   | { type: 'error'; code: ErrorCode; message: string };
 
