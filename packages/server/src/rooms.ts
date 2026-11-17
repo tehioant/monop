@@ -84,6 +84,7 @@ interface Room {
   moveTimer?: ReturnType<typeof setTimeout>;
   abandonTimer?: ReturnType<typeof setTimeout>;
   expiring?: true;
+  discarding?: Promise<boolean>;
   halted?: true;
   covered: Set<Member>;
   leaving?: { member: Member; settled: Promise<void> };
@@ -371,18 +372,25 @@ export class Rooms {
     timer.unref();
   }
 
-  async #discard(room: Room): Promise<void> {
+  #discard(room: Room): Promise<boolean> {
+    return room.discarding ??= this.#deleteExpired(room).finally(() => { delete room.discarding; });
+  }
+
+  async #deleteExpired(room: Room): Promise<boolean> {
     const retrying = room.expiring;
     room.expiring = true;
     room.members.forEach(member => this.#clearGrace(member));
     try {
       await this.#store.discard(room.code);
     } catch {
-      if (!retrying) console.warn('[atlas:rooms] Could not delete an expired room; will retry.');
-      if (!this.#stopped) this.#scheduleDiscard(room, DISCARD_RETRY_MS);
-      return;
+      if (!this.#stopped) {
+        if (!retrying) console.warn('[atlas:rooms] Could not delete an expired room; will retry.');
+        this.#scheduleDiscard(room, DISCARD_RETRY_MS);
+      }
+      return false;
     }
     this.#byCode.delete(room.code);
+    return true;
   }
 
   /**
@@ -456,6 +464,16 @@ export class Rooms {
       delete room.abandonTimer;
     }
     for (const member of this.#grace.keys()) this.#clearGrace(member);
+  }
+
+  /** After stop, settle in-flight deletes and give each remaining expiry one final attempt. */
+  async finishExpiry(): Promise<void> {
+    const expired = [...this.#byCode.values()].filter(room => room.expiring);
+    const deleted = await Promise.all(expired.map(async room => {
+      if (room.discarding && await room.discarding) return true;
+      return this.#discard(room);
+    }));
+    if (deleted.includes(false)) throw Error('Could not delete expired rooms during shutdown.');
   }
 
   /**

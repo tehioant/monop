@@ -4,8 +4,8 @@ import { createBot, type Bot } from '@atlas/bots';
 import { applyAction, createGame, legalActions, viewFor, type GameState } from '@atlas/engine';
 import { Rooms, type Member, type Snapshot } from '../src/rooms.ts';
 import type { ServerMessage } from '../src/protocol.ts';
-import { roomWrites } from '../src/server.ts';
-import type { Sql } from '../src/db.ts';
+import { closeRoomResources, roomWrites } from '../src/server.ts';
+import { loadSnapshots, type Sql } from '../src/db.ts';
 
 const game = createGame({ players: 2, countriesToWin: 3 }, 1);
 const snapshot: Snapshot = { code: 'BCDFG', countriesToWin: 3, players: [{ account: 'a', name: 'Ada' }, { account: 'b', name: 'Bo' }], startedAt: new Date(0), stateVersion: 9, game };
@@ -282,4 +282,60 @@ test('expired rooms refuse reclaim while ordered deletion is pending and until a
   restored.stop();
   t.mock.timers.tick(2_000);
   assert.equal(calls.length, count, 'shutdown cancelled the scheduled retry');
+});
+
+test('graceful shutdown settles expired deletions without discarding an unexpired snapshot', async (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout', 'Date'], now: 1000 });
+  t.mock.method(console, 'warn', () => {});
+  const unrelated = { ...snapshot, code: 'HJKLM', players: [{ account: 'c', name: 'Cy' }, { account: 'd', name: 'Dee' }] };
+  const timing = { turnMs: 100, responseMs: 20, graceMs: 30, abandonedMs: 300 };
+  for (const outcome of ['committed', 'pending-success', 'pending-refusal', 'retry-success', 'retry-refusal'] as const) {
+    const rows = new Map([[snapshot.code, snapshot], [unrelated.code, unrelated]]);
+    const first = Promise.withResolvers<void>();
+    const final = Promise.withResolvers<void>();
+    const deletes: string[] = [];
+    const sql = (async (parts: TemplateStringsArray, code: string) => {
+      if (parts[0]!.includes('select code')) return [...rows.values()];
+      assert.match(parts[0]!, /delete from room_snapshots where code/);
+      deletes.push(code);
+      await (deletes.length === 1 ? first.promise : final.promise);
+      rows.delete(code);
+    }) as unknown as Sql;
+    const store = roomWrites(sql);
+    const restore = (snapshots: Snapshot[]) => new Rooms(() => game, () => { throw Error('unexpected bot'); }, store, snapshots, timing);
+    const rooms = restore([snapshot, unrelated]);
+    const member: Member = { account: 'c', name: 'Cy', send() {}, close() {} };
+    rooms.resume(member); // This snapshot's room is still occupied when the other expires.
+    t.mock.timers.tick(300);
+    await new Promise(setImmediate);
+    assert.deepEqual([...deletes], [snapshot.code]);
+    if (outcome === 'committed') first.resolve();
+    if (outcome.startsWith('retry')) first.reject(Error('private database details'));
+    await new Promise(setImmediate);
+
+    const closed: string[] = [];
+    const closing = closeRoomResources(rooms, store, async () => { closed.push('connections'); }, async () => { closed.push('store'); });
+    const refused = outcome === 'retry-refusal';
+    const settled = refused ? assert.rejects(closing, /^Error: Could not delete expired rooms during shutdown\.$/) : closing;
+    if (outcome.startsWith('pending')) {
+      await new Promise(setImmediate);
+      assert.deepEqual([...deletes], [snapshot.code], 'shutdown must not duplicate the in-flight delete');
+      if (outcome === 'pending-success') first.resolve();
+      else first.reject(Error('private database details'));
+    }
+    await new Promise(setImmediate);
+    const expected = outcome === 'committed' || outcome === 'pending-success' ? [snapshot.code] : [snapshot.code, snapshot.code];
+    assert.deepEqual([...deletes], expected, outcome);
+    if (expected.length === 2) assert.deepEqual([...closed], ['connections'], 'the store stays open until the final delete settles');
+    if (refused) final.reject(Error('private database details'));
+    else final.resolve();
+    await settled;
+    assert.deepEqual([...closed], ['connections', 'store']);
+    t.mock.timers.tick(2000);
+    assert.deepEqual([...deletes], expected, 'no retries after shutdown');
+    const restored = restore(await loadSnapshots(sql));
+    assert.equal(restored.playing('a'), refused);
+    assert.equal(restored.playing('c'), true);
+    await restored.stop();
+  }
 });

@@ -91,12 +91,28 @@ export async function startServer(options: ServerOptions): Promise<Server> {
     port: (app.server.address() as AddressInfo).port,
     async close() {
       clearInterval(sweep);
-      rooms.stop();
-      await app.close();
-      await store.drain();
-      await sql.end();
+      await closeRoomResources(rooms, store, () => app.close(), () => sql.end());
     },
   };
+}
+
+export async function closeRoomResources(
+  rooms: Rooms,
+  store: ReturnType<typeof roomWrites>,
+  closeConnections: () => Promise<void>,
+  closeStore: () => Promise<void>,
+): Promise<void> {
+  rooms.stop();
+  try {
+    await closeConnections();
+  } finally {
+    try {
+      await rooms.finishExpiry();
+    } finally {
+      await store.drain();
+      await closeStore();
+    }
+  }
 }
 
 /** One client connection. Commands run in order; transport heartbeats are independent. */
