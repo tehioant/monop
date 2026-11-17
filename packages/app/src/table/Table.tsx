@@ -4,6 +4,8 @@
 import type { Action, CardId, PlayerView } from '@atlas/engine';
 import { Fragment, useEffect, useRef, useState, type ComponentRef } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useTranslation } from '../i18n/locale.tsx';
+import type { Translate } from '../i18n/strings.ts';
 import { signal } from '../settings/feedback.ts';
 import { warnOnce } from '../warnOnce.ts';
 import { actionLabel, bankTotal, completeCount, groupActions, logLine, promptText, shownCards } from './actions.ts';
@@ -90,6 +92,7 @@ function spot(zone: Zone, viewer: number): { anchor: string; across: number; dow
 }
 
 export function Table({ view, legal, names, onAction }: TableProps) {
+  const t = useTranslation();
   const [selection, setSelection] = useState<Selection>({ ...NOTHING, at: view });
   const [logOpen, setLogOpen] = useState(false);
   const [seen, setSeen] = useState({ view, step: stepBetween(view, view) });
@@ -125,10 +128,10 @@ export function Table({ view, legal, names, onAction }: TableProps) {
   };
 
   const { byCard, general } = groupActions(view, legal);
-  const pay = payPrompt(view, legal, paying, names);
+  const pay = payPrompt(view, legal, paying, names, t);
   // The selected card is offered to play only if it was tapped in this very state of the game, and nothing is owed.
   const selectedActions = selected !== null && fresh && !pay ? byCard.get(selected) : undefined;
-  const veto = vetoPrompt(view, legal, names);
+  const veto = vetoPrompt(view, legal, names, t);
   const opponents = view.players.map((_, i) => (view.viewer + i) % view.players.length).slice(1);
   const waitingOn = view.phase.kind === 'over' ? null : view.phase.player;
 
@@ -269,7 +272,7 @@ export function Table({ view, legal, names, onAction }: TableProps) {
     if (selectedActions) {
       return (
         <CardPanel
-          prompt={cardPrompt(view, selectedActions, picks, names)}
+          prompt={cardPrompt(view, selectedActions, picks, names, t)}
           names={names}
           onPick={(slot, key) => select({ picks: { ...picks, [slot]: key } })}
           onAction={send}
@@ -281,7 +284,7 @@ export function Table({ view, legal, names, onAction }: TableProps) {
     return (
       <View style={[shared.wrap, styles.buttons]}>
         {general.map((action, i) => (
-          <Button key={i} label={actionLabel(action, names)} onPress={() => send(action)} />
+          <Button key={i} label={actionLabel(action, names, t)} onPress={() => send(action)} />
         ))}
       </View>
     );
@@ -302,13 +305,13 @@ export function Table({ view, legal, names, onAction }: TableProps) {
         onScrollEndDrag={() => (scrolled.current.touched = Date.now())}
       >
         <View style={styles.row}>
-          <Text style={styles.target}>First to {view.options.countriesToWin} countries</Text>
+          <Text style={styles.target}>{t('board.goal', { count: view.options.countriesToWin })}</Text>
           <View style={styles.piles}>
             <Text ref={anchor('deck')} style={shared.small}>
-              Deck {view.deckSize}
+              {t('board.deck', { count: view.deckSize })}
             </Text>
             <View ref={anchor('discard')} style={styles.piles}>
-              <Text style={shared.small}>· Discard{view.discardTop === null ? ' empty' : ''}</Text>
+              <Text style={shared.small}>· {t(view.discardTop === null ? 'board.emptyDiscard' : 'board.discard')}</Text>
               {view.discardTop !== null && <Chip {...readable(view.discardTop)} />}
             </View>
           </View>
@@ -316,7 +319,7 @@ export function Table({ view, legal, names, onAction }: TableProps) {
 
         <View style={styles.middle}>
           <Panel ref={anchor('market')}>
-            <Text style={shared.small}>Market</Text>
+            <Text style={shared.small}>{t('board.market')}</Text>
             <View style={styles.cards}>
               {view.market.map((id) => (
                 <CardView key={id} {...tappable(id)} />
@@ -324,13 +327,13 @@ export function Table({ view, legal, names, onAction }: TableProps) {
             </View>
           </Panel>
           {/* What happened since the viewer's last turn, the latest last; a tap opens the log in full. */}
-          <Pressable style={styles.log} onPress={() => setLogOpen(true)} accessibilityLabel="Open the log">
+          <Pressable style={styles.log} onPress={() => setLogOpen(true)} accessibilityLabel={t('board.openLog')}>
             {recent.slice(-LOG_ENTRIES).map((entry, i, lines) => (
               <Text key={recent.length - lines.length + i} style={i === lines.length - 1 ? styles.latest : shared.small} numberOfLines={2}>
-                {logLine(entry, names)}
+                {logLine(entry, names, t)}
               </Text>
             ))}
-            <Text style={styles.more}>Since your turn: {recent.length} ▸</Text>
+            <Text style={styles.more}>{t('board.since', { count: recent.length })} ▸</Text>
           </Pressable>
         </View>
 
@@ -343,7 +346,7 @@ export function Table({ view, legal, names, onAction }: TableProps) {
               key={seat}
               ref={anchor(`seat:${seat}`)}
               onLayout={(event) => (scrolled.current.rows[seat] = event.nativeEvent.layout)}
-              accessibilityLabel={`${names[seat]}: ${open ? 'hide' : 'show'} cities and bank`}
+              accessibilityLabel={t(open ? 'board.hideHoldings' : 'board.showHoldings', { name: names[seat] ?? seat })}
               onPress={() => setExpanded(open ? expanded.filter((other) => other !== seat) : [...expanded, seat])}
             >
               <Panel highlighted={seat === waitingOn}>
@@ -352,12 +355,12 @@ export function Table({ view, legal, names, onAction }: TableProps) {
                     {open ? '▾' : '▸'} {names[seat]}
                   </Text>
                   <Text style={shared.small}>
-                    Hand {player.handSize} · Bank {bankTotal(player.bank)} · {countries(view, seat)}
+                    {t('board.hand', { count: player.handSize })} · {t('board.bank', { amount: bankTotal(player.bank) })} · {countries(view, seat, t)}
                   </Text>
                 </View>
                 {open && holdings(seat, readable)}
                 {open && player.table.length + player.bank.length === 0 && (
-                  <Text style={shared.small}>No city laid, nothing banked</Text>
+                  <Text style={shared.small}>{t('board.emptyHoldings')}</Text>
                 )}
                 {!open && player.table.length > 0 && (
                   <View style={shared.wrap}>
@@ -378,13 +381,13 @@ export function Table({ view, legal, names, onAction }: TableProps) {
           <View style={styles.row}>
             <Text style={shared.name}>{names[view.viewer]}</Text>
             <Text style={shared.small}>
-              Bank {bankTotal(view.players[view.viewer]!.bank)} · {countries(view, view.viewer)}
+              {t('board.bank', { amount: bankTotal(view.players[view.viewer]!.bank) })} · {countries(view, view.viewer, t)}
             </Text>
           </View>
           {holdings(view.viewer, tappable)}
         </Panel>
 
-        <Text style={styles.prompt}>{pay?.text ?? veto?.text ?? promptText(view, names)}</Text>
+        <Text style={styles.prompt}>{pay?.text ?? veto?.text ?? promptText(view, names, t)}</Text>
         <View ref={anchor('hand')}>
           <ScrollView
             ref={hand}
@@ -410,8 +413,8 @@ export function Table({ view, legal, names, onAction }: TableProps) {
   );
 }
 
-function countries(view: PlayerView, seat: number): string {
-  return `Countries ${completeCount(view.players[seat]!.table)}/${view.options.countriesToWin}`;
+function countries(view: PlayerView, seat: number, t: Translate): string {
+  return t('board.countries', { done: completeCount(view.players[seat]!.table), goal: view.options.countriesToWin });
 }
 
 const styles = StyleSheet.create({

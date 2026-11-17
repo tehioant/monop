@@ -2,8 +2,11 @@
 // on the device; the connection to the game server is in `connection.ts`, what the messages mean in `session.ts`.
 
 import type { Action } from '@atlas/engine';
+import { getLocales } from 'expo-localization';
 import * as SecureStore from 'expo-secure-store';
 import { create } from 'zustand';
+import { resolveLanguage, translate } from '../i18n/strings.ts';
+import { useSettings } from '../settings/store.ts';
 import { connection, type Socket } from './connection.ts';
 import { defaultName, intent, offline, type RoomRequest, type Session } from './session.ts';
 
@@ -61,7 +64,11 @@ export const useOnline = create<OnlineStore>((set, get) => {
 
   /** Opens a new connection, which says hello and sends `request` once welcomed. */
   const connect = (request: RoomRequest) => {
-    const name = get().session.name.trim() || defaultName();
+    let name = get().session.name.trim();
+    if (!name) {
+      const choice = useSettings.getState().settings.language;
+      name = defaultName(translate(resolveLanguage(choice, getLocales()[0]?.languageTag)));
+    }
     write(NAME_KEY, name);
     const token = get().session.token ?? read(TOKEN_KEY);
     set({ session: { ...offline(name, token), request } });
@@ -69,7 +76,7 @@ export const useOnline = create<OnlineStore>((set, get) => {
   };
 
   return {
-    session: offline(read(NAME_KEY) ?? defaultName(), null),
+    session: offline(read(NAME_KEY) ?? '', null),
     setName: (name) => set({ session: { ...get().session, name } }),
     resume: () => {
       // Only an account the server has already issued can hold a seat.

@@ -40,13 +40,13 @@ test('settings store persists both toggles and reports storage refusal without c
   } };
   const load = () => loadComponent(new URL('../src/settings/store.ts', import.meta.url).pathname, { 'expo-secure-store': storage }).useSettings;
   const first = load(); first.getState().change({ sound: false }); first.getState().change({ haptics: false });
-  assert.deepEqual(load().getState().settings, { sound: false, haptics: false });
+  assert.deepEqual(load().getState().settings, { sound: false, haptics: false, language: 'system' });
   fail = true;
   assert.doesNotThrow(() => first.getState().change({ sound: true }));
   assert.equal(first.getState().saveError, true);
   fail = false; first.getState().change({ haptics: true });
   assert.equal(first.getState().saveError, false);
-  assert.deepEqual(load().getState().settings, { sound: true, haptics: true });
+  assert.deepEqual(load().getState().settings, { sound: true, haptics: true, language: 'system' });
 });
 
 for (const boundary of ['mode', 'create', 'seek', 'play', 'haptic-reject', 'haptic-throw']) {

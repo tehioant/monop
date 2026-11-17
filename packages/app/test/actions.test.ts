@@ -11,7 +11,7 @@ const unknown = <T>(value: object) => value as T;
 test('actions are labelled from their type and card', () => {
   const label = (action: Action) => actionLabel(action, names);
   assert.equal(label({ type: 'draw' }), 'Draw from the deck');
-  assert.equal(label({ type: 'drawMarket', card: 'rio-de-janeiro' }), 'Take Rio De Janeiro');
+  assert.equal(label({ type: 'drawMarket', card: 'rio-de-janeiro' }), 'Take Rio de Janeiro');
   assert.equal(label({ type: 'lay', card: 'paris' }), 'Lay Paris');
   assert.equal(label({ type: 'bank', card: 'coin-2-1' }), 'Bank Coin 2');
   assert.equal(label({ type: 'play', card: 'windfall-1' }), 'Play Windfall');

@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { ACTIONS, CARDS, COUNTRIES, RULES } from '@atlas/engine';
-import { countryPerk, title } from '../src/table/actions.ts';
+import { english } from '../src/i18n/strings.ts';
+import { countryName, countryPerk } from '../src/table/actions.ts';
 import { cardText } from '../src/table/cardText.ts';
 
 // The expectations are read from the card data, as the texts are: retuning the game must not break them.
@@ -22,9 +23,9 @@ test('every card of the deck has a text that ends on what it is worth, and every
 test('a city says what its country needs, charges and gives, from the card data', () => {
   for (const country of COUNTRIES) {
     const city = text(country.cities[0]);
-    const name = title(country.id);
+    const name = countryName(country.id, english);
     assert.ok(city.includes(`A city of ${name}, which is complete with ${country.cities.length} cities: `), city);
-    for (const other of country.cities) assert.ok(city.includes(title(other)), city);
+    for (const other of country.cities) assert.ok(city.includes(cardText(other).name), city);
     // The whole toll scale, in order, the last step being the complete country.
     const scale = new RegExp(`A Toll on ${name} charges each opponent ${country.toll.join('\\b.*\\b')} once complete\\.`);
     assert.match(city, scale);
@@ -46,7 +47,7 @@ test('a wild city lists the countries it can be laid as', () => {
   for (const card of CARDS) {
     if (card.kind !== 'wild') continue;
     const any = card.countries.length === COUNTRIES.length;
-    const expected = any ? 'any country' : card.countries.map(title).join(' or ');
+    const expected = any ? 'any country' : card.countries.map((id) => countryName(id, english)).join(' or ');
     assert.ok(text(card.id).startsWith(`A wild city: lay it as a city of ${expected}.`), card.id);
   }
 });

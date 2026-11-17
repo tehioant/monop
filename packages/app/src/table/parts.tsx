@@ -4,7 +4,8 @@ import type { CardId, PlayerView } from '@atlas/engine';
 import type { ComponentRef, ReactNode, Ref } from 'react';
 import { Pressable, StyleSheet, Text, View, type ViewStyle } from 'react-native';
 import Animated, { ZoomIn } from 'react-native-reanimated';
-import { cardInfo, countryPerk, countrySize, title } from './actions.ts';
+import { useTranslation } from '../i18n/locale.tsx';
+import { cardInfo, countryName, countryPerk, countrySize } from './actions.ts';
 import { colors, countryColor } from './theme.ts';
 
 type Stack = PlayerView['players'][number]['table'][number];
@@ -34,8 +35,9 @@ function landed(after: number | undefined) {
 
 /** A card drawn from its data. */
 export function CardView({ id, selected, dimmed, onPress, landing }: Tappable) {
-  const { name, kind, value, country } = cardInfo(id);
-  const perk = country && countryPerk(country);
+  const t = useTranslation();
+  const { name, kind, value, country } = cardInfo(id, t);
+  const perk = country && countryPerk(country, t);
   const band = country ? countryColor(country) : kind === 'coin' ? colors.coin : colors.action;
   return (
     <AnimatedPressable
@@ -47,7 +49,7 @@ export function CardView({ id, selected, dimmed, onPress, landing }: Tappable) {
     >
       <View style={[styles.cardBand, { backgroundColor: band }]}>
         <Text style={styles.cardBandText} numberOfLines={1}>
-          {country ? title(country) : title(kind)}
+          {country ? countryName(country, t) : t(`card.kind.${kind}`)}
         </Text>
       </View>
       {/* One line per word at most, shrunk to fit: a long name is never cut in the middle. */}
@@ -71,15 +73,16 @@ export function CardView({ id, selected, dimmed, onPress, landing }: Tappable) {
  * too: marked as active for a holder it is in force for, plain otherwise.
  */
 export function CountryView({ stack, detail, active }: { stack: Stack; detail?: string; active?: boolean }) {
+  const t = useTranslation();
   const progress = `${stack.cities.length}/${countrySize(stack.country)}`;
   const upgrades = stack.upgrades.length;
-  const perk = active === undefined ? undefined : countryPerk(stack.country);
+  const perk = active === undefined ? undefined : countryPerk(stack.country, t);
   return (
     <View style={[styles.country, { backgroundColor: countryColor(stack.country) }, stack.complete && styles.complete]}>
       <Text style={styles.countryName}>
-        {title(stack.country)} {progress}
-        {stack.complete ? ' ✓ complete' : ''}
-        {upgrades > 0 ? ` · ${upgrades} upgrade${upgrades > 1 ? 's' : ''}` : ''}
+        {countryName(stack.country, t)} {progress}
+        {stack.complete ? ` ✓ ${t('board.complete')}` : ''}
+        {upgrades > 0 ? ` · ${t(upgrades === 1 ? 'board.upgrade' : 'board.upgrades', { count: upgrades })}` : ''}
         {detail !== undefined && <Text style={styles.countryDetail}>{`  ${detail}`}</Text>}
       </Text>
       {perk && <Text style={[styles.perk, active && styles.perkActive]}>{active ? `★ ${perk.label}` : perk.label}</Text>}
@@ -89,7 +92,8 @@ export function CountryView({ stack, detail, active }: { stack: Stack; detail?: 
 
 /** A card on the table, by name only. `color` outlines it: the country it is laid in. */
 export function Chip({ id, selected, dimmed, onPress, landing, color }: Tappable & { color?: string }) {
-  return <Choice label={cardInfo(id).name} picked={selected} dimmed={dimmed} onPress={onPress} color={color} landing={landing} />;
+  const t = useTranslation();
+  return <Choice label={cardInfo(id, t).name} picked={selected} dimmed={dimmed} onPress={onPress} color={color} landing={landing} />;
 }
 
 /** Something to pick, by its label. Inert without `onPress`. */

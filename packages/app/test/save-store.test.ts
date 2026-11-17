@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { animated, hooks, loadComponent, native, nodes } from './componentBoundary.ts';
+import { englishLocale, animated, hooks, loadComponent, native, nodes } from './componentBoundary.ts';
 import { startSolo, type SoloGame } from '../src/solo/solo.ts';
 import { serialize, deserialize } from '../src/solo/save.ts';
 
@@ -85,7 +85,7 @@ test('abandon refuses failed deletion and clears durable and memory state only o
 test('home confirmation cancel retains a save; accept calls actual abandon; Settings stays reachable', () => {
   const io = device(prepared()); const store = io.load(); let buttons: any[] = [];
   const useSolo = (selector: any) => selector(store.getState());
-  const Home = loadComponent(path('app/index.tsx'), { '../solo/store.ts': { useSolo }, 'expo-router': { router: { push() {} } }, 'react-native': { ...native, Alert: { alert(_a: any, _b: any, options: any) { buttons = options; } } }, '../table/parts.tsx': { Button() {} } }).default;
+  const Home = loadComponent(path('app/index.tsx'), { '../i18n/locale.tsx': englishLocale, '../solo/store.ts': { useSolo }, 'expo-router': { router: { push() {} } }, 'react-native': { ...native, Alert: { alert(_a: any, _b: any, options: any) { buttons = options; } } }, '../table/parts.tsx': { Button() {} } }).default;
   const tree = Home(); assert.ok(nodes(tree).some(n => n.props?.label === 'Settings'));
   nodes(tree).find(n => n.props?.label === 'Abandon solo game').props.onPress();
   buttons.find(b => b.style === 'cancel').onPress?.(); assert.ok(store.getState().game);
@@ -98,7 +98,7 @@ test('results rematch saves same configuration with a different seed even when r
   Math.random = () => 0;
   try {
     const useSolo = () => store.getState();
-    const Results = loadComponent(path('app/solo/results.tsx'), { 'react-native-reanimated': animated, '../../solo/store.ts': { useSolo }, 'expo-router': { Redirect: 'Redirect', router: {} }, 'react-native': native, 'react-native-safe-area-context': { SafeAreaView: 'SafeAreaView' }, '../../table/parts.tsx': { Button() {} }, '../../table/Results.tsx': { Results() {} } }).default;
+    const Results = loadComponent(path('app/solo/results.tsx'), { '../i18n/locale.tsx': englishLocale, '../../i18n/locale.tsx': englishLocale, 'react-native-reanimated': animated, '../../solo/store.ts': { useSolo }, 'expo-router': { Redirect: 'Redirect', router: {} }, 'react-native': native, 'react-native-safe-area-context': { SafeAreaView: 'SafeAreaView' }, '../../table/parts.tsx': { Button() {} }, '../../table/Results.tsx': { Results() {} } }).default;
     nodes(Results()).find(n => n.props?.label === 'Rematch').props.onPress();
     assert.deepEqual(store.getState().game.config, config); assert.notEqual(store.getState().game.seed, game.seed);
     assert.deepEqual(deserialize(io.files.get('solo-game.json')!), store.getState().game);
@@ -118,7 +118,7 @@ test('constructor errors are contained and repeated failures log only bounded sa
 test('new game refuses navigation on save failure and the visible save error offers retry', () => {
   const runtime = hooks(); const io = device(); const store = io.load(); io.faults.add('write'); const routes: string[] = [];
   const useSolo = (selector: any) => selector(store.getState());
-  const NewGame = loadComponent(path('app/solo/new.tsx'), {
+  const NewGame = loadComponent(path('app/solo/new.tsx'), { '../i18n/locale.tsx': englishLocale, '../../i18n/locale.tsx': englishLocale,
     react: runtime.react, 'react-native': native, 'react-native-reanimated': animated,
     'react-native-safe-area-context': { SafeAreaView: 'SafeAreaView' },
     'expo-router': { router: { replace: (route: string) => routes.push(route) } },
@@ -129,7 +129,7 @@ test('new game refuses navigation on save failure and the visible save error off
   assert.deepEqual(routes, []); assert.equal(store.getState().game, null);
   const status = nodes(render()).find(n => n.type?.name === 'SaveStatus');
   const visible = status.type(status.props);
-  assert.ok(nodes(visible).some(n => n.props?.children === store.getState().saveError));
+  assert.ok(nodes(visible).some(n => n.props?.children === 'Could not access the saved game. No changes were made. Please retry.'));
   io.faults.clear(); nodes(visible).find(n => n.props?.label === 'Retry save').props.onPress();
   nodes(render()).find(n => n.props?.label === 'Start').props.onPress();
   assert.deepEqual(routes, ['/solo/table']); assert.deepEqual(io.load().getState().game, store.getState().game);

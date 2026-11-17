@@ -2,6 +2,7 @@
 // sends back. The store (`store.ts`) owns the connection and keeps the token on the device.
 
 import type { Action } from '@atlas/engine';
+import { english, type Translate } from '../i18n/strings.ts';
 import { validRoom, validState } from './wire.ts';
 import { PROTOCOL_VERSION, type ClientMessage, type ErrorCode, type ServerMessage } from '@atlas/server/protocol';
 
@@ -52,8 +53,8 @@ export function offline(name: string, token: string | null): Session {
 }
 
 /** The name a player has until they choose one. */
-export function defaultName(): string {
-  return `Guest ${1000 + Math.floor(Math.random() * 9000)}`;
+export function defaultName(t: Translate = english): string {
+  return t('online.guest', { number: 1000 + Math.floor(Math.random() * 9000) });
 }
 
 /** The first message on a new connection. */

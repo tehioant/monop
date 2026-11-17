@@ -8,16 +8,18 @@ import {
   RULES,
   type Action,
   type ActionId,
+  type Card,
   type CardId,
   type LogEntry,
   type PerkId,
   type PlayerView,
 } from '@atlas/engine';
+import { english, hasKey, type Translate } from '../i18n/strings.ts';
 
 /** What the table needs to draw a card, whatever its kind. */
 export interface CardInfo {
   name: string;
-  kind: string;
+  kind: Card['kind'] | 'unknown';
   value: number;
   /** Cities only. */
   country?: string;
@@ -25,25 +27,36 @@ export interface CardInfo {
   action?: ActionId;
 }
 
-const cards = new Map<CardId, CardInfo>(
-  CARDS.map((card) => {
-    const { id, kind, value } = card;
-    if (kind === 'city') return [id, { name: title(id), kind, value, country: card.country }];
-    if (kind === 'coin') return [id, { name: `Coin ${value}`, kind, value }];
-    if (kind === 'wild') {
-      const any = card.countries.length === COUNTRIES.length;
-      return [id, { name: `Wild ${any ? 'Any' : card.countries.map(title).join('/')}`, kind, value }];
-    }
-    return [id, { name: title(card.action), kind, value, action: card.action }];
-  }),
-);
+const cards = new Map<CardId, Card>(CARDS.map((card) => [card.id, card]));
 
-export function cardInfo(id: CardId): CardInfo {
-  return cards.get(id) ?? { name: title(id), kind: 'unknown', value: 0 };
+// These unions come from the catalog; a new country, city or action needs a resource entry.
+type CityId = (typeof COUNTRIES)[number]['cities'][number];
+
+export function cityName(city: CityId, t: Translate): string {
+  return t(`city.${city}`);
+}
+
+export function countryName(country: string, t: Translate): string {
+  const known = countries.get(country);
+  return known ? t(`country.${known.id}`) : title(country);
+}
+
+export function cardInfo(id: CardId, t: Translate = english): CardInfo {
+  const card = cards.get(id);
+  if (!card) return { name: title(id), kind: 'unknown', value: 0 };
+  const { kind, value } = card;
+  if (kind === 'city') return { name: cityName(card.id as CityId, t), kind, value, country: card.country };
+  if (kind === 'coin') return { name: t('card.coin', { value }), kind, value };
+  if (kind === 'wild') {
+    const name = card.countries.length === COUNTRIES.length ? t('card.wildAny')
+      : t('card.wild', { countries: card.countries.map((country) => countryName(country, t)).join('/') });
+    return { name, kind, value };
+  }
+  return { name: t(`card.action.${card.action}`), kind, value, action: card.action };
 }
 
 export function bankTotal(bank: readonly CardId[]): number {
-  return bank.reduce((total, id) => total + cardInfo(id).value, 0);
+  return bank.reduce((total, id) => total + (cards.get(id)?.value ?? 0), 0);
 }
 
 type Stacks = PlayerView['players'][number]['table'];
@@ -61,16 +74,22 @@ export function countrySize(country: string): number {
 }
 
 /** What a country gives the player who holds it complete: a short label for a card or a country, and the full text. */
-const PERKS: Record<PerkId, { label: string; text: string }> = {
-  extraDraw: { label: `Draw ${RULES.drawsWithPerk}`, text: `draw ${RULES.drawsWithPerk} cards at the start of your turn` },
-  extraPlay: { label: `Play ${RULES.playsWithPerk}`, text: `play up to ${RULES.playsWithPerk} cards a turn` },
-  vetoReturn: { label: 'Veto back', text: 'the first Veto you play returns to your hand' },
+const perks: Record<PerkId, (t: Translate) => { label: string; text: string }> = {
+  extraDraw: (t) => ({
+    label: t('perk.extraDraw', { count: RULES.drawsWithPerk }),
+    text: t('perk.extraDrawText', { count: RULES.drawsWithPerk }),
+  }),
+  extraPlay: (t) => ({
+    label: t('perk.extraPlay', { count: RULES.playsWithPerk }),
+    text: t('perk.extraPlayText', { count: RULES.playsWithPerk }),
+  }),
+  vetoReturn: (t) => ({ label: t('perk.vetoReturn'), text: t('perk.vetoReturnText') }),
 };
 
 /** The perk of a country, in words; undefined if unknown. */
-export function countryPerk(country: string): { label: string; text: string } | undefined {
+export function countryPerk(country: string, t: Translate = english): { label: string; text: string } | undefined {
   const perk = countries.get(country)?.perk;
-  return perk && PERKS[perk];
+  return perk && perks[perk](t);
 }
 
 /** A display name for an id: 'rio-de-janeiro' -> 'Rio De Janeiro', 'uk' -> 'UK'. */
@@ -85,7 +104,8 @@ function words(name: string): string {
   return spaced.charAt(0).toUpperCase() + spaced.slice(1);
 }
 
-const VERBS: Record<string, string> = { draw: 'Draw from the deck', drawMarket: 'Take' };
+type ActionType = LogEntry['type'];
+type Field = 'target' | 'country' | 'city' | 'give' | 'take' | 'winner' | 'receiver' | 'owed' | 'amount' | 'queue' | 'vetoes' | 'effect' | 'player';
 
 type FieldOf<T> = T extends unknown ? keyof T : never;
 
@@ -98,53 +118,55 @@ const SEAT_FIELDS: readonly FieldOf<Action | LogEntry | PlayerView['phase']>[] =
   'queue',
 ];
 
-function show(field: string, value: unknown, names: readonly string[]): string {
-  if (value === null) return 'none';
-  if (Array.isArray(value)) return value.map((item) => show(field, item, names)).join(' + ') || 'none';
+function show(field: string, value: unknown, names: readonly string[], t: Translate): string {
+  if (value === null) return t('field.none');
+  if (Array.isArray(value)) return value.map((item) => show(field, item, names, t)).join(' + ') || t('field.none');
   if (typeof value === 'number' && (SEAT_FIELDS as readonly string[]).includes(field)) return names[value] ?? String(value);
-  if (typeof value === 'string') return cardInfo(value).name;
+  if (typeof value === 'string') return field === 'country' ? countryName(value, t) : cardInfo(value, t).name;
   // A nested action (the card at stake in a veto, say) reads as an action; any other object as its fields.
-  if (typeof value === 'object') return 'type' in value ? actionLabel(value as Action, names) : list(value, names);
+  if (typeof value === 'object') return 'type' in value ? actionLabel(value as Action, names, t) : list(value, names, t);
   return String(value);
 }
 
-function list(fields: object, names: readonly string[]): string {
-  return Object.entries(fields)
-    .map(([field, value]) => `${words(field).toLowerCase()}: ${show(field, value, names)}`)
-    .join(', ');
+function list(fields: object, names: readonly string[], t: Translate): string {
+  return Object.entries(fields).map(([field, value]) => {
+    const key = `field.${field}` as `field.${Field}`;
+    return t('action.field', { field: hasKey(key) ? t(key) : words(field).toLowerCase(), value: show(field, value, names, t) });
+  }).join(', ');
 }
 
-function details(fields: object, names: readonly string[]): string {
-  const text = list(fields, names);
-  return text ? ` (${text})` : '';
+function withDetails(action: string, fields: object, names: readonly string[], t: Translate): string {
+  const details = list(fields, names, t);
+  return details ? t('action.details', { action, details }) : action;
 }
 
-/**
- * The words for an action: its type, the card it uses and every other field it carries, for example
- * 'Lay Paris', 'End turn' or, for a type with no wording of its own, 'Raid (target: Bot 2, city: Lyon)'.
- */
-export function actionLabel(action: Action, names: readonly string[]): string {
-  const { type, card, ...rest } = action as { type: string; card?: CardId } & Record<string, unknown>;
-  const verb = VERBS[type] ?? words(type);
-  const subject = card === undefined ? '' : cardInfo(card).name;
-  return (subject && subject !== verb ? `${verb} ${subject}` : verb) + details(rest, names);
+/** Turn canonical actions into labels; future action identifiers still retain their details. */
+export function actionLabel(action: Action | LogEntry, names: readonly string[], t: Translate = english): string {
+  const { type, card, ...rest } = action as { type: ActionType; card?: CardId } & Record<string, unknown>;
+  const key = `action.${type}` as const;
+  const verb = hasKey(key) ? t(key) : words(type);
+  const subject = card === undefined ? '' : cardInfo(card, t).name;
+  return withDetails(subject && subject !== verb ? t('action.subject', { verb, card: subject }) : verb, rest, names, t);
 }
 
-export function logLine(entry: LogEntry, names: readonly string[]): string {
-  const { player, ...action } = entry as Action & { player?: number };
-  const label = actionLabel(action, names);
-  return player === undefined ? label : `${names[player] ?? player}: ${label}`;
+export function logLine(entry: LogEntry, names: readonly string[], t: Translate = english): string {
+  if (!('player' in entry)) return actionLabel(entry, names, t);
+  const { player, ...action } = entry;
+  return t('action.log', { name: names[player] ?? player, action: actionLabel(action as Action, names, t) });
 }
 
 /** What the game is waiting for, from the viewer's side. */
-export function promptText(view: PlayerView, names: readonly string[]): string {
-  const { kind, player, ...rest } = view.phase as { kind: string; player?: number } & Record<string, unknown>;
-  if (kind === 'over') return 'Game over';
-  if (player !== view.viewer) return `${names[player ?? -1] ?? 'Another player'} is playing…`;
-  if (kind === 'draw') return `Your turn: draw ${rest.remaining} from the deck or the Market`;
-  if (kind === 'play') return `Your turn (plays left: ${view.turn.playsLeft})`;
-  if (kind === 'discard') return `Discard down to ${RULES.handLimit} cards`;
-  return `Your move: ${words(kind).toLowerCase()}${details(rest, names)}`;
+export function promptText(view: PlayerView, names: readonly string[], t: Translate = english): string {
+  const phase = view.phase;
+  if (phase.kind === 'over') return t('action.gameOver');
+  if (phase.player !== view.viewer) return t('phase.waiting', { player: names[phase.player] ?? t('phase.otherPlayer') });
+  if (phase.kind === 'draw') return t('phase.draw', { count: phase.remaining });
+  if (phase.kind === 'play') return t('phase.play', { count: view.turn.playsLeft });
+  if (phase.kind === 'discard') return t('phase.discard', { count: RULES.handLimit });
+  const { kind, player: _player, ...rest } = phase;
+  const key = `phase.${kind}` as const;
+  const action = hasKey(key) ? t(key) : words(kind).toLowerCase();
+  return withDetails(t('phase.move', { action }), rest, names, t);
 }
 
 /** Every card the viewer can see on the table: their hand, the Market, the discard top, every bank and country. */

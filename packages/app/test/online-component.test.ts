@@ -3,8 +3,9 @@ import { test } from 'node:test';
 import { applyAction, createGame, legalActions, viewFor, type GameState } from '@atlas/engine';
 import { PROTOCOL_VERSION, type ServerMessage } from '@atlas/server/protocol';
 import { Rooms } from '../../server/src/rooms.ts';
+import { translate } from '../src/i18n/strings.ts';
 import { offline, decode, disconnected, receive } from '../src/online/session.ts';
-import { hooks, loadComponent, native, nodes } from './componentBoundary.ts';
+import { englishLocale, hooks, loadComponent, native, nodes } from './componentBoundary.ts';
 const state = createGame({ players: 2, countriesToWin: 3 }, 1);
 const game = { type: 'state', stateVersion: 9, view: viewFor(state, 0), legalActions: legalActions(state, 0) };
 const room = { type: 'room', code: 'BCDFG', countriesToWin: 3, you: 0, players: [{ name: 'Ada', bot: false, status: 'connected' }, { name: 'Bo', bot: false, status: 'disconnected' }] };
@@ -13,6 +14,7 @@ test('storage read/write errors do not crash store or suppress received state; s
   const warnings: unknown[][] = []; t.mock.method(console, 'warn', (...args: unknown[]) => warnings.push(args));
   let callback: any; const sends: unknown[] = [];
   const store = loadComponent(new URL('../src/online/store.ts', import.meta.url).pathname, {
+    'expo-localization': { getLocales: () => [{ languageTag: 'en' }] },
     'expo-secure-store': { getItem() { throw Error('private token'); }, setItem() { throw Error('private token'); } },
     './connection.ts': { connection(_socket: any, _get: any, set: any) { callback = set; return { open() {}, close() {}, send(m: unknown) { sends.push(m); } }; } },
   }).useOnline;
@@ -35,7 +37,7 @@ test('online actual screen composes pacing, settings, reconnecting, all-seat pre
   const runtime = hooks(); let session: any = { ...offline('Ada', 'issued'), room, game, synced: false, lost: 0 };
   let homes = 0; let closes = 0; let permanentLeaves = 0;
   const Online = loadComponent(new URL('../src/app/online.tsx', import.meta.url).pathname, {
-    react: runtime.react, '../table/parts.tsx': { Button() {}, Panel() {}, shared: {} }, '../table/Choice.tsx': { Choice() {} }, 'react-native': native, 'react-native-safe-area-context': { SafeAreaView: 'SafeAreaView' },
+    '../i18n/locale.tsx': englishLocale, react: runtime.react, '../table/parts.tsx': { Button() {}, Panel() {}, shared: {} }, '../table/Choice.tsx': { Choice() {} }, 'react-native': native, 'react-native-safe-area-context': { SafeAreaView: 'SafeAreaView' },
     'expo-router': { router: { dismissTo(path: string) { assert.equal(path, '/'); homes++; } } },
     '../online/store.ts': { useOnline: () => ({ session, resume() {}, leave() { closes++; }, leaveRoom() { permanentLeaves++; }, play() {} }) },
     '../table/usePaced.ts': { usePaced: (view: any, legal: any) => ({ view, legal, settled: true }) },
@@ -88,13 +90,14 @@ test('online screen shows the response clock and bot cover, and navigates only a
   t.mock.timers.enable({ apis: ['setInterval', 'Date'], now: 2000 });
   const runtime = hooks(); const clock = hooks(); let active = runtime.react;
   const react = { ...active, useState: (initial: unknown) => active.useState(initial), useEffect: (effect: () => unknown, deps: unknown[]) => active.useEffect(effect, deps) };
+  let tOnline = englishLocale.useTranslation();
   const coveredRoom = { ...room, players: [room.players[0], { ...room.players[1], status: 'bot-replaced' }] };
   const live = decode(JSON.stringify({ ...game, v: PROTOCOL_VERSION, deadline: { kind: 'response', at: 3300 }, serverTime: 2000 }));
   let session = receive({ ...offline('Ada', 'issued'), room: coveredRoom } as any, live).session;
   let requests = 0; let homes = 0; let closes = 0;
   const store = { resume() {}, leave() { closes++; }, leaveRoom() { requests++; session = { ...session, leaving: true }; }, play() {} };
   const Online = loadComponent(new URL('../src/app/online.tsx', import.meta.url).pathname, {
-    react, '../table/parts.tsx': { Button() {}, Panel() {}, shared: {} }, '../table/Choice.tsx': { Choice() {} }, 'react-native': native,
+    '../i18n/locale.tsx': { useTranslation: () => tOnline }, react, '../table/parts.tsx': { Button() {}, Panel() {}, shared: {} }, '../table/Choice.tsx': { Choice() {} }, 'react-native': native,
     'react-native-safe-area-context': { SafeAreaView: 'SafeAreaView' }, 'expo-router': { router: { dismissTo() { homes++; } } },
     '../online/store.ts': { useOnline: () => ({ session, ...store }) },
     '../table/usePaced.ts': { usePaced: (view: any, legal: any) => ({ view, legal, settled: true }) },
@@ -110,7 +113,12 @@ test('online screen shows the response clock and bot cover, and navigates only a
   assert.match(JSON.stringify(drawClock()), /Response.*1s/);
   const presence = tree.find(n => n.type?.name === 'Presence');
   assert.match(JSON.stringify(presence.type(presence.props)), /Bot covering/);
-  tree.find(n => n.props?.label === 'Leave game').props.onPress();
+  tOnline = translate('fr');
+  assert.equal(drawClock().props.children, 'Réponse : 1 s');
+  assert.match(JSON.stringify(presence.type(presence.props)), /Remplacé par un robot/);
+  active = runtime.react;
+  const frenchTree = nodes(playing.type(playing.props));
+  frenchTree.find(n => n.props?.label === 'Quitter la partie').props.onPress();
   assert.equal(requests, 1); assert.equal(homes, 0);
   active = runtime.react; clock.unmount();
   session = receive(session, decode(JSON.stringify({ v: PROTOCOL_VERSION, type: 'left' }))).session;
@@ -126,7 +134,7 @@ test('a timed response bypasses queued animation without a delayed packet extend
   let session = receive({ ...offline('Ada', 'issued'), room } as any, decode(JSON.stringify({ ...game, v: PROTOCOL_VERSION }))).session;
   const store = { resume() {}, leave() {}, leaveRoom() {}, play() {} };
   const Online = loadComponent(new URL('../src/app/online.tsx', import.meta.url).pathname, {
-    react, '../table/parts.tsx': { Button() {}, Panel() {}, shared: {} }, '../table/Choice.tsx': { Choice() {} }, 'react-native': native,
+    '../i18n/locale.tsx': englishLocale, react, '../table/parts.tsx': { Button() {}, Panel() {}, shared: {} }, '../table/Choice.tsx': { Choice() {} }, 'react-native': native,
     'react-native-safe-area-context': { SafeAreaView: 'SafeAreaView' }, 'expo-router': { router: {} },
     '../online/store.ts': { useOnline: () => ({ session, ...store }) },
     '../table/Table.tsx': { Table() {} }, '../table/Results.tsx': { Results() {} },
@@ -188,7 +196,7 @@ test('a paused room visibly disables play and allows local Back across resync an
 
   let homes = 0;
   const Online = loadComponent(new URL('../src/app/online.tsx', import.meta.url).pathname, {
-    react: runtime.react, '../table/parts.tsx': { Button() {}, Panel() {}, shared: {} }, '../table/Choice.tsx': { Choice() {} },
+    '../i18n/locale.tsx': englishLocale, react: runtime.react, '../table/parts.tsx': { Button() {}, Panel() {}, shared: {} }, '../table/Choice.tsx': { Choice() {} },
     'react-native': native, 'react-native-safe-area-context': { SafeAreaView: 'SafeAreaView' },
     'expo-router': { router: { dismissTo(path: string) { assert.equal(path, '/'); homes++; } } },
     '../online/store.ts': { useOnline: () => ({ session, resume() {}, leave() {}, leaveRoom() { assert.fail('local Back cannot release the seat'); } }) },

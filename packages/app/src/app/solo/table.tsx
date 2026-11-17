@@ -2,6 +2,7 @@ import { Redirect, router } from 'expo-router';
 import { useEffect, useMemo } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useTranslation } from '../../i18n/locale.tsx';
 import { botToMove, soloLegal, soloNames, soloView, type SoloGame } from '../../solo/solo.ts';
 import { useSolo } from '../../solo/store.ts';
 import { SaveStatus } from '../../solo/SaveStatus.tsx';
@@ -16,6 +17,7 @@ export default function SoloTable() {
 }
 
 function Playing({ game }: { game: SoloGame }) {
+  const t = useTranslation();
   const { play, stepBot, saveError, retrySave } = useSolo();
   // The bots play at once, one action after the other; what they did is shown at a pace the player can follow.
   const incoming = useMemo(() => soloView(game), [game]);
@@ -36,10 +38,10 @@ function Playing({ game }: { game: SoloGame }) {
     <SafeAreaView style={styles.screen}>
       <View style={styles.bar}>
         <SaveStatus error={saveError} retry={retrySave} />
-        <Button quiet label="Settings" onPress={() => router.push('/settings')} />
-        <Button quiet label="Quit" onPress={() => router.replace('/')} />
+        <Button quiet label={t('settings.title')} onPress={() => router.push('/settings')} />
+        <Button quiet label={t('solo.quit')} onPress={() => router.replace('/')} />
       </View>
-      <Table view={view} legal={legal} names={soloNames(game)} onAction={play} />
+      <Table view={view} legal={legal} names={soloNames(game, t)} onAction={play} />
     </SafeAreaView>
   );
 }

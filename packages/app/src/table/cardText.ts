@@ -1,73 +1,53 @@
-// The full text of a card: what it is, what it does and what it is worth. Every number in it is read from the
-// card data and the rules, so retuning the game never needs a text edited.
-
+// All gameplay quantities come from the catalog or rules, never from the wording.
 import { CARDS, COUNTRIES, RULES, type ActionId, type Card, type CardId } from '@atlas/engine';
-import { cardInfo, countryPerk, title } from './actions.ts';
+import { english, type Translate } from '../i18n/strings.ts';
+import { cardInfo, cityName, countryName, countryPerk } from './actions.ts';
 
-const PAYING = 'They pay with banked cards and laid cities, and get no change.';
-
-/** What each action card does when played. A new action card fails to compile here. */
-const EFFECTS: Record<ActionId, string[]> = {
-  windfall: [`Draw ${RULES.windfallDraws} cards from the deck.`],
-  levy: [`Every opponent pays you ${RULES.levyAmount}.`, PAYING],
-  debt: [`One opponent of your choice pays you ${RULES.debtAmount}.`, PAYING],
-  toll: [
-    'Every opponent pays you the toll of one country you hold cities in.',
-    `The toll grows with the cities you hold there, and by ${RULES.upgradeToll} for each upgrade.`,
-    PAYING,
-  ],
-  raid: ["Take one city from an opponent's incomplete country."],
-  exchange: ["Swap one of your cities for one of an opponent's.", 'Cities of complete countries cannot be swapped.'],
-  seizure: ["Take an opponent's complete country, its upgrades included."],
-  upgrade: [
-    `Attach it to one of your complete countries: its toll rises by ${RULES.upgradeToll}.`,
-    'If the country stops being complete, the upgrade goes to your bank.',
-  ],
-  veto: [
-    "Play it when an opponent's card hits you: the card does nothing to you.",
-    'A Veto can be answered by a Veto, which puts the card back on.',
-    'It uses none of your plays.',
-  ],
+const effects: Record<ActionId, (t: Translate) => string[]> = {
+  windfall: (t) => [t('card.windfall', { count: RULES.windfallDraws })],
+  levy: (t) => [t('card.levy', { amount: RULES.levyAmount }), t('card.paying')],
+  debt: (t) => [t('card.debt', { amount: RULES.debtAmount }), t('card.paying')],
+  toll: (t) => [t('card.toll'), t('card.tollIncrease', { amount: RULES.upgradeToll }), t('card.paying')],
+  raid: (t) => [t('card.raid')],
+  exchange: (t) => [t('card.exchange'), t('card.exchangeComplete')],
+  seizure: (t) => [t('card.seizure')],
+  upgrade: (t) => [t('card.upgrade', { amount: RULES.upgradeToll }), t('card.upgradeLost')],
+  veto: (t) => [t('card.veto'), t('card.vetoAnswer'), t('card.vetoFree')],
 };
 
-/** A toll scale in words: '1 with 1 city, 2 with 2 cities, 4 once complete'. */
-function tollText(scale: readonly number[]): string {
-  return scale
-    .map((amount, i) => (i === scale.length - 1 ? `${amount} once complete` : `${amount} with ${i + 1} ${i === 0 ? 'city' : 'cities'}`))
-    .join(', ');
+function tollText(scale: readonly number[], t: Translate): string {
+  return scale.map((amount, i) => i === scale.length - 1 ? t('card.tollComplete', { amount })
+    : t(i === 0 ? 'card.tollOne' : 'card.tollMany', { amount, count: i + 1 })).join(', ');
 }
 
-function lines(card: Card): string[] {
-  const worth = `Worth ${card.value} as payment`;
+function lines(card: Card, t: Translate): string[] {
+  const worthLaid = () => t('card.worthLaid', { value: card.value });
   switch (card.kind) {
     case 'city': {
       const country = COUNTRIES.find(({ id }) => id === card.country)!;
-      const name = title(country.id);
+      const name = countryName(country.id, t);
       return [
-        `A city of ${name}, which is complete with ${country.cities.length} cities: ${country.cities.map(title).join(', ')}.`,
-        `A Toll on ${name} charges each opponent ${tollText(country.toll)}.`,
-        `Held complete: ${countryPerk(country.id)!.text}.`,
-        `${worth}, laid or banked.`,
+        t('card.cityDetails', { country: name, count: country.cities.length, cities: country.cities.map((city) => cityName(city, t)).join(', ') }),
+        t('card.countryToll', { country: name, scale: tollText(country.toll, t) }),
+        t('card.countryPerk', { text: countryPerk(country.id, t)!.text }),
+        worthLaid(),
       ];
     }
     case 'wild': {
-      const any = card.countries.length === COUNTRIES.length;
+      const countries = card.countries.map((country) => countryName(country, t));
       return [
-        `A wild city: lay it as a city of ${any ? 'any country' : card.countries.map(title).join(' or ')}.`,
-        'On your turn you can move it to another of its countries, without using a play.',
-        'It counts as a city of the country it is in, but a country made of wild cities only is not complete.',
-        `${worth}, laid or banked.`,
+        countries.length === COUNTRIES.length ? t('card.wildDetailsAny')
+          : t('card.wildDetails', { countries: countries.reduce((left, right) => t('common.or', { left, right })) }),
+        t('card.wildMove'), t('card.wildCounts'), worthLaid(),
       ];
     }
-    case 'coin':
-      return ['Bank it to pay what opponents charge you.', `${worth}. No change is given.`];
-    case 'action':
-      return [...EFFECTS[card.action], `Or bank it: ${worth.toLowerCase()}.`];
+    case 'coin': return [t('card.coinDetails'), t('card.worthCoin', { value: card.value })];
+    case 'action': return [...effects[card.action](t), t('card.worthBanked', { value: card.value })];
   }
 }
 
-/** A card in full: its name, then one sentence per line. A card the table does not know has a name only. */
-export function cardText(id: CardId): { name: string; lines: string[] } {
+/** A card in full: its name, then one sentence per line. An unknown card has a name only. */
+export function cardText(id: CardId, t: Translate = english): { name: string; lines: string[] } {
   const card = CARDS.find((known) => known.id === id);
-  return { name: cardInfo(id).name, lines: card ? lines(card) : [] };
+  return { name: cardInfo(id, t).name, lines: card ? lines(card, t) : [] };
 }

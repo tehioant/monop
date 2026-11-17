@@ -6,6 +6,8 @@ import { router } from 'expo-router';
 import { useEffect, useState } from 'react';
 import { StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useTranslation } from '../i18n/locale.tsx';
+import { explainOnlineError, onlineName } from '../online/display.ts';
 import type { Game, Room, Session } from '../online/session.ts';
 import { useOnline } from '../online/store.ts';
 import { Choice } from '../table/Choice.tsx';
@@ -50,7 +52,8 @@ export default function Online() {
 type LeaveProps = { onLeave: () => void; leaving: boolean; leaveFailed: boolean };
 
 function Playing({ game, room, reconnecting, onAction, onLeave, leaving, leaveFailed }: LeaveProps & { game: Game; room: Room; reconnecting: boolean; onAction: (action: Action) => void }) {
-  const names = room.players.map((player) => player.name);
+  const t = useTranslation();
+  const names = room.players.map((player) => onlineName(player, t));
   const paused = game.paused === true;
   const localExit = reconnecting || paused;
   // The server's states can come in a burst (a bot's whole turn): the table shows them one at a time.
@@ -62,19 +65,19 @@ function Playing({ game, room, reconnecting, onAction, onLeave, leaving, leaveFa
         <View style={styles.quit}>
           {reconnecting && <Reconnecting />}
           <Presence room={room} />
-          <Button quiet label="Settings" onPress={() => router.push('/settings')} />
-          {localExit && <Button quiet label="Back" onPress={home} />}
-          {!reconnecting && <Button quiet label={leaving ? 'Leaving…' : 'Leave game'} disabled={leaving} onPress={onLeave} />}
+          <Button quiet label={t('settings.title')} onPress={() => router.push('/settings')} />
+          {localExit && <Button quiet label={t('common.back')} onPress={home} />}
+          {!reconnecting && <Button quiet label={t(leaving ? 'online.leaving' : 'online.leaveGame')} disabled={leaving} onPress={onLeave} />}
         </View>
       )}
       {!localExit && game.deadline && <Countdown deadline={game.deadline} />}
-      {paused && <Text style={styles.error}>This game is paused.</Text>}
-      {localExit && leaving && <Text style={styles.error}>Your leave request may still complete. Going back does not cancel it.</Text>}
-      {leaveFailed && <Text style={styles.error}>Could not leave the room. Try again.</Text>}
+      {paused && <Text style={styles.error}>{t('online.paused')}</Text>}
+      {localExit && leaving && <Text style={styles.error}>{t('online.leavePending')}</Text>}
+      {leaveFailed && <Text style={styles.error}>{t('online.leaveFailed')}</Text>}
       {over ? <Results view={view} names={names} /> : <Table view={view} legal={localExit || leaving ? [] : legal} names={names} onAction={onAction} />}
       {over && (
         <View style={styles.home}>
-          <Button label="Home" onPress={home} />
+          <Button label={t('common.home')} onPress={home} />
         </View>
       )}
     </SafeAreaView>
@@ -82,6 +85,7 @@ function Playing({ game, room, reconnecting, onAction, onLeave, leaving, leaveFa
 }
 
 function Countdown({ deadline }: { deadline: NonNullable<Game['deadline']> }) {
+  const t = useTranslation();
   const [, refresh] = useState(0);
   useEffect(() => {
     const tick = setInterval(() => refresh(Date.now()), 250);
@@ -89,63 +93,42 @@ function Countdown({ deadline }: { deadline: NonNullable<Game['deadline']> }) {
   }, []);
   // Use the shared epoch clock, assuming normally synchronized device time. Packet transit never moves the deadline.
   const seconds = Math.max(0, Math.ceil((deadline.at - Date.now()) / 1000));
-  return <Text style={shared.small}>{`${deadline.kind === 'response' ? 'Response' : 'Turn'}: ${seconds}s`}</Text>;
-}
-
-/** Why the player is back on the form, in words. */
-function explain(error: NonNullable<Session['error']>): string {
-  switch (error) {
-    case 'disconnected':
-      return 'Could not reach the server.';
-    case 'room_not_found':
-      return 'No room has this code. Check it with your host.';
-    case 'room_full':
-      return 'This room is full.';
-    case 'game_started':
-      return 'This game has already started.';
-    case 'removed':
-      return 'The host removed you from the room.';
-    case 'replaced':
-      return 'You are now playing this game on another device.';
-    case 'ended':
-      return 'The game you were in is over.';
-    case 'seat_unavailable':
-      return 'There is no seat to return to.';
-    default:
-      return 'Something went wrong. Please try again.';
-  }
+  return <Text style={shared.small}>{t(deadline.kind === 'response' ? 'online.responseClock' : 'online.turnClock', { seconds })}</Text>;
 }
 
 /** The app is too old for the server: nothing online works until it is updated. */
 function UpdateNeeded() {
+  const t = useTranslation();
   return (
     <SafeAreaView style={styles.screen}>
-      <Text style={styles.title}>Update needed</Text>
+      <Text style={styles.title}>{t('online.update')}</Text>
       <Text style={styles.label}>
-        This version of the app can no longer play online. Update it to play with your friends again.
+        {t('online.updateDetail')}
       </Text>
-      <Button label="Back" onPress={home} />
+      <Button label={t('common.back')} onPress={home} />
     </SafeAreaView>
   );
 }
 
 /** The connection is lost and being opened again. */
 function Reconnecting() {
-  return <Text style={styles.reconnecting}>Reconnecting…</Text>;
+  const t = useTranslation();
+  return <Text style={styles.reconnecting}>{t('online.reconnecting')}</Text>;
 }
 
 /** Who is connected, in seat order. */
 function Presence({ room }: { room: Room }) {
+  const t = useTranslation();
   return (
     <View style={styles.presence}>
       {room.players.map((player, seat) =>
         player.status === 'connected' ? (
           <Text key={seat} style={shared.small}>
-            <Text style={styles.here}>●</Text> {player.name}{player.bot ? ' (Bot)' : ''}
+            <Text style={styles.here}>●</Text> {onlineName(player, t)}{player.bot ? ` (${t('online.bot')})` : ''}
           </Text>
         ) : (
           <Text key={seat} style={[shared.small, styles.away]}>
-            ○ {player.name} {player.status === 'bot-replaced' ? '(Bot covering)' : '(offline)'}
+            ○ {onlineName(player, t)} ({t(player.status === 'bot-replaced' ? 'online.botCovering' : 'online.offline')})
           </Text>
         ),
       )}
@@ -159,48 +142,51 @@ function Entry(props: {
   onCreate: (countriesToWin: number) => void;
   onJoin: (code: string) => void;
 }) {
+  const t = useTranslation();
   const { session, onName, onCreate, onJoin } = props;
   const [countriesToWin, setCountriesToWin] = useState(DEFAULT_COUNTRIES);
   const [code, setCode] = useState('');
   return (
     <SafeAreaView style={styles.screen}>
-      <Text style={styles.title}>Play online</Text>
+      <Text style={styles.title}>{t('home.online')}</Text>
       {session.request ? (
-        <Text style={styles.label}>Connecting…</Text>
+        <Text style={styles.label}>{t('online.connecting')}</Text>
       ) : (
         <>
-          <Text style={styles.label}>Your name, as the other players see it</Text>
+          <Text style={styles.label}>{t('online.publicName')}</Text>
           <TextInput
             style={[styles.input, styles.name]}
             value={session.name}
             onChangeText={onName}
-            placeholder="Your name"
+            placeholder={t('online.name')}
+            accessibilityLabel={t('online.name')}
             placeholderTextColor={colors.muted}
             maxLength={MAX_NAME_LENGTH}
             autoCorrect={false}
           />
           <Choice
-            label="Countries to win"
+            label={t('common.countriesToWin')}
             options={RULES.countriesToWin}
             value={countriesToWin}
             onChange={setCountriesToWin}
           />
-          <Button label="Create a room" onPress={() => onCreate(countriesToWin)} />
-          <Text style={styles.label}>Or join a friend's room</Text>
+          <Button label={t('online.create')} onPress={() => onCreate(countriesToWin)} />
+          <Text style={styles.label}>{t('online.joinFriend')}</Text>
           <TextInput
             style={styles.input}
             value={code}
             onChangeText={setCode}
-            placeholder="Room code"
+            placeholder={t('online.roomCode')}
+            accessibilityLabel={t('online.roomCode')}
             placeholderTextColor={colors.muted}
             autoCapitalize="characters"
             autoCorrect={false}
           />
-          <Button label="Join" onPress={() => onJoin(code)} />
+          <Button label={t('online.join')} onPress={() => onJoin(code)} />
         </>
       )}
-      {session.error && <Text style={styles.error}>{explain(session.error)}</Text>}
-      <Button quiet label="Back" onPress={home} />
+      {session.error && <Text style={styles.error}>{explainOnlineError(session.error, t)}</Text>}
+      <Button quiet label={t('common.back')} onPress={home} />
     </SafeAreaView>
   );
 }
@@ -212,45 +198,46 @@ function Lobby(props: LeaveProps & {
   onRemove: (seat: number) => void;
   onStart: () => void;
 }) {
+  const t = useTranslation();
   const { room, reconnecting, onAddBot, onRemove, onStart, onLeave, leaving, leaveFailed } = props;
   const host = room.you === 0;
   return (
     <SafeAreaView style={styles.screen}>
-      <Text style={styles.title}>Room</Text>
+      <Text style={styles.title}>{t('online.room')}</Text>
       {reconnecting && <Reconnecting />}
-      <Text style={styles.label}>Share this code with your friends</Text>
+      <Text style={styles.label}>{t('online.share')}</Text>
       <Text style={styles.code} selectable>
         {room.code}
       </Text>
-      <Text style={styles.label}>The first player with {room.countriesToWin} complete countries wins</Text>
+      <Text style={styles.label}>{t('online.goal', { count: room.countriesToWin })}</Text>
       <Panel>
         {room.players.map((player, seat) => (
           <View key={seat} style={styles.seat}>
             <Text style={shared.name}>
-              {player.name}
+              {onlineName(player, t)}
               <Text style={shared.small}>
-                {seat === 0 ? '  host' : ''}
-                {seat === room.you ? '  you' : ''}
-                {player.bot ? '  bot' : ''}
-                {player.status === 'disconnected' ? '  offline' : '  connected'}
+                {seat === 0 ? `  ${t('online.host')}` : ''}
+                {seat === room.you ? `  ${t('common.you')}` : ''}
+                {player.bot ? `  ${t('online.bot')}` : ''}
+                {`  ${t(player.status === 'disconnected' ? 'online.offline' : 'online.connected')}`}
               </Text>
             </Text>
-            {host && seat !== room.you && <Button quiet label="Remove" onPress={() => onRemove(seat)} />}
+            {host && seat !== room.you && <Button quiet label={t('online.remove')} onPress={() => onRemove(seat)} />}
           </View>
         ))}
       </Panel>
-      {host && room.players.length < MAX_PLAYERS && <Button quiet label="Add a bot" onPress={onAddBot} />}
+      {host && room.players.length < MAX_PLAYERS && <Button quiet label={t('online.addBot')} onPress={onAddBot} />}
       {host && room.players.length >= MIN_PLAYERS ? (
-        <Button label="Start the game" onPress={onStart} />
+        <Button label={t('online.start')} onPress={onStart} />
       ) : (
         <Text style={styles.label}>
-          {host ? 'Waiting for another player to join…' : 'Waiting for the host to start the game…'}
+          {t(host ? 'online.waitForPlayer' : 'online.waitForHost')}
         </Text>
       )}
-      {leaveFailed && <Text style={styles.error}>Could not leave the room. Try again.</Text>}
+      {leaveFailed && <Text style={styles.error}>{t('online.leaveFailed')}</Text>}
       {reconnecting
-        ? <Button quiet label="Back" onPress={home} />
-        : <Button quiet label={leaving ? 'Leaving…' : 'Leave'} disabled={leaving} onPress={onLeave} />}
+        ? <Button quiet label={t('common.back')} onPress={home} />
+        : <Button quiet label={t(leaving ? 'online.leaving' : 'online.leaveRoom')} disabled={leaving} onPress={onLeave} />}
     </SafeAreaView>
   );
 }
@@ -275,7 +262,7 @@ const styles = StyleSheet.create({
   code: { color: colors.ink, fontSize: 44, fontWeight: '800', letterSpacing: 6, textAlign: 'center' },
   seat: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', minHeight: 40 },
   game: { flex: 1 },
-  quit: { flexDirection: 'row', justifyContent: 'flex-end', gap: 8, paddingHorizontal: 12 },
+  quit: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'flex-end', gap: 8, paddingHorizontal: 12 },
   presence: { flex: 1, flexDirection: 'row', flexWrap: 'wrap', columnGap: 12 },
   here: { color: '#15803d' },
   away: { color: '#b91c1c', fontWeight: '600' },

@@ -4,9 +4,9 @@ import { router } from 'expo-router';
 import { useState } from 'react';
 import { StyleSheet, Text } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useTranslation } from '../../i18n/locale.tsx';
 import { useSolo } from '../../solo/store.ts';
 import { SaveStatus } from '../../solo/SaveStatus.tsx';
-import { title } from '../../table/actions.ts';
 import { Choice } from '../../table/Choice.tsx';
 import { Button } from '../../table/parts.tsx';
 import { colors } from '../../table/theme.ts';
@@ -18,6 +18,7 @@ const DEFAULT_DIFFICULTY = DIFFICULTIES[Math.floor((DIFFICULTIES.length - 1) / 2
 const DEFAULT_COUNTRIES = Math.min(...RULES.countriesToWin);
 
 export default function NewSoloGame() {
+  const t = useTranslation();
   const start = useSolo((solo) => solo.start);
   const saveError = useSolo((solo) => solo.saveError);
   const retrySave = useSolo((solo) => solo.retrySave);
@@ -27,18 +28,18 @@ export default function NewSoloGame() {
 
   return (
     <SafeAreaView style={styles.screen}>
-      <Text style={styles.title}>Solo game</Text>
+      <Text style={styles.title}>{t('home.solo')}</Text>
       <SaveStatus error={saveError} retry={retrySave} />
-      <Choice label="Opponents" options={BOT_COUNTS} value={bots} onChange={setBots} />
-      <Choice label="Difficulty" options={DIFFICULTIES} value={difficulty} onChange={setDifficulty} show={title} />
-      <Choice label="Countries to win" options={RULES.countriesToWin} value={countriesToWin} onChange={setCountriesToWin} />
+      <Choice label={t('solo.opponents')} options={BOT_COUNTS} value={bots} onChange={setBots} />
+      <Choice label={t('solo.difficulty')} options={DIFFICULTIES} value={difficulty} onChange={setDifficulty} show={(difficulty) => t(`solo.${difficulty}`)} />
+      <Choice label={t('common.countriesToWin')} options={RULES.countriesToWin} value={countriesToWin} onChange={setCountriesToWin} />
       <Button
-        label="Start"
+        label={t('solo.start')}
         onPress={() => {
           if (start({ bots, difficulty, countriesToWin })) router.replace('/solo/table');
         }}
       />
-      <Button quiet label="Back" onPress={() => router.back()} />
+      <Button quiet label={t('common.back')} onPress={() => router.back()} />
     </SafeAreaView>
   );
 }

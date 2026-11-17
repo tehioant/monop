@@ -1,10 +1,17 @@
 import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { dirname, resolve } from 'node:path';
+import { english } from '../src/i18n/strings.ts';
+
+export const englishLocale = { useTranslation: () => english };
 const { transformSync } = createRequire(import.meta.url)('@babel/core');
 
 // Execute the actual TSX entry point; only React hooks and native I/O are replaced.
 export function loadComponent(path: string, mocks: Record<string, any>): any {
+  return componentLoader(mocks)(path);
+}
+
+export function componentLoader(mocks: Record<string, any>) {
   const cache = new Map<string, any>();
   function load(file: string): any {
     if (cache.has(file)) return cache.get(file);
@@ -24,7 +31,7 @@ export function loadComponent(path: string, mocks: Record<string, any>): any {
     new Function('require', 'module', 'exports', source)(require, mod, mod.exports);
     return mod.exports;
   }
-  return load(resolve(path));
+  return (path: string) => load(resolve(path));
 }
 
 export function hooks() {

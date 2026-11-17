@@ -1,6 +1,7 @@
 // The solo game loop: the engine and the bots running on the device. No React, no I/O.
 
 import { createBot, type Difficulty } from '@atlas/bots';
+import type { Translate } from '../i18n/strings.ts';
 import {
   applyAction,
   createGame,
@@ -76,6 +77,6 @@ export function playBot(game: SoloGame): SoloGame {
 }
 
 /** Display names by seat. */
-export function soloNames(game: SoloGame): string[] {
-  return game.state.players.map((_, seat) => (seat === HUMAN ? 'You' : `Bot ${seat}`));
+export function soloNames(game: SoloGame, t: Translate): string[] {
+  return game.state.players.map((_, seat) => (seat === HUMAN ? t('common.you') : t('common.bot', { number: seat })));
 }

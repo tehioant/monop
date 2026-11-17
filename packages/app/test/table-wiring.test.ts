@@ -1,12 +1,12 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { createGame, viewFor, type PlayerView } from '@atlas/engine';
-import { animated, hooks, loadComponent, native, nodes } from './componentBoundary.ts';
+import { englishLocale, animated, hooks, loadComponent, native, nodes } from './componentBoundary.ts';
 
 test('own holdings and prompts have a scrollable area independent of the opponent board', () => {
   const runtime = hooks();
   const { Table } = loadComponent(new URL('../src/table/Table.tsx', import.meta.url).pathname, {
-    react: runtime.react, 'react-native': native, 'react-native-reanimated': animated,
+    '../i18n/locale.tsx': englishLocale, react: runtime.react, 'react-native': native, 'react-native-reanimated': animated,
     '../settings/feedback.ts': { signal() {} },
   });
   const view = viewFor(createGame({ players: 5, countriesToWin: 3 }, 1), 0);
@@ -19,7 +19,7 @@ test('own holdings and prompts have a scrollable area independent of the opponen
 test('same-log corrections invalidate pending card choices', () => {
   const runtime = hooks();
   const { Table } = loadComponent(new URL('../src/table/Table.tsx', import.meta.url).pathname, {
-    react: runtime.react, 'react-native': native, 'react-native-reanimated': animated,
+    '../i18n/locale.tsx': englishLocale, react: runtime.react, 'react-native': native, 'react-native-reanimated': animated,
     '../settings/feedback.ts': { signal() {} },
   });
   let view = { ...viewFor(createGame({ players: 2, countriesToWin: 3 }, 1), 0), hand: ['sydney'] };
@@ -33,7 +33,7 @@ test('same-log corrections invalidate pending card choices', () => {
 test('an authoritative same-log correction cancels the rest of a confirmed payment', () => {
   const runtime = hooks(); const sent: any[] = [];
   const { Table } = loadComponent(new URL('../src/table/Table.tsx', import.meta.url).pathname, {
-    react: runtime.react, 'react-native': native, 'react-native-reanimated': animated,
+    '../i18n/locale.tsx': englishLocale, react: runtime.react, 'react-native': native, 'react-native-reanimated': animated,
     '../settings/feedback.ts': { signal() {} },
   });
   const initial = viewFor(createGame({ players: 2, countriesToWin: 3 }, 1), 0);
@@ -57,7 +57,7 @@ test('an authoritative same-log correction cancels the rest of a confirmed payme
 test('an ordinary payment response sends the next confirmed card exactly once', () => {
   const runtime = hooks(); const sent: any[] = [];
   const { Table } = loadComponent(new URL('../src/table/Table.tsx', import.meta.url).pathname, {
-    react: runtime.react, 'react-native': native, 'react-native-reanimated': animated,
+    '../i18n/locale.tsx': englishLocale, react: runtime.react, 'react-native': native, 'react-native-reanimated': animated,
     '../settings/feedback.ts': { signal() {} },
   });
   const initial = viewFor(createGame({ players: 2, countriesToWin: 3 }, 1), 0);
@@ -84,7 +84,7 @@ test('an ordinary payment response sends the next confirmed card exactly once', 
 test('Table measures its board viewport and emits a flight for a newly drawn card', async () => {
   const runtime = hooks();
   const { Table } = loadComponent(new URL('../src/table/Table.tsx', import.meta.url).pathname, {
-    react: runtime.react, 'react-native': native, 'react-native-reanimated': animated,
+    '../i18n/locale.tsx': englishLocale, react: runtime.react, 'react-native': native, 'react-native-reanimated': animated,
     '../settings/feedback.ts': { signal() {} },
   });
   const original = globalThis.requestAnimationFrame;
@@ -119,7 +119,7 @@ for (const failure of ['measure', 'frame', 'scroll']) {
       fn(0); return 1;
     };
     const { Table } = loadComponent(new URL('../src/table/Table.tsx', import.meta.url).pathname, {
-      react: runtime.react, 'react-native': native, 'react-native-reanimated': animated,
+      '../i18n/locale.tsx': englishLocale, react: runtime.react, 'react-native': native, 'react-native-reanimated': animated,
       '../settings/feedback.ts': { signal() {} },
     });
     let view: PlayerView = viewFor(createGame({ players: 2, countriesToWin: 3 }, 1), 0);
@@ -151,7 +151,7 @@ for (const outcome of ['first refusal', 'later refusal', 'accepted boolean', 'on
   test(`three-card payment reconciles ${outcome} without replay or duplicate sends`, () => {
     const runtime = hooks(); const sent: string[] = [];
     const { Table } = loadComponent(new URL('../src/table/Table.tsx', import.meta.url).pathname, {
-      react: runtime.react, 'react-native': native, 'react-native-reanimated': animated,
+      '../i18n/locale.tsx': englishLocale, react: runtime.react, 'react-native': native, 'react-native-reanimated': animated,
       '../settings/feedback.ts': { signal() {} },
     });
     const cards = ['coin-1-1', 'coin-2-1', 'coin-3-1'];

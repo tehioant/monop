@@ -5,9 +5,11 @@ import { create } from 'zustand';
 import { deserialize, serialize } from './save.ts';
 import { botToMove, inProgress, playBot, playHuman, rematch, startSolo, type SoloConfig, type SoloGame } from './solo.ts';
 
+export type SaveError = 'save_unavailable';
+
 interface SoloStore {
   game: SoloGame | null;
-  saveError: string | null;
+  saveError: SaveError | null;
   start: (config: SoloConfig) => boolean;
   rematch: () => boolean;
   abandon: () => boolean;
@@ -19,12 +21,12 @@ interface SoloStore {
 type Saved = { kind: 'missing' | 'invalid' } | { kind: 'valid'; game: SoloGame };
 const file = (name = 'solo-game.json') => new File(Paths.document, name);
 let warned = false;
-function failure() {
+function failure(): SaveError {
   if (!warned) {
     warned = true;
     console.warn('[atlas:solo-save] Device save unavailable; previous save retained where possible.');
   }
-  return 'Could not access the saved game. No changes were made. Please retry.';
+  return 'save_unavailable';
 }
 
 // File.exists can report false for denied access. info() checks read permission;
@@ -63,7 +65,7 @@ function save(game: SoloGame | null) {
 
 let initial: SoloGame | null = null;
 let blocked = false;
-let initialError: string | null = null;
+let initialError: SaveError | null = null;
 try { initial = load(); } catch { blocked = true; initialError = failure(); }
 const newSeed = (previous?: number) => {
   const seed = Math.floor(Math.random() * 2 ** 32);

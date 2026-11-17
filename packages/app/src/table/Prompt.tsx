@@ -3,6 +3,7 @@
 
 import type { Action, CardId } from '@atlas/engine';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useTranslation } from '../i18n/locale.tsx';
 import { actionLabel } from './actions.ts';
 import { cardText } from './cardText.ts';
 import { Button, Choice, shared } from './parts.tsx';
@@ -11,14 +12,15 @@ import { colors, countryColor } from './theme.ts';
 
 /** A card in full. `onClose` puts it away: for a card that is only read, with no panel of its own to cancel. */
 export function CardText({ card, onClose }: { card: CardId; onClose?: () => void }) {
-  const { name, lines } = cardText(card);
+  const t = useTranslation();
+  const { name, lines } = cardText(card, t);
   return (
     <View style={styles.text}>
       <View style={styles.heading}>
         <Text style={styles.title}>{name}</Text>
         {onClose && (
           <Pressable onPress={onClose} hitSlop={10}>
-            <Text style={styles.close}>Close</Text>
+            <Text style={styles.close}>{t('common.close')}</Text>
           </Pressable>
         )}
       </View>
@@ -45,6 +47,7 @@ export function CardPanel({
   onAction: (action: Action) => void;
   onCancel: () => void;
 }) {
+  const t = useTranslation();
   const { chosen, confirm, steps } = prompt;
   return (
     <View style={styles.panel}>
@@ -72,9 +75,9 @@ export function CardPanel({
         </ScrollView>
       )}
       <View style={shared.wrap}>
-        <Button quiet label="Cancel" onPress={onCancel} />
+        <Button quiet label={t('common.cancel')} onPress={onCancel} />
         {prompt.direct.map((action, i) => (
-          <Button key={i} label={actionLabel(action, names)} onPress={() => onAction(action)} />
+          <Button key={i} label={actionLabel(action, names, t)} onPress={() => onAction(action)} />
         ))}
       </View>
       {/* On its own line, so that nothing moves when its label changes. */}
@@ -95,10 +98,11 @@ export function PayPanel({
   onClear: () => void;
   onConfirm: () => void;
 }) {
+  const t = useTranslation();
   return (
     <View style={styles.panel}>
       <Text style={styles.title}>{prompt.summary}</Text>
-      <Text style={shared.small}>No change is given. Pay with banked cards and laid cities, never from your hand.</Text>
+      <Text style={shared.small}>{t('prompt.payHelp')}</Text>
       <ScrollView style={styles.scroll} contentContainerStyle={shared.wrap}>
         {prompt.cards.map((card) => (
           <Choice
@@ -112,8 +116,8 @@ export function PayPanel({
         ))}
       </ScrollView>
       <View style={shared.wrap}>
-        <Button quiet label="Clear" disabled={prompt.total === 0} onPress={onClear} />
-        <Button label={`Pay ${prompt.total}`} disabled={prompt.actions.length === 0} onPress={onConfirm} />
+        <Button quiet label={t('prompt.clear')} disabled={prompt.total === 0} onPress={onClear} />
+        <Button label={t('prompt.pay', { total: prompt.total })} disabled={prompt.actions.length === 0} onPress={onConfirm} />
       </View>
     </View>
   );
@@ -134,6 +138,7 @@ export function VetoPanel({
   names: readonly string[];
   onAction: (action: Action) => void;
 }) {
+  const t = useTranslation();
   const { veto } = prompt;
   return (
     <View style={[shared.wrap, styles.panel]}>
@@ -141,11 +146,11 @@ export function VetoPanel({
         <Button
           key={i}
           quiet
-          label={action.type === 'decline' ? prompt.declineLabel : actionLabel(action, names)}
+          label={action.type === 'decline' ? prompt.declineLabel : actionLabel(action, names, t)}
           onPress={() => onAction(action)}
         />
       ))}
-      {veto && <Button label="Play Veto" onPress={() => onAction(veto)} />}
+      {veto && <Button label={t('prompt.playVeto')} onPress={() => onAction(veto)} />}
     </View>
   );
 }

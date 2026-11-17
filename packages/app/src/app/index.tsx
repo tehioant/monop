@@ -16,9 +16,9 @@ export default function Home() {
   const retrySave = useSolo((solo) => solo.retrySave);
 
   const confirmAbandon = () =>
-    Alert.alert('Abandon the solo game?', 'The game in progress will be lost.', [
-      { text: 'Keep it', style: 'cancel' },
-      { text: 'Abandon', style: 'destructive', onPress: abandon },
+    Alert.alert(t('home.abandonTitle'), t('home.abandonMessage'), [
+      { text: t('home.keep'), style: 'cancel' },
+      { text: t('home.abandon'), style: 'destructive', onPress: abandon },
     ]);
 
   return (
@@ -28,13 +28,13 @@ export default function Home() {
       <SaveStatus error={saveError} retry={retrySave} />
       {saved ? (
         <>
-          <Button label="Resume solo game" onPress={() => router.push('/solo/table')} />
-          <Button quiet label="Abandon solo game" onPress={confirmAbandon} />
+          <Button label={t('home.resume')} onPress={() => router.push('/solo/table')} />
+          <Button quiet label={t('home.abandonSolo')} onPress={confirmAbandon} />
         </>
       ) : (
-        <Button label="Solo game" onPress={() => router.push('/solo/new')} />
+        <Button label={t('home.solo')} onPress={() => router.push('/solo/new')} />
       )}
-      <Button label="Play online" onPress={() => router.push('/online')} />
+      <Button label={t('home.online')} onPress={() => router.push('/online')} />
       <Button quiet label={t('settings.title')} onPress={() => router.push('/settings')} />
     </View>
   );
