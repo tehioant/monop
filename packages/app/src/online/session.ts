@@ -6,7 +6,7 @@ import { validRoom, validState } from './wire.ts';
 import { PROTOCOL_VERSION, type ClientMessage, type ErrorCode, type ServerMessage } from '@atlas/server/protocol';
 
 export type Room = Extract<ServerMessage, { type: 'room' }>;
-export type Game = Extract<ServerMessage, { type: 'state' }> & { clockOffset?: number };
+export type Game = Extract<ServerMessage, { type: 'state' }>;
 /**
  * What a connection is opened for: a new room, a room to join, or with `resync` the game the account already
  * holds a seat in, if any.
@@ -94,8 +94,7 @@ export function receive(session: Session, message: ServerMessage): { session: Se
       const known = session.game?.stateVersion ?? message.stateVersion;
       const follows = message.stateVersion === known || message.stateVersion === known + 1;
       if (session.synced && !follows) return { session: { ...session, synced: false }, send: [{ type: 'resync' }] };
-      const game = message.serverTime === undefined ? message : { ...message, clockOffset: message.serverTime - Date.now() };
-      return { session: { ...session, game, synced: true, lost: null }, send: [] };
+      return { session: { ...session, game: message, synced: true, lost: null }, send: [] };
     }
     case 'pong':
       return { session, send: [] };

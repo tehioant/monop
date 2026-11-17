@@ -97,6 +97,16 @@ test('a state that does not follow the known one is not taken: a resync is asked
   assert.deepEqual(sent, [resync]);
 });
 
+test('accepting the same deadline packet is deterministic regardless of the device clock', (t) => {
+  t.mock.timers.enable({ apis: ['Date'], now: 1000 });
+  const prepared = { ...offline('Bo', 'issued'), room };
+  const packet = { ...state(3, 1), deadline: { kind: 'turn', at: 1200 } as const, serverTime: 1000 };
+  const before = receive(prepared, packet);
+  t.mock.timers.setTime(1600);
+  assert.deepEqual(receive(prepared, packet), before);
+  assert.deepEqual(before.session.game, packet);
+});
+
 test('a refused request is over and reports the server code', () => {
   const { session, sent } = after(
     { ...offline('Bo', 'issued'), request: join },

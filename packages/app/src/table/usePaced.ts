@@ -18,13 +18,15 @@ export interface Paced {
 /**
  * Paces a game for the table. `view` and `legal` are the latest state of the game and the viewer's legal actions
  * in it, as they come from the engine or the server; a state is told from the one before by the length of its log.
+ * An immediate state (a timed online response) takes priority over queued animations.
  */
-export function usePaced(view: PlayerView, legal: readonly Action[]): Paced {
+export function usePaced(view: PlayerView, legal: readonly Action[], immediate = false): Paced {
   const [{ pace, now }, setState] = useState(() => ({ pace: start(view), now: Date.now() }));
   const length = view.log.length;
 
   useEffect(() => {
     setState((state) => {
+      if (immediate) return { pace: start(view), now: Date.now() };
       const latest = state.pace.waiting.at(-1)?.state ?? state.pace.shown;
       const known = latest.log.length;
       if (view === latest) return state;
@@ -33,10 +35,10 @@ export function usePaced(view: PlayerView, legal: readonly Action[]): Paced {
       if (length <= known || view.viewer !== latest.viewer) return { pace: start(view), now };
       return { pace: push(state.pace, view, timing(view.log.slice(known), view.viewer), now), now };
     });
-  }, [view]);
+  }, [view, immediate]);
 
   useEffect(() => {
-    if (settled(pace, now)) return;
+    if (immediate || settled(pace, now)) return;
     // The timer going off is the time having come, even if the clock reads a hair less.
     const tick = () =>
       setState(({ pace }) => {
@@ -45,8 +47,9 @@ export function usePaced(view: PlayerView, legal: readonly Action[]): Paced {
       });
     const timer = setTimeout(tick, Math.max(0, pace.until - Date.now()));
     return () => clearTimeout(timer);
-  }, [pace, now]);
+  }, [pace, now, immediate]);
 
+  if (immediate) return { view, legal, settled: true };
   return {
     view: pace.shown,
     legal: pace.shown === view ? legal : NONE,

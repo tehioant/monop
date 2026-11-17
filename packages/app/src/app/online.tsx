@@ -52,7 +52,7 @@ type LeaveProps = { onLeave: () => void; leaving: boolean; leaveFailed: boolean 
 function Playing({ game, room, reconnecting, onAction, onLeave, leaving, leaveFailed }: LeaveProps & { game: Game; room: Room; reconnecting: boolean; onAction: (action: Action) => void }) {
   const names = room.players.map((player) => player.name);
   // The server's states can come in a burst (a bot's whole turn): the table shows them one at a time.
-  const { view, legal, settled } = usePaced(game.view, game.legalActions);
+  const { view, legal, settled } = usePaced(game.view, game.legalActions, game.deadline?.kind === 'response');
   const over = view.phase.kind === 'over' && settled;
   return (
     <SafeAreaView style={styles.game}>
@@ -61,10 +61,12 @@ function Playing({ game, room, reconnecting, onAction, onLeave, leaving, leaveFa
           {reconnecting && <Reconnecting />}
           <Presence room={room} />
           <Button quiet label="Settings" onPress={() => router.push('/settings')} />
-          <Button quiet label={leaving ? 'Leaving…' : 'Leave game'} disabled={reconnecting || leaving} onPress={onLeave} />
+          {reconnecting
+            ? <Button quiet label="Back (keep seat)" onPress={home} />
+            : <Button quiet label={leaving ? 'Leaving…' : 'Leave game'} disabled={leaving} onPress={onLeave} />}
         </View>
       )}
-      {!reconnecting && game.deadline && <Countdown deadline={game.deadline} clockOffset={game.clockOffset ?? 0} />}
+      {!reconnecting && game.deadline && <Countdown deadline={game.deadline} />}
       {leaveFailed && <Text style={styles.error}>Could not leave the room. Try again.</Text>}
       {over ? <Results view={view} names={names} /> : <Table view={view} legal={reconnecting || leaving ? [] : legal} names={names} onAction={onAction} />}
       {over && (
@@ -76,13 +78,14 @@ function Playing({ game, room, reconnecting, onAction, onLeave, leaving, leaveFa
   );
 }
 
-function Countdown({ deadline, clockOffset }: { deadline: NonNullable<Game['deadline']>; clockOffset: number }) {
+function Countdown({ deadline }: { deadline: NonNullable<Game['deadline']> }) {
   const [, refresh] = useState(0);
   useEffect(() => {
     const tick = setInterval(() => refresh(Date.now()), 250);
     return () => clearInterval(tick);
   }, []);
-  const seconds = Math.max(0, Math.ceil((deadline.at - Date.now() - clockOffset) / 1000));
+  // Use the shared epoch clock, assuming normally synchronized device time. Packet transit never moves the deadline.
+  const seconds = Math.max(0, Math.ceil((deadline.at - Date.now()) / 1000));
   return <Text style={shared.small}>{`${deadline.kind === 'response' ? 'Response' : 'Turn'}: ${seconds}s`}</Text>;
 }
 
@@ -242,7 +245,9 @@ function Lobby(props: LeaveProps & {
         </Text>
       )}
       {leaveFailed && <Text style={styles.error}>Could not leave the room. Try again.</Text>}
-      <Button quiet label={leaving ? 'Leaving…' : 'Leave'} disabled={reconnecting || leaving} onPress={onLeave} />
+      {reconnecting
+        ? <Button quiet label="Back" onPress={home} />
+        : <Button quiet label={leaving ? 'Leaving…' : 'Leave'} disabled={leaving} onPress={onLeave} />}
     </SafeAreaView>
   );
 }

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { createGame, legalActions, viewFor } from '@atlas/engine';
+import { applyAction, createGame, legalActions, viewFor, type GameState } from '@atlas/engine';
 import { PROTOCOL_VERSION } from '@atlas/server/protocol';
 import { offline, decode, receive } from '../src/online/session.ts';
 import { hooks, loadComponent, native, nodes } from './componentBoundary.ts';
@@ -32,9 +32,11 @@ test('storage read/write errors do not crash store or suppress received state; s
 
 test('online actual screen composes pacing, settings, reconnecting, all-seat presence and update prompt', () => {
   const runtime = hooks(); let session: any = { ...offline('Ada', 'issued'), room, game, synced: false, lost: 0 };
+  let homes = 0; let closes = 0; let permanentLeaves = 0;
   const Online = loadComponent(new URL('../src/app/online.tsx', import.meta.url).pathname, {
     react: runtime.react, '../table/parts.tsx': { Button() {}, Panel() {}, shared: {} }, '../table/Choice.tsx': { Choice() {} }, 'react-native': native, 'react-native-safe-area-context': { SafeAreaView: 'SafeAreaView' },
-    'expo-router': { router: {} }, '../online/store.ts': { useOnline: () => ({ session, resume() {}, leave() {}, play() {} }) },
+    'expo-router': { router: { dismissTo(path: string) { assert.equal(path, '/'); homes++; } } },
+    '../online/store.ts': { useOnline: () => ({ session, resume() {}, leave() { closes++; }, leaveRoom() { permanentLeaves++; }, play() {} }) },
     '../table/usePaced.ts': { usePaced: (view: any, legal: any) => ({ view, legal, settled: true }) },
     '../table/Table.tsx': { Table() {} }, '../table/Results.tsx': { Results() {} },
   }).default;
@@ -42,11 +44,19 @@ test('online actual screen composes pacing, settings, reconnecting, all-seat pre
   assert.ok(nodes(tree).some(n => n.props?.label === 'Settings'));
   assert.deepEqual(nodes(tree).find(n => n.type?.name === 'Table').props.legal, []);
   const reconnect = nodes(tree).find(n => n.type?.name === 'Reconnecting'); assert.equal(reconnect.type().props.children, 'Reconnecting…');
+  const back = nodes(tree).find(n => n.props?.label === 'Back (keep seat)');
+  assert.ok(back && !back.props.disabled);
+  assert.ok(!nodes(tree).some(n => n.props?.label === 'Leave game'));
+  runtime.flush();
+  back.props.onPress();
+  assert.equal(homes, 1);
   const presence = nodes(tree).find(n => n.type?.name === 'Presence');
   assert.ok(JSON.stringify(presence.type(presence.props)).includes('offline'));
   assert.ok(JSON.stringify(presence.type(presence.props)).includes('Ada'));
   session = { ...session, error: 'unsupported_version' };
   const update: any = runtime.render(Online); assert.ok(JSON.stringify(update.type()).includes('Update needed')); runtime.unmount();
+  assert.equal(closes, 1);
+  assert.equal(permanentLeaves, 0);
 });
 
 test('incompatible predecessor protocol is refused, while cross-version update errors retain shape', () => {
@@ -67,7 +77,7 @@ test('online screen shows the response clock and bot cover, and navigates only a
   const runtime = hooks(); const clock = hooks(); let active = runtime.react;
   const react = { ...active, useState: (initial: unknown) => active.useState(initial), useEffect: (effect: () => unknown, deps: unknown[]) => active.useEffect(effect, deps) };
   const coveredRoom = { ...room, players: [room.players[0], { ...room.players[1], status: 'bot-replaced' }] };
-  const live = decode(JSON.stringify({ ...game, v: PROTOCOL_VERSION, deadline: { kind: 'response', at: 6300 }, serverTime: 5000 }));
+  const live = decode(JSON.stringify({ ...game, v: PROTOCOL_VERSION, deadline: { kind: 'response', at: 3300 }, serverTime: 2000 }));
   let session = receive({ ...offline('Ada', 'issued'), room: coveredRoom } as any, live).session;
   let requests = 0; let homes = 0; let closes = 0;
   const store = { resume() {}, leave() { closes++; }, leaveRoom() { requests++; session = { ...session, leaving: true }; }, play() {} };
@@ -95,4 +105,54 @@ test('online screen shows the response clock and bot cover, and navigates only a
   runtime.render(Online); runtime.flush();
   assert.equal(homes, 1); runtime.unmount();
   assert.equal(closes, 1); assert.equal(requests, 1);
+});
+
+test('a timed response bypasses queued animation without a delayed packet extending its deadline', (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout', 'setInterval', 'Date'], now: 1000 });
+  const screen = hooks(); const table = hooks(); const clock = hooks(); let active = screen.react;
+  const react = { ...active, useState: (initial: unknown) => active.useState(initial), useEffect: (effect: () => unknown, deps: unknown[]) => active.useEffect(effect, deps) };
+  let session = receive({ ...offline('Ada', 'issued'), room } as any, decode(JSON.stringify({ ...game, v: PROTOCOL_VERSION }))).session;
+  const store = { resume() {}, leave() {}, leaveRoom() {}, play() {} };
+  const Online = loadComponent(new URL('../src/app/online.tsx', import.meta.url).pathname, {
+    react, '../table/parts.tsx': { Button() {}, Panel() {}, shared: {} }, '../table/Choice.tsx': { Choice() {} }, 'react-native': native,
+    'react-native-safe-area-context': { SafeAreaView: 'SafeAreaView' }, 'expo-router': { router: {} },
+    '../online/store.ts': { useOnline: () => ({ session, ...store }) },
+    '../table/Table.tsx': { Table() {} }, '../table/Results.tsx': { Results() {} },
+  }).default;
+  const draw = () => {
+    active = screen.react;
+    const playing: any = screen.render(Online);
+    active = table.react;
+    return nodes(table.render(() => playing.type(playing.props)));
+  };
+  const deliver = (current: GameState, stateVersion: number, deadline: { kind: 'turn' | 'response'; at: number }) => {
+    const packet = { v: PROTOCOL_VERSION, type: 'state', view: viewFor(current, 0), legalActions: legalActions(current, 0), stateVersion, deadline, serverTime: 1000 };
+    session = receive(session, decode(JSON.stringify(packet))).session;
+  };
+
+  draw(); screen.flush(); table.flush();
+  const peerTurn: GameState = { ...state, phase: { kind: 'play', player: 1 }, turn: { player: 1, played: 0 } };
+  const bank = (current: GameState) => applyAction(current, 1, legalActions(current, 1).find(action => action.type === 'bank')!);
+  const banked = bank(peerTurn);
+  const queued = bank(banked);
+  deliver(banked, 10, { kind: 'turn', at: 2000 }); draw(); table.flush();
+  deliver(queued, 11, { kind: 'turn', at: 2000 }); draw(); table.flush();
+  const ordinary = draw().find(n => n.type?.name === 'Table');
+  assert.deepEqual(ordinary.props.view, viewFor(banked, 0));
+  assert.deepEqual(ordinary.props.legal, [], 'ordinary online animation still withholds new legal actions');
+
+  const response: GameState = { ...queued, phase: { kind: 'veto', player: 0, target: 0, vetoes: 0, effect: { amount: 1 }, queue: [] } };
+  t.mock.timers.tick(100);
+  deliver(response, 12, { kind: 'response', at: 1200 });
+  const exact = draw().find(n => n.type?.name === 'Table'); // Before a pacing effect or timer can flush.
+  assert.deepEqual(exact.props.view, viewFor(response, 0));
+  assert.deepEqual(exact.props.legal, legalActions(response, 0));
+  assert.ok(exact.props.legal.some((a: { type: string }) => a.type === 'decline'));
+  table.flush();
+  t.mock.timers.tick(101);
+  deliver(response, 12, { kind: 'response', at: 1200 }); // An already-expired packet arrives late.
+  const countdown = draw().find(n => n.type?.name === 'Countdown');
+  active = clock.react;
+  assert.match(JSON.stringify(clock.render(() => countdown.type(countdown.props))), /Response.*0s/);
+  screen.unmount(); table.unmount(); clock.unmount();
 });
