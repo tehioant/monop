@@ -5,11 +5,14 @@ import { createBot, type Bot, type Difficulty } from '@atlas/bots';
 import { createGame, type GameOptions, type GameState } from '@atlas/engine';
 import Fastify from 'fastify';
 import type { WebSocket } from 'ws';
+import type { ProviderAdapters } from './account/flows.ts';
+import { accountRoutes } from './account/routes.ts';
 import {
   createAccount,
   discardSnapshot,
   findAccount,
   finishGame,
+  identityStore,
   loadSnapshots,
   openDatabase,
   renameAccount,
@@ -29,6 +32,7 @@ export interface ServerOptions {
   /** Who plays the bot seats. Defaults to bots of level `BOT_LEVEL`, seeded at random; scripted games pass their own. */
   bot?: Bot;
   timing?: RoomTiming;
+  providers?: ProviderAdapters;
 }
 
 export interface Server {
@@ -78,6 +82,14 @@ export async function startServer(options: ServerOptions): Promise<Server> {
 
   const app = Fastify();
   await app.register(websocket, { options: { maxPayload: MAX_MESSAGE_BYTES } });
+  await app.register(async (account) => {
+    account.setErrorHandler((error, _req, reply) => {
+      const clientError = typeof error === 'object' && error && 'statusCode' in error &&
+        typeof error.statusCode === 'number' && error.statusCode >= 400 && error.statusCode < 500;
+      reply.header('cache-control', 'no-store').code(clientError ? 400 : 503).send({ error: 'account_unavailable' });
+    });
+    accountRoutes(account, options.providers ?? {}, identityStore(sql));
+  });
   // The connections heard from since the last sweep. One that is not among them at the next sweep is taken for
   // dead and closed, which is how the server learns of a connection lost without a goodbye.
   const heard = new Set<WebSocket>();

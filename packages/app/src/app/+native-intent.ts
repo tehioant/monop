@@ -3,6 +3,7 @@ import { codeFromInvite } from '../online/invite.ts';
 let delivery = 0;
 
 export function redirectSystemPath({ path }: { path: string; initial: boolean }): string {
+  if (/^(?:atlas:\/\/|\/)?account-auth(?:[?#].*)?$/.test(path)) return '/account';
   const code = codeFromInvite(path);
   if (code === undefined) return path;
   // Same room, different tap: allow retries without redispatching on session updates.

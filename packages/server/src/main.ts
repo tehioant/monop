@@ -1,6 +1,7 @@
 // `npm start -w @atlas/server`. Settings and room durations come from the environment.
 
 import { LOCAL_DATABASE_URL } from './db.ts';
+import { configuredProviders } from './account/oidc.ts';
 import { startServer } from './server.ts';
 import { DEFAULT_ROOM_TIMING } from './rooms.ts';
 
@@ -24,5 +25,6 @@ const { port } = await startServer({
   port: Number(process.env.PORT ?? 3000),
   host,
   timing,
+  providers: configuredProviders(process.env),
 });
 console.log(`Atlas server listening on ws://${host}:${port}/ws`);

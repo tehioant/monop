@@ -4,17 +4,13 @@
 import type { Action } from '@atlas/engine';
 import * as SecureStore from 'expo-secure-store';
 import { create } from 'zustand';
+import { serverUrl } from '../account/config.ts';
+import type { RestoredAccount } from '../account/client.ts';
 import { readLanguage } from '../i18n/deviceLanguage.ts';
 import { translate } from '../i18n/strings.ts';
 import { useSettings } from '../settings/store.ts';
 import { connection, type Socket } from './connection.ts';
 import { defaultName, intent, offline, type RoomRequest, type Session } from './session.ts';
-
-/**
- * The game server's WebSocket endpoint. Set EXPO_PUBLIC_SERVER_URL when starting or building the app;
- * without it the app talks to a server started on this machine (`npm start -w @atlas/server`).
- */
-const SERVER_URL = process.env.EXPO_PUBLIC_SERVER_URL ?? 'ws://127.0.0.1:3000/ws';
 
 /** Where the guest token is kept, so that the next launch plays under the same account. */
 const TOKEN_KEY = 'atlas.token';
@@ -23,6 +19,8 @@ const NAME_KEY = 'atlas.name';
 
 interface OnlineStore {
   session: Session;
+  accountToken: () => string | null;
+  replaceAccount: (previous: string | null, account: RestoredAccount) => boolean;
   /** The display name to go online under next. A blank one is replaced by a generated name. */
   setName: (name: string) => void;
   /** Goes back to the game in progress this device's account holds a seat in, if there is one. */
@@ -52,8 +50,9 @@ export const useOnline = create<OnlineStore>((set, get) => {
   };
   const read = (key: string) => { try { return SecureStore.getItem(key); } catch { warn(); return null; } };
   const write = (key: string, value: string) => { try { SecureStore.setItem(key, value); } catch { warn(); } };
+  const accountToken = () => get().session.token ?? read(TOKEN_KEY);
   const server = connection(
-    () => new WebSocket(SERVER_URL) as Socket,
+    () => new WebSocket(serverUrl) as Socket,
     () => get().session,
     (session) => {
       const { token } = get().session;
@@ -77,6 +76,16 @@ export const useOnline = create<OnlineStore>((set, get) => {
 
   return {
     session: offline(read(NAME_KEY) ?? '', null),
+    accountToken,
+    replaceAccount: (previous, account) => {
+      const { request, room } = get().session;
+      if (request || room || accountToken() !== previous) return false;
+      try { SecureStore.setItem(TOKEN_KEY, account.token); } catch { warn(); return false; }
+      server.close();
+      write(NAME_KEY, account.name);
+      set({ session: offline(account.name, account.token) });
+      return true;
+    },
     setName: (name) => set({ session: { ...get().session, name } }),
     resume: () => {
       // Only an account the server has already issued can hold a seat.
