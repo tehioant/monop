@@ -30,7 +30,7 @@ const WILD_INK = '#614c72';
 const ACTION_INK = '#285d53';
 const COIN_INK = '#714a21';
 const ATLAS_COUNTRY_INK: Record<string, string> = {
-  egypt: '#775725', australia: '#25696e', france: '#244d64', uk: '#483d68', italy: '#375837',
+  egypt: '#775725', australia: '#25696e', france: '#244d64', uk: '#393761', italy: '#375837',
   japan: '#833e36', brazil: '#235b46', usa: '#884b32', china: '#773b52', india: '#865322',
 };
 
@@ -104,11 +104,14 @@ export function CardView({ id, selected, dimmed, onPress, landing }: Tappable) {
       </View>
       {split ? (
         <View style={styles.cardSplit}>
-          {split.map((entry) => (
-            <View key={entry} style={[styles.cardBand, { flex: entry.length, backgroundColor: cardCountryInk(entry) }]}>
-              <Text allowFontScaling={false} numberOfLines={1} style={[styles.cardBandText, styles.cardSplitText]}>{title(entry).toUpperCase()}</Text>
-            </View>
-          ))}
+          {split.map((entry) => {
+            const label = title(entry).toUpperCase();
+            return (
+              <View key={entry} style={[styles.cardBand, { flex: label.length, backgroundColor: cardCountryInk(entry) }]}>
+                <Text allowFontScaling={false} numberOfLines={1} style={[styles.cardBandText, styles.cardSplitText]}>{label}</Text>
+              </View>
+            );
+          })}
         </View>
       ) : (
         <View style={[styles.cardBand, { backgroundColor: ink }]}>

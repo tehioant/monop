@@ -51,6 +51,21 @@ test('a wild city lists the countries it can be laid as', () => {
   }
 });
 
+test('Thailand keeps the original tolls, extra draw and Wild eligibility', () => {
+  const city = cardText('london');
+  assert.equal(city.name, 'Bangkok');
+  assert.deepEqual(city.lines, [
+    'A city of Thailand, which is complete with 3 cities: Bangkok, Chiang Mai, Phuket.',
+    'A Toll on Thailand charges each opponent 1 with 1 city, 2 with 2 cities, 4 once complete.',
+    'Held complete: draw 3 cards at the start of your turn.',
+    'Worth 2 as payment, laid or banked.',
+  ]);
+  const wild = cardText('wild-uk-india');
+  assert.equal(wild.name, 'Wild Thailand/India');
+  assert.equal(wild.lines[0], 'A wild city: lay it as a city of Thailand or India.');
+  assert.equal(wild.lines.at(-1), 'Worth 3 as payment, laid or banked.');
+});
+
 test('a card the table does not know has a name and no text', () => {
   assert.deepEqual(cardText('trade-embargo'), { name: 'Trade Embargo', lines: [] });
 });

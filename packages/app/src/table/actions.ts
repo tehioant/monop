@@ -14,6 +14,14 @@ import {
   type PlayerView,
 } from '@atlas/engine';
 
+// Keep the original catalog IDs in saves and on the wire; only the public names change.
+const THAILAND_NAMES = new Map([
+  ['uk', 'Thailand'],
+  ['london', 'Bangkok'],
+  ['manchester', 'Chiang Mai'],
+  ['edinburgh', 'Phuket'],
+]);
+
 /** What the table needs to draw a card, whatever its kind. */
 export interface CardInfo {
   name: string;
@@ -75,8 +83,10 @@ export function countryPerk(country: string): { label: string; text: string } | 
   return perk && PERKS[perk];
 }
 
-/** A display name for an id: 'rio-de-janeiro' -> 'Rio De Janeiro', 'uk' -> 'UK'. */
+/** A display name for a card, country, or other game identifier. */
 export function title(id: string): string {
+  const name = THAILAND_NAMES.get(id);
+  if (name !== undefined) return name;
   if (id.length <= 3) return id.toUpperCase();
   return id.replace(/(^|-)(\w)/g, (_, dash: string, letter: string) => (dash ? ' ' : '') + letter.toUpperCase());
 }

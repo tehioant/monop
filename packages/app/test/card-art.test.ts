@@ -12,6 +12,13 @@ function parts() {
   });
 }
 
+const thailand = [
+  ['london', 'Bangkok', 'bangkok'],
+  ['manchester', 'Chiang Mai', 'chiang-mai'],
+  ['edinburgh', 'Phuket', 'phuket'],
+  ['wild-uk-india', 'Wild Thailand/India', 'wild-thailand-india'],
+] as const;
+
 test('every catalog card displays bundled City Atlas art and its live value', () => {
   const { CardView } = parts();
   const images = new Map<string, string>();
@@ -24,7 +31,8 @@ test('every catalog card displays bundled City Atlas art and its live value', ()
     const [{ props }] = cardImages;
     assert.equal(props.accessible, false);
     const group = card.kind === 'coin' ? 'mint' : card.kind === 'action' ? card.action : card.kind === 'wild' && card.countries.length > 2 ? 'wild-any' : card.id;
-    assert.equal(props.source.split('/').pop(), `${group}.webp`, card.id);
+    const art = thailand.find(([id]) => id === card.id)?.[2] ?? group;
+    assert.equal(props.source.split('/').pop(), `${art}.webp`, card.id);
     images.set(group, props.source);
   }
   assert.equal(new Set(images.values()).size, images.size);
@@ -50,6 +58,16 @@ test('compact cards retain identity, wild countries and the city perk without al
   assert.equal(back.type, 'Image');
   assert.equal(back.props.source.split('/').pop(), 'deck-back.webp');
   assert.equal(back.props.accessible, false);
+});
+
+test('Thailand replaces the UK artwork and labels without retiring saved card IDs', () => {
+  const { CardView } = parts();
+  for (const [id, name] of thailand) {
+    const tree = CardView({ id });
+    assert.equal(tree.props.accessibilityLabel, name);
+    const rendered = nodes(tree);
+    assert.ok(rendered.some((node) => node.type === 'Text' && node.props.children === 'THAILAND'));
+  }
 });
 
 test('a hidden flight uses the same back as the draw pile and never displays a face', () => {

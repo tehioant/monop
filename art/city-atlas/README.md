@@ -11,3 +11,5 @@ rm paris.png
 ```
 
 `packages/app/src/table/cardArt.ts` lists Metro's static asset imports. Its 47 illustrations cover 31 cities, six wild faces, nine actions and the shared coin motif. Coin values, card names, countries, perks and rules are live text from the app and engine. The same back is used for the deck indicator and all hidden flights. Repeated copies of a card do not need separate binaries.
+
+Thailand replaces the UK on screen. The four original card IDs and the country ID are kept for existing saves and multiplayer: `uk` displays as Thailand, `london` as Bangkok, `manchester` as Chiang Mai, `edinburgh` as Phuket, and `wild-uk-india` as Wild Thailand/India. Their artwork filenames use the new names.
