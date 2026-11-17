@@ -1,5 +1,6 @@
 import { router } from 'expo-router';
 import { Alert, StyleSheet, Text, View } from 'react-native';
+import { useTranslation } from '../i18n/locale.tsx';
 import { inProgress } from '../solo/solo.ts';
 import { useSolo } from '../solo/store.ts';
 import { SaveStatus } from '../solo/SaveStatus.tsx';
@@ -7,6 +8,7 @@ import { Button } from '../table/parts.tsx';
 import { colors } from '../table/theme.ts';
 
 export default function Home() {
+  const t = useTranslation();
   // The solo game saved on the device, or left a moment ago. There is one at a time.
   const saved = useSolo(({ game }) => game !== null && inProgress(game));
   const abandon = useSolo((solo) => solo.abandon);
@@ -22,7 +24,7 @@ export default function Home() {
   return (
     <View style={styles.home}>
       <Text style={styles.title}>Atlas</Text>
-      <Text style={styles.tagline}>Collect countries, city by city.</Text>
+      <Text style={styles.tagline}>{t('home.tagline')}</Text>
       <SaveStatus error={saveError} retry={retrySave} />
       {saved ? (
         <>
@@ -33,7 +35,7 @@ export default function Home() {
         <Button label="Solo game" onPress={() => router.push('/solo/new')} />
       )}
       <Button label="Play online" onPress={() => router.push('/online')} />
-      <Button quiet label="Settings" onPress={() => router.push('/settings')} />
+      <Button quiet label={t('settings.title')} onPress={() => router.push('/settings')} />
     </View>
   );
 }

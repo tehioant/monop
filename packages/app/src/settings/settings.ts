@@ -1,12 +1,15 @@
 // The player's settings, kept on the device. Pure: the storage is passed in.
 
+import { isLanguageChoice, type LanguageChoice } from '../i18n/strings.ts';
+
 export interface Settings {
   sound: boolean;
   haptics: boolean;
+  language: LanguageChoice;
 }
 
-/** What a player has until they choose. A new setting (the language, say) is a new field here. */
-export const DEFAULTS: Settings = { sound: true, haptics: true };
+/** What a player has until they choose. */
+export const DEFAULTS: Settings = { sound: true, haptics: true, language: 'system' };
 
 /** Where the settings are kept: the synchronous part of the device's key-value storage. */
 export interface Storage {
@@ -24,12 +27,11 @@ export function loadSettings(storage: Storage): Settings {
   } catch {
     // Unreadable: as if nothing had been saved.
   }
-  const settings = { ...DEFAULTS };
-  for (const name of Object.keys(DEFAULTS) as (keyof Settings)[]) {
-    const value = saved[name];
-    if (typeof value === typeof DEFAULTS[name]) settings[name] = value as Settings[typeof name];
-  }
-  return settings;
+  return {
+    sound: typeof saved.sound === 'boolean' ? saved.sound : DEFAULTS.sound,
+    haptics: typeof saved.haptics === 'boolean' ? saved.haptics : DEFAULTS.haptics,
+    language: isLanguageChoice(saved.language) ? saved.language : DEFAULTS.language,
+  };
 }
 
 export function saveSettings(storage: Storage, settings: Settings): void {

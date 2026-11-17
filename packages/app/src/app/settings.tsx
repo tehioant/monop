@@ -1,53 +1,61 @@
 // The player's settings. Opened from home and from a game, which goes on underneath.
 
 import { router } from 'expo-router';
-import { StyleSheet, Switch, Text, View } from 'react-native';
+import { ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { signal } from '../settings/feedback.ts';
-import type { Settings } from '../settings/settings.ts';
+import { useTranslation } from '../i18n/locale.tsx';
+import { languageChoices } from '../i18n/strings.ts';
 import { useSettings } from '../settings/store.ts';
 import { Button, Panel, shared } from '../table/parts.tsx';
 import { colors } from '../table/theme.ts';
 
-/** The switches, in order. A setting of another kind (the language) gets its own row below them. */
-const SWITCHES: { name: keyof Settings; label: string; detail: string }[] = [
-  { name: 'sound', label: 'Sound', detail: 'Cards, your turn, a charge or a card aimed at you, a complete country, the end of the game.' },
-  { name: 'haptics', label: 'Haptics', detail: 'A tap in the hand for the same events and for your own cards.' },
-];
+const switches = ['sound', 'haptics'] as const;
 
 export default function SettingsScreen() {
+  const t = useTranslation();
   const { settings, change, saveError } = useSettings();
   return (
-    <SafeAreaView style={styles.screen}>
-      <Text style={styles.title}>Settings</Text>
-      <Panel>
-        {SWITCHES.map(({ name, label, detail }) => (
-          <View key={name} style={styles.row}>
-            <View style={styles.text}>
-              <Text style={shared.name}>{label}</Text>
-              <Text style={shared.small}>{detail}</Text>
+    <SafeAreaView style={styles.safeArea}>
+      <ScrollView contentContainerStyle={styles.screen}>
+        <Text style={styles.title}>{t('settings.title')}</Text>
+        <Panel>
+          {switches.map((name) => (
+            <View key={name} style={styles.row}>
+              <View style={styles.text}>
+                <Text style={shared.name}>{t(`settings.${name}`)}</Text>
+                <Text style={shared.small}>{t(`settings.${name}Detail`)}</Text>
+              </View>
+              <Switch
+                accessibilityLabel={t(`settings.${name}`)}
+                value={settings[name]}
+                trackColor={{ true: colors.accent }}
+                onValueChange={(on) => {
+                  change({ [name]: on });
+                  // What is now on is heard or felt at once.
+                  signal('turn');
+                }}
+              />
             </View>
-            <Switch
-              accessibilityLabel={label}
-              value={settings[name]}
-              trackColor={{ true: colors.accent }}
-              onValueChange={(on) => {
-                change({ [name]: on });
-                // What is now on is heard or felt at once.
-                signal('turn');
-              }}
-            />
-          </View>
-        ))}
-      </Panel>
-      {saveError && <Text style={shared.small}>Changes apply now but could not be saved. Try switching again.</Text>}
-      <Button quiet label="Back" onPress={() => router.back()} />
+          ))}
+        </Panel>
+        <Panel>
+          <Text style={shared.name}>{t('settings.language')}</Text>
+          {languageChoices.map((language) => (
+            <Button key={language} quiet={settings.language !== language} selected={settings.language === language}
+              label={t(`settings.${language}`)} onPress={() => change({ language })} />
+          ))}
+        </Panel>
+        {saveError && <Text style={shared.small}>{t('settings.saveError')}</Text>}
+        <Button quiet label={t('common.back')} onPress={() => router.back()} />
+      </ScrollView>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  screen: { flex: 1, padding: 24, gap: 16 },
+  safeArea: { flex: 1 },
+  screen: { padding: 24, gap: 16 },
   title: { color: colors.ink, fontSize: 28, fontWeight: '800' },
   row: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 6 },
   text: { flex: 1, gap: 2 },

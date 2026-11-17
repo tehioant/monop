@@ -135,9 +135,10 @@ export function Panel(props: { highlighted?: boolean; style?: ViewStyle; childre
   );
 }
 
-export function Button({ label, onPress, quiet, disabled }: { label: string; onPress: () => void; quiet?: boolean; disabled?: boolean }) {
+export function Button({ label, onPress, quiet, disabled, selected }: { label: string; onPress: () => void; quiet?: boolean; disabled?: boolean; selected?: boolean }) {
   return (
-    <Pressable onPress={onPress} disabled={disabled} style={[styles.button, quiet && styles.buttonQuiet, disabled && styles.dimmed]}>
+    <Pressable accessibilityRole="button" accessibilityState={selected === undefined ? undefined : { selected }}
+      onPress={onPress} disabled={disabled} style={[styles.button, quiet && styles.buttonQuiet, disabled && styles.dimmed]}>
       <Text style={[styles.buttonText, quiet && styles.buttonQuietText]}>{label}</Text>
     </Pressable>
   );
