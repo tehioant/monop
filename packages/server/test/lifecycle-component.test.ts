@@ -89,6 +89,28 @@ test('disconnect waits for grace, covers the seat, and the same account reclaims
   assert.equal(bo.room().players[0]!.status, 'connected');
 });
 
+test('a late disconnect cannot defer an advertised turn or response while another human stays', (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout', 'Date'], now: 1000 });
+  const response: GameState = { ...game, phase: { kind: 'veto', player: 1, target: 1, vetoes: 0, effect: { amount: 1 }, queue: [] } };
+  for (const [state, actor, observer, duration, before] of [[game, 'a', 'b', 100, 90], [response, 'b', 'a', 20, 10]] as const) {
+    const { rooms, moves, player } = prepared(state);
+    const away = player(actor);
+    const present = player(observer);
+    const seat = state.phase.kind === 'over' ? -1 : state.phase.player;
+    assert.equal(present.state().deadline!.at, Date.now() + duration);
+    t.mock.timers.tick(before);
+    rooms.leave(away.member);
+    t.mock.timers.tick(9);
+    assert.deepEqual(moves, []);
+    t.mock.timers.tick(1);
+    assert.deepEqual(moves, [seat]);
+    assert.equal(present.state().stateVersion, 10);
+    assert.equal(present.room().players[seat]!.status, 'disconnected');
+    assert.equal(rooms.playing(actor), true);
+    rooms.stop();
+  }
+});
+
 test('restored empty rooms do not play bots, cancel expiry on resume, and delete the snapshot after abandonment', async (t) => {
   t.mock.timers.enable({ apis: ['setTimeout', 'Date'], now: 1000 });
   const { rooms, moves, discarded, player } = prepared();

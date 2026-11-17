@@ -96,6 +96,45 @@ test('explicit leave acknowledges only a durable mid-turn release; a refused wri
   assert.deepEqual(returning.sent.map(m => [m.type, m.resumed]), [['welcome', false]]);
 });
 
+test('a reconnect sees the settled leave outcome, never an acknowledgement addressed to the old socket', async (t) => {
+  const serve = handler();
+  const send = (socket: Socket, type: string) => socket.emit('message', JSON.stringify({ v, type, token: 'saved' }));
+  for (const commits of [true, false]) {
+    const { promise, resolve, reject } = Promise.withResolvers<void>();
+    const { rooms, member } = prepared(() => promise);
+    t.after(() => rooms.stop());
+    const old = new Socket();
+    serve(old, {}, rooms, () => {});
+    send(old, 'hello'); await flush();
+    send(old, 'leaveRoom'); await flush();
+    const direct = member('a');
+    rooms.resume(direct.member);
+    assert.deepEqual(direct.messages, []);
+    old.close();
+    const abandonedReconnect = new Socket();
+    const reconnect = new Socket();
+    for (const socket of [abandonedReconnect, reconnect]) {
+      serve(socket, {}, rooms, () => {});
+      send(socket, 'hello');
+    }
+    await flush();
+    assert.deepEqual(abandonedReconnect.sent, []);
+    assert.equal(reconnect.sent.length, 0);
+    abandonedReconnect.close();
+    if (commits) resolve(); else reject(Error('write refused'));
+    await flush();
+    assert.deepEqual(abandonedReconnect.sent, []);
+    assert.deepEqual(reconnect.sent.map(m => m.type), commits ? ['welcome'] : ['welcome', 'room', 'state']);
+    assert.equal(reconnect.sent[0].resumed, !commits);
+    assert.equal(rooms.playing('a'), !commits);
+    assert.ok(!old.sent.some(m => m.type === 'left'), 'the acknowledgement was lost on the closed connection');
+    if (!commits) {
+      assert.equal(reconnect.sent.at(-1).view.viewer, 0);
+      assert.equal(reconnect.sent.at(-1).stateVersion, 9);
+    }
+  }
+});
+
 test('snapshot SQL replaces persisted seat owners and deletes only the abandoned room', async () => {
   const queries: { text: string; values: unknown[] }[] = [];
   const sql = Object.assign((parts: TemplateStringsArray, ...values: unknown[]) => {

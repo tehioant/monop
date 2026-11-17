@@ -167,6 +167,18 @@ test('a connection lost in a lobby joins the room again, if it is still there', 
   assert.deepEqual(disconnected({ ...waiting, leaving: true }), { ...offline('Bo', 'issued'), error: 'disconnected' });
 });
 
+test('after a lost leave acknowledgement, no held seat is reported honestly and a held seat can retry', () => {
+  const playing = { ...offline('Bo', 'issued'), room, game: state(3, 1), synced: true };
+  assert.equal(receive(playing, { type: 'left' }).session, playing, 'an unsolicited acknowledgement is ignored');
+  const pending = { ...playing, leaving: true };
+  assert.equal(receive(pending, { type: 'left' }).session.left, true);
+  const lost = disconnected(disconnected(pending));
+  assert.equal(lost.leaving, true);
+  assert.deepEqual(after(lost, welcome), { session: { ...offline('Bo', 'issued'), error: 'seat_unavailable' }, sent: [] });
+  const resumed = after(lost, back, room, state(3, 1));
+  assert.deepEqual(resumed, { session: { ...playing, leaving: false, error: 'leave_failed' }, sent: [] });
+});
+
 test('a connection lost before any room is given up, and one lost after the game is over changes nothing', () => {
   assert.deepEqual(disconnected({ ...offline('Bo', 'issued'), request: create }), { ...offline('Bo', 'issued'), error: 'disconnected' });
 

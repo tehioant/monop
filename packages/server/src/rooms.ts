@@ -83,7 +83,7 @@ interface Room {
   abandonTimer?: ReturnType<typeof setTimeout>;
   expiring?: true;
   covered: Set<Member>;
-  leaving?: true;
+  leaving?: { member: Member; settled: Promise<void> };
 }
 
 export interface RoomTiming {
@@ -146,6 +146,12 @@ export class Rooms {
     return this.#seatOf(account) !== undefined;
   }
 
+  /** Before welcoming a reconnect, wait for any in-flight release of its own seat. */
+  pendingDeparture(account: string): Promise<void> | undefined {
+    const held = this.#seatOf(account);
+    if (held && held.room.leaving?.member === held.room.members[held.seat]) return held.room.leaving?.settled;
+  }
+
   /**
    * Puts a member who has just connected back in the seat their account holds in a game in progress, if any:
    * they receive the room, then the current state, and the other players see them connected.
@@ -157,6 +163,7 @@ export class Rooms {
     if (!held) return;
     const { room, seat } = held;
     const previous = room.members[seat]!;
+    if (room.leaving?.member === previous) return;
     if (this.#byMember.delete(previous)) {
       previous.send({ type: 'replaced' });
       previous.close();
@@ -290,19 +297,20 @@ export class Rooms {
     players[seat] = { account: bot.account, name: bot.name };
 
     // No game write can overtake this snapshot while the seat change is pending.
-    room.leaving = true;
+    const { promise: settled, resolve } = Promise.withResolvers<void>();
+    room.leaving = { member, settled };
     this.#scheduleMove(room);
     try {
       await this.#save(room, players);
-      const current = room.members[seat]!;
-      this.#byMember.delete(current);
-      this.#clearGrace(current);
-      room.covered.delete(current);
+      this.#byMember.delete(member);
+      this.#clearGrace(member);
+      room.covered.delete(member);
       room.members[seat] = bot;
-      current.send({ type: 'left' });
+      member.send({ type: 'left' });
       this.#sendRoom(room);
     } finally {
       delete room.leaving;
+      resolve();
       this.#refreshPresence(room);
     }
   }
@@ -425,7 +433,7 @@ export class Rooms {
     const { game, deadline } = room;
     if (this.#stopped || room.leaving || !game || !deadline || game.phase.kind === 'over') return;
     const { player } = game.phase;
-    if (!this.#byMember.has(room.members[player]!)) return;
+    if (!this.#hasHumans(room)) return;
     const timer = setTimeout(() => {
       if (room.moveTimer !== timer || this.#byCode.get(room.code) !== room || room.game !== game) return;
       this.#botMove(room, game, player);

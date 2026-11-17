@@ -131,6 +131,11 @@ export function serve(socket: WebSocket, sql: Sql, rooms: Rooms, alive: () => vo
       const guest = wanted || 'Guest';
       account = { name: guest, ...(await createAccount(sql, guest)) };
     }
+    for (let pending = rooms.pendingDeparture(account.id); pending; pending = rooms.pendingDeparture(account.id)) {
+      await pending;
+      if (socket.readyState !== socket.OPEN) return;
+    }
+    if (socket.readyState !== socket.OPEN) return;
     member = { account: account.id, name: account.name, send, close };
     send({ type: 'welcome', token: account.token, name: account.name, resumed: rooms.playing(account.id) });
     rooms.resume(member);

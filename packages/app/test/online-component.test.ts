@@ -70,7 +70,7 @@ test('online screen shows the response clock and bot cover, and navigates only a
   const live = decode(JSON.stringify({ ...game, v: PROTOCOL_VERSION, deadline: { kind: 'response', at: 6300 }, serverTime: 5000 }));
   let session = receive({ ...offline('Ada', 'issued'), room: coveredRoom } as any, live).session;
   let requests = 0; let homes = 0; let closes = 0;
-  const store = { resume() {}, leave() { closes++; }, leaveRoom() { requests++; }, play() {} };
+  const store = { resume() {}, leave() { closes++; }, leaveRoom() { requests++; session = { ...session, leaving: true }; }, play() {} };
   const Online = loadComponent(new URL('../src/app/online.tsx', import.meta.url).pathname, {
     react, '../table/parts.tsx': { Button() {}, Panel() {}, shared: {} }, '../table/Choice.tsx': { Choice() {} }, 'react-native': native,
     'react-native-safe-area-context': { SafeAreaView: 'SafeAreaView' }, 'expo-router': { router: { dismissTo() { homes++; } } },

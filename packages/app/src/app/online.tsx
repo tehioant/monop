@@ -103,6 +103,8 @@ function explain(error: NonNullable<Session['error']>): string {
       return 'You are now playing this game on another device.';
     case 'ended':
       return 'The game you were in is over.';
+    case 'seat_unavailable':
+      return 'There is no seat to return to.';
     default:
       return 'Something went wrong. Please try again.';
   }

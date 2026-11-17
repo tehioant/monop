@@ -40,9 +40,10 @@ export interface Session {
    * Why the player is not in a room: the server's code for a refused message (`unsupported_version`: the app
    * must be updated), `disconnected` when the server could not be reached, `removed` when the host removed them
    * from the lobby, `replaced` when their account took its seat from another device, `ended` when the game they
-   * were coming back to is no longer there.
+   * were coming back to is no longer there, or `seat_unavailable` when a lost leave response cannot be confirmed
+   * but there is no seat to return to.
    */
-  error: ErrorCode | 'disconnected' | 'removed' | 'replaced' | 'ended' | null;
+  error: ErrorCode | 'disconnected' | 'removed' | 'replaced' | 'ended' | 'seat_unavailable' | null;
 }
 
 /** Not connected, in no room: only what the device keeps. */
@@ -71,9 +72,12 @@ export function receive(session: Session, message: ServerMessage): { session: Se
       // On a new connection the server may know the game at an older version than this device (a restart).
       const welcomed = { ...session, token: message.token, synced: false };
       // Back in a seat: the room and the state follow, and answer the request whatever it was.
-      if (message.resumed) return { session: welcomed, send: [] };
+      if (message.resumed) {
+        return { session: session.leaving ? { ...welcomed, leaving: false, error: 'leave_failed' } : welcomed, send: [] };
+      }
       if (session.request?.type !== 'resync') return { session: welcomed, send: session.request ? [session.request] : [] };
       // No game to come back to: it ended while the connection was lost, or there was none.
+      if (session.leaving) return out('seat_unavailable');
       return out(session.game ? 'ended' : null);
     }
     case 'room':
@@ -82,6 +86,7 @@ export function receive(session: Session, message: ServerMessage): { session: Se
     case 'replaced':
       return out(message.type);
     case 'left':
+      if (!session.leaving) return { session, send: [] };
       return { session: { ...offline(session.name, session.token), left: true }, send: [] };
     case 'state': {
       // Every state is a full view. One that neither follows the known one nor repeats it (the answer to a
@@ -118,7 +123,7 @@ export function disconnected(session: Session): Session {
   if (game?.view.phase.kind === 'over') return session;
   if (!room || (!game && session.leaving)) return { ...offline(session.name, session.token), error: 'disconnected' };
   const request: RoomRequest = game ? { type: 'resync' } : { type: 'joinRoom', code: room.code };
-  return { ...session, ...(session.leaving && { leaving: false }), synced: false, request, lost: lost === null ? 0 : lost + 1 };
+  return { ...session, synced: false, request, lost: lost === null ? 0 : lost + 1 };
 }
 
 /** How long to wait before opening the connection again, in milliseconds, after `failed` attempts in a row. */
