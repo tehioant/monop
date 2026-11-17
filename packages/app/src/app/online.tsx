@@ -2,13 +2,13 @@
 
 import { RULES, type Action } from '@atlas/engine';
 import { MAX_NAME_LENGTH } from '@atlas/server/protocol';
-import { router } from 'expo-router';
-import { useEffect, useState } from 'react';
+import { router, useLocalSearchParams } from 'expo-router';
+import { useEffect, useRef, useState } from 'react';
 import { Platform, Share, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useTranslation } from '../i18n/locale.tsx';
 import { explainOnlineError } from '../online/display.ts';
-import { inviteLink } from '../online/invite.ts';
+import { inviteCode, inviteLink } from '../online/invite.ts';
 import type { Game, Room, Session } from '../online/session.ts';
 import { useOnline } from '../online/store.ts';
 import { Choice } from '../table/Choice.tsx';
@@ -28,19 +28,31 @@ export default function Online() {
   const { session, setName, resume, createRoom, joinRoom, addBot, removePlayer, startGame, play, leave, leaveRoom } = useOnline();
   const { room, game } = session;
   const reconnecting = session.lost !== null;
-
-  // A player with a game in progress comes straight back to it. However the screen is left, the connection
-  // goes with it.
+  const params = useLocalSearchParams();
+  const delivery = typeof params.inviteDelivery === 'string' && params.inviteDelivery ? params.inviteDelivery : undefined;
+  const invitedRoom = inviteCode(params.inviteCode);
+  const consumed = useRef<string | undefined | null>(null);
+  const [invalidInvite, setInvalidInvite] = useState(false);
+  useEffect(() => leave, [leave]);
   useEffect(() => {
-    resume();
-    return leave;
-  }, [resume, leave]);
+    if (consumed.current === delivery) return;
+    const opening = consumed.current === null;
+    consumed.current = delivery;
+    setInvalidInvite(delivery !== undefined && invitedRoom === null);
+    // Joining by code sends the same hello as resume. A saved seat takes priority at welcome.
+    if (delivery !== undefined && invitedRoom) joinRoom(invitedRoom);
+    else if (opening) resume();
+  }, [delivery, invitedRoom, joinRoom, resume]);
   useEffect(() => { if (session.left) home(); }, [session.left]);
 
   const leaveProps = { onLeave: leaveRoom, leaving: !!session.leaving, leaveFailed: session.error === 'leave_failed' };
 
   if (session.error === 'unsupported_version') return <UpdateNeeded />;
-  if (!room) return <Entry session={session} onName={setName} onCreate={createRoom} onJoin={joinRoom} />;
+  if (!room) return (
+    <Entry session={session} invalidInvite={invalidInvite} onName={setName}
+      onCreate={(goal) => { setInvalidInvite(false); createRoom(goal); }}
+      onJoin={(code) => { setInvalidInvite(false); joinRoom(code); }} />
+  );
   if (!game) {
     return (
       <Lobby room={room} reconnecting={reconnecting} onAddBot={addBot} onRemove={removePlayer} onStart={startGame} {...leaveProps} />
@@ -139,12 +151,13 @@ function Presence({ room }: { room: Room }) {
 
 function Entry(props: {
   session: Session;
+  invalidInvite: boolean;
   onName: (name: string) => void;
   onCreate: (countriesToWin: number) => void;
   onJoin: (code: string) => void;
 }) {
   const t = useTranslation();
-  const { session, onName, onCreate, onJoin } = props;
+  const { session, invalidInvite, onName, onCreate, onJoin } = props;
   const [countriesToWin, setCountriesToWin] = useState(DEFAULT_COUNTRIES);
   const [code, setCode] = useState('');
   return (
@@ -187,6 +200,7 @@ function Entry(props: {
         </>
       )}
       {session.error && <Text style={styles.error}>{explainOnlineError(session.error, t)}</Text>}
+      {invalidInvite && <Text style={styles.error}>{t('online.invalidInvite')}</Text>}
       <Button quiet label={t('common.back')} onPress={home} />
     </SafeAreaView>
   );

@@ -83,7 +83,11 @@ export const useOnline = create<OnlineStore>((set, get) => {
       if (get().session.token ?? read(TOKEN_KEY)) connect({ type: 'resync' });
     },
     createRoom: (countriesToWin) => connect({ type: 'createRoom', countriesToWin }),
-    joinRoom: (code) => connect({ type: 'joinRoom', code }),
+    joinRoom: (code) => {
+      const { room, game, request, lost, leaving, left } = get().session;
+      if (room || game || request || lost !== null || leaving || left) return;
+      connect({ type: 'joinRoom', code });
+    },
     addBot: () => server.send({ type: 'addBot' }),
     removePlayer: (seat) => server.send({ type: 'removePlayer', seat }),
     startGame: () => server.send({ type: 'startGame' }),

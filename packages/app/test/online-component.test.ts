@@ -83,7 +83,7 @@ test('online actual screen composes pacing, settings, reconnecting, all-seat pre
   let homes = 0; let closes = 0; let permanentLeaves = 0;
   const Online = loadComponent(new URL('../src/app/online.tsx', import.meta.url).pathname, {
     '../i18n/locale.tsx': englishLocale, react: runtime.react, '../table/parts.tsx': { Button() {}, Panel() {}, shared: {} }, '../table/Choice.tsx': { Choice() {} }, 'react-native': native, 'react-native-safe-area-context': { SafeAreaView: 'SafeAreaView' },
-    'expo-router': { router: { dismissTo(path: string) { assert.equal(path, '/'); homes++; } } },
+    'expo-router': { useLocalSearchParams: () => ({}), router: { dismissTo(path: string) { assert.equal(path, '/'); homes++; } } },
     '../online/store.ts': { useOnline: () => ({ session, resume() {}, leave() { closes++; }, leaveRoom() { permanentLeaves++; }, play() {} }) },
     '../table/usePaced.ts': { usePaced: (view: any, legal: any) => ({ view, legal, settled: true }) },
     '../table/Table.tsx': { Table() {} }, '../table/Results.tsx': { Results() {} },
@@ -143,7 +143,7 @@ test('online screen shows the response clock and bot cover, and navigates only a
   const store = { resume() {}, leave() { closes++; }, leaveRoom() { requests++; session = { ...session, leaving: true }; }, play() {} };
   const Online = loadComponent(new URL('../src/app/online.tsx', import.meta.url).pathname, {
     '../i18n/locale.tsx': { useTranslation: () => tOnline }, react, '../table/parts.tsx': { Button() {}, Panel() {}, shared: {} }, '../table/Choice.tsx': { Choice() {} }, 'react-native': native,
-    'react-native-safe-area-context': { SafeAreaView: 'SafeAreaView' }, 'expo-router': { router: { dismissTo() { homes++; } } },
+    'react-native-safe-area-context': { SafeAreaView: 'SafeAreaView' }, 'expo-router': { useLocalSearchParams: () => ({}), router: { dismissTo() { homes++; } } },
     '../online/store.ts': { useOnline: () => ({ session, ...store }) },
     '../table/usePaced.ts': { usePaced: (view: any, legal: any) => ({ view, legal, settled: true }) },
     '../table/Table.tsx': { Table() {} }, '../table/Results.tsx': { Results() {} },
@@ -187,7 +187,7 @@ test('a timed response bypasses queued animation without a delayed packet extend
   const store = { resume() {}, leave() {}, leaveRoom() {}, play() {} };
   const Online = loadComponent(new URL('../src/app/online.tsx', import.meta.url).pathname, {
     '../i18n/locale.tsx': englishLocale, react, '../table/parts.tsx': { Button() {}, Panel() {}, shared: {} }, '../table/Choice.tsx': { Choice() {} }, 'react-native': native,
-    'react-native-safe-area-context': { SafeAreaView: 'SafeAreaView' }, 'expo-router': { router: {} },
+    'react-native-safe-area-context': { SafeAreaView: 'SafeAreaView' }, 'expo-router': { useLocalSearchParams: () => ({}), router: {} },
     '../online/store.ts': { useOnline: () => ({ session, ...store }) },
     '../table/Table.tsx': { Table() {} }, '../table/Results.tsx': { Results() {} },
   }).default;
@@ -250,7 +250,7 @@ test('a paused room visibly disables play and allows local Back across resync an
   const Online = loadComponent(new URL('../src/app/online.tsx', import.meta.url).pathname, {
     '../i18n/locale.tsx': englishLocale, react: runtime.react, '../table/parts.tsx': { Button() {}, Panel() {}, shared: {} }, '../table/Choice.tsx': { Choice() {} },
     'react-native': native, 'react-native-safe-area-context': { SafeAreaView: 'SafeAreaView' },
-    'expo-router': { router: { dismissTo(path: string) { assert.equal(path, '/'); homes++; } } },
+    'expo-router': { useLocalSearchParams: () => ({}), router: { dismissTo(path: string) { assert.equal(path, '/'); homes++; } } },
     '../online/store.ts': { useOnline: () => ({ session, resume() {}, leave() {}, leaveRoom() { assert.fail('local Back cannot release the seat'); } }) },
     '../table/usePaced.ts': { usePaced: (view: unknown, legal: unknown) => ({ view, legal, settled: true }) },
     '../table/Table.tsx': { Table() {} }, '../table/Results.tsx': { Results() {} },

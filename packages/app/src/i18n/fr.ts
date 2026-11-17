@@ -306,6 +306,7 @@ export const fr = {
   'online.share': 'Partagez ce code avec vos amis',
   'online.shareInvite': 'Partager le lien d’invitation',
   'online.shareFailed': 'Impossible de partager le lien d’invitation. Réessayez.',
+  'online.invalidInvite': 'Ce lien d’invitation est invalide. Vous pouvez toujours rejoindre le salon avec son code.',
   'online.goal': 'Le premier à compléter {count} pays remporte la partie',
   'online.remove': 'Retirer',
   'online.addBot': 'Ajouter un robot',

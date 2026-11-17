@@ -10,7 +10,8 @@ export default function RootLayout() {
         <Stack.Screen name="solo/table" options={{ gestureEnabled: false }} />
         <Stack.Screen name="solo/results" options={{ gestureEnabled: false }} />
         <Stack.Screen name="tutorial" options={{ gestureEnabled: false }} />
-        <Stack.Screen name="online" options={{ gestureEnabled: false }} />
+        {/* A warm invite targets the existing screen, not a second owner of its connection. */}
+        <Stack.Screen name="online" dangerouslySingular activityEnabled={false} options={{ gestureEnabled: false }} />
       </Stack>
     </LocaleProvider>
   );
