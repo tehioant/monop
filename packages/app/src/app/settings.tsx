@@ -47,6 +47,7 @@ export default function SettingsScreen() {
           ))}
         </Panel>
         {saveError && <Text style={shared.small}>{t('settings.saveError')}</Text>}
+        <Button quiet label={t('account.title')} onPress={() => router.push('/account')} />
         <Button quiet label={t('common.back')} onPress={() => router.back()} />
       </ScrollView>
     </SafeAreaView>

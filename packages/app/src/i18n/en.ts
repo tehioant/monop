@@ -1,4 +1,10 @@
 export const en = {
+  'account.title': 'Account',
+  'account.guest': 'Playing as a guest',
+  'account.signInUnavailable': 'Account sign-in is unavailable. You can still play as a guest.',
+  'account.privacy': 'Privacy policy',
+  'account.privacyUnavailable': 'Privacy policy unavailable.',
+  'account.privacyError': 'Could not open the privacy policy. Try again.',
   'rules.title': 'Rules',
   'rules.turn': 'Your turn',
   'rules.start': 'Start with {hand} cards. At the start of a turn, draw {empty} if your hand is empty. Otherwise, on your first turn, the first player draws none, the second draws one, and so on. On later turns, normally draw {draws}.',

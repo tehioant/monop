@@ -1,6 +1,12 @@
 import type { en } from './en.ts';
 
 export const fr = {
+  'account.title': 'Compte',
+  'account.guest': 'Vous jouez en tant qu’invité',
+  'account.signInUnavailable': 'Connexion au compte indisponible. Vous pouvez toujours jouer en tant qu’invité.',
+  'account.privacy': 'Politique de confidentialité',
+  'account.privacyUnavailable': 'Politique de confidentialité indisponible.',
+  'account.privacyError': 'Impossible d’ouvrir la politique de confidentialité. Réessayez.',
   'rules.title': 'Règles',
   'rules.turn': 'Votre tour',
   'rules.start': 'Vous commencez avec {hand} cartes. Au début de votre tour, piochez {empty} cartes si votre main est vide. Sinon, au premier tour, la première personne ne pioche pas, la deuxième pioche une carte, et ainsi de suite. Aux tours suivants, piochez normalement {draws} cartes.',

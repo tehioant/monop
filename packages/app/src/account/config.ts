@@ -1,0 +1,1 @@
+export const privacyPolicyUrl = process.env.EXPO_PUBLIC_PRIVACY_POLICY_URL;
