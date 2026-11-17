@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { createGame, legalActions, type GameState } from '@atlas/engine';
+import { createBot, type Bot } from '@atlas/bots';
+import { applyAction, createGame, legalActions, viewFor, type GameState } from '@atlas/engine';
 import { Rooms, type Member, type Snapshot } from '../src/rooms.ts';
 import type { ServerMessage } from '../src/protocol.ts';
 import { roomWrites } from '../src/server.ts';
@@ -9,21 +10,22 @@ import type { Sql } from '../src/db.ts';
 const game = createGame({ players: 2, countriesToWin: 3 }, 1);
 const snapshot: Snapshot = { code: 'BCDFG', countriesToWin: 3, players: [{ account: 'a', name: 'Ada' }, { account: 'b', name: 'Bo' }], startedAt: new Date(0), stateVersion: 9, game };
 
-function prepared(state: GameState = game) {
+function prepared(state: GameState = game, bot?: Bot, players = snapshot.players) {
   const moves: number[] = [];
   const writes: Snapshot[] = [];
   const discarded: string[] = [];
   const rooms = new Rooms(() => { throw Error('no new game'); }, (view, legal) => {
     moves.push(view.viewer);
+    if (bot) return bot(view, legal);
     return legal.find(a => a.type === 'endTurn') ?? legal[0]!;
-  }, { save(s) { writes.push(s); }, finish() {}, discard(code) { discarded.push(code); } }, [{ ...snapshot, game: state }], { turnMs: 100, responseMs: 20, graceMs: 30, abandonedMs: 300 });
+  }, { save(s) { writes.push(s); }, finish() {}, discard(code) { discarded.push(code); } }, [{ ...snapshot, players, game: state }], { turnMs: 100, responseMs: 20, graceMs: 30, abandonedMs: 300 });
   const player = (account: string) => {
     const inbox: ServerMessage[] = [];
     const member: Member = { account, name: account, send: m => inbox.push(m), close() {} };
     const state = () => inbox.findLast(m => m.type === 'state')!;
     const room = () => inbox.findLast(m => m.type === 'room')!;
     rooms.resume(member);
-    return { member, state, room };
+    return { member, state, room, inbox };
   };
   return { rooms, moves, writes, discarded, player };
 }
@@ -109,6 +111,81 @@ test('a late disconnect cannot defer an advertised turn or response while anothe
     assert.equal(rooms.playing(actor), true);
     rooms.stop();
   }
+});
+
+test('both expiry and grace callbacks contain bot faults and apply a progressing legal fallback', (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout', 'Date'], now: 1000 });
+  const warnings = t.mock.method(console, 'warn', () => {});
+  for (const grace of [false, true]) {
+    const { rooms, moves, player } = prepared(game, () => { throw Error('private decision'); });
+    const ada = player('a');
+    const bo = player('b');
+    if (grace) rooms.leave(ada.member);
+    t.mock.timers.tick(grace ? 30 : 100);
+    assert.deepEqual(moves, [0]);
+    assert.equal(bo.state().stateVersion, 10);
+    assert.equal(bo.state().view.turn.player, 1);
+    rooms.stop();
+  }
+  assert.equal(warnings.mock.callCount(), 2);
+  assert.doesNotMatch(JSON.stringify(warnings.mock.calls.map(call => call.arguments)), /private/);
+});
+
+test('normal bots can complete a country by reassigning a wild; expiry and cyclic bots must progress', (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout', 'Date'], now: 1000 });
+  const state = structuredClone(game);
+  state.players[0]!.hand = [];
+  state.players[0]!.table = [
+    { country: 'italy', cities: ['wild-egypt-italy'], upgrades: [] },
+    { country: 'egypt', cities: ['cairo'], upgrades: [] },
+  ];
+  const botSeats = [{ account: null, name: 'Bot 1' }, snapshot.players[1]!];
+  const normal = prepared(state, createBot('hard', 1), botSeats);
+  const bo = normal.player('b');
+  assert.deepEqual(bo.state().view.log.find(entry => entry.type === 'reassign'),
+    { type: 'reassign', player: 0, card: 'wild-egypt-italy', country: 'egypt' });
+  assert.equal(bo.state().view.turn.player, 1);
+  normal.rooms.stop();
+
+  const triesFree = ((_view, legal) => legal.find(action => action.type === 'reassign') ?? legal.at(-1)!) satisfies Bot;
+  const timed = prepared(state, triesFree);
+  timed.player('a');
+  const observer = timed.player('b');
+  t.mock.timers.tick(100);
+  assert.deepEqual(timed.moves, [0]);
+  assert.ok(!observer.state().view.log.some(entry => entry.type === 'reassign'));
+  assert.equal(observer.state().view.turn.player, 1);
+  timed.rooms.stop();
+
+  const cyclic = prepared(state, triesFree, botSeats);
+  const human = cyclic.player('b');
+  assert.deepEqual(cyclic.moves, [0, 0]);
+  assert.equal(human.state().view.log.filter(entry => entry.type === 'reassign').length, 1);
+  assert.equal(human.state().view.turn.player, 1);
+  cyclic.rooms.stop();
+});
+
+test('a restored bot turn pauses without humans and replays the exact payment state on resume', (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout', 'Date'], now: 1000 });
+  const state = structuredClone(game);
+  state.players[0]!.hand = ['levy-1'];
+  state.players[1]!.hand = [];
+  state.players[1]!.bank = ['coin-5-1'];
+  const levy = { type: 'play', card: 'levy-1' } as const;
+  const payment = applyAction(state, 0, levy);
+  assert.equal(payment.phase.kind, 'pay');
+  const { player, moves, rooms } = prepared(state, () => levy, [{ account: null, name: 'Bot 1' }, snapshot.players[1]!]);
+  t.mock.timers.tick(40);
+  assert.deepEqual(moves, []);
+  const bo = player('b');
+  const states = bo.inbox.filter(message => message.type === 'state');
+  assert.deepEqual(states.map(message => message.stateVersion), [9, 10]);
+  const { deadline, serverTime, ...replayed } = states[1]!;
+  assert.deepEqual(replayed, { type: 'state', stateVersion: 10, view: viewFor(payment, 1), legalActions: legalActions(payment, 1) });
+  assert.deepEqual(deadline, { kind: 'response', at: 1060 });
+  assert.equal(serverTime, 1040);
+  assert.deepEqual(moves, [0]);
+  rooms.stop();
 });
 
 test('restored empty rooms do not play bots, cancel expiry on resume, and delete the snapshot after abandonment', async (t) => {

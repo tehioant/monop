@@ -196,6 +196,14 @@ test('a bot seat survives a restart, and the turn it was playing is played again
   // Back under another name: like the seats, the names of a game in progress do not change.
   const { client } = await hello({ token: ada.token, name: 'Zoe' });
   assert.deepEqual(await lobby(client), [person('Ada'), seated('Bot 1')]);
-  assert.deepEqual(await client.next('state'), state);
+  let replayed = await client.next('state');
+  while (replayed.stateVersion < state.stateVersion) {
+    const next = await client.next('state');
+    assert.equal(next.stateVersion, replayed.stateVersion + 1);
+    replayed = next;
+  }
+  const withoutClock = ({ deadline: _deadline, serverTime: _serverTime, ...packet }: State) => packet;
+  assert.deepEqual(withoutClock(replayed), withoutClock(state));
+  state = replayed;
   while (state.view.turn.player === 1) state = await step(client, state, ['pay']);
 });

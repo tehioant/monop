@@ -6,6 +6,8 @@ import {
   legalActions,
   RULES,
   viewFor,
+  type Action,
+  type CardId,
   type GameOptions,
   type GameState,
   type PlayerId,
@@ -82,6 +84,7 @@ interface Room {
   moveTimer?: ReturnType<typeof setTimeout>;
   abandonTimer?: ReturnType<typeof setTimeout>;
   expiring?: true;
+  halted?: true;
   covered: Set<Member>;
   leaving?: { member: Member; settled: Promise<void> };
 }
@@ -247,6 +250,7 @@ export class Rooms {
   intent(member: Member, stateVersion: unknown, action: unknown): void {
     const room = this.#roomOf(member);
     if (!room.game) throw new Rejection('illegal_action', 'The game has not started');
+    if (room.halted) throw new Rejection('internal', 'This game is paused.');
     if (room.leaving) throw new Rejection('stale', 'A seat change is in progress');
     if (stateVersion !== room.stateVersion) {
       throw new Rejection('stale', `The game is at state version ${room.stateVersion}`);
@@ -432,12 +436,10 @@ export class Rooms {
     delete room.moveTimer;
     const { game, deadline } = room;
     if (this.#stopped || room.leaving || !game || !deadline || game.phase.kind === 'over') return;
-    const { player } = game.phase;
     if (!this.#hasHumans(room)) return;
     const timer = setTimeout(() => {
       if (room.moveTimer !== timer || this.#byCode.get(room.code) !== room || room.game !== game) return;
-      this.#botMove(room, game, player);
-      this.#playBots(room);
+      this.#playBots(room, true);
     }, Math.max(0, deadline.at - Date.now()));
     room.moveTimer = timer;
     timer.unref();
@@ -459,21 +461,45 @@ export class Rooms {
    * Plays the bots in the room's seats, one action after the other, until the game waits on a person or is over.
    * A bot is given what a player in its seat would be given: that seat's view and legal actions.
    */
-  #playBots(room: Room): void {
-    if (this.#stopped || room.leaving || !this.#hasHumans(room)) return;
-    for (let game = room.game!; game.phase.kind !== 'over'; game = room.game!) {
-      const seat = game.phase.player;
-      const actor = room.members[seat]!;
-      if (isPerson(actor) && !room.covered.has(actor)) return;
-      this.#botMove(room, game, seat);
+  #playBots(room: Room, expired = false): void {
+    if (this.#stopped || room.halted || room.leaving || !this.#hasHumans(room)) return;
+    const movedWilds = new Set<CardId>();
+    let useFallback = false;
+    try {
+      for (let game = room.game!; game.phase.kind !== 'over'; game = room.game!) {
+        const seat = game.phase.player;
+        const actor = room.members[seat]!;
+        if (!expired && isPerson(actor) && !room.covered.has(actor)) return;
+        // At expiry the next move must progress. Otherwise allow each wild to move once between progressing moves.
+        const legal = legalActions(game, seat).filter(action =>
+          action.type !== 'reassign' || (!expired && !movedWilds.has(action.card)));
+        const fallback = legal.find(action => action.type === 'endTurn') ?? legal.find(action => action.type !== 'reassign');
+        if (!fallback) throw Error('No progressing move');
+        let action: Action = fallback;
+        if (!useFallback) {
+          try {
+            const choice = this.#bot(viewFor(game, seat), legal);
+            const allowed = legal.find(candidate => isDeepStrictEqual(candidate, choice));
+            if (!allowed) throw Error('Invalid bot move');
+            action = allowed;
+          } catch {
+            useFallback = true;
+            console.warn('[atlas:rooms] Bot decision failed; using a legal fallback.');
+          }
+        }
+        this.#advance(room, applyAction(game, seat, action));
+        if (action.type === 'reassign') movedWilds.add(action.card);
+        else movedWilds.clear();
+        expired = false;
+      }
+    } catch {
+      // If the engine cannot progress even with a legal fallback, stop this room, not the timer process.
+      room.halted = true;
+      delete room.deadline;
+      this.#scheduleMove(room);
+      console.warn('[atlas:rooms] Game paused because it could not progress.');
+      room.members.forEach((member, seat) => member.send(stateFor(room, room.game!, seat)));
     }
-  }
-
-  #botMove(room: Room, game: GameState, seat: PlayerId): void {
-    // Reassignment alone cannot advance play. The bot still chooses among all progressing legal moves.
-    const legal = legalActions(game, seat).filter(action => action.type !== 'reassign');
-    const action = this.#bot(viewFor(game, seat), legal);
-    this.#advance(room, applyAction(game, seat, action));
   }
 
   #seat(room: Room, member: Member): void {
@@ -538,7 +564,7 @@ function stateFor(room: Room, game: GameState, seat: PlayerId): ServerMessage {
     type: 'state',
     stateVersion: room.stateVersion,
     view: viewFor(game, seat),
-    legalActions: legalActions(game, seat),
+    legalActions: room.halted ? [] : legalActions(game, seat),
     ...(room.deadline && { deadline: room.deadline, serverTime: Date.now() }),
   };
 }
