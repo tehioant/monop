@@ -6,6 +6,7 @@ import { Fragment, useEffect, useRef, useState, type ComponentRef } from 'react'
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useTranslation } from '../i18n/locale.tsx';
 import type { Translate } from '../i18n/strings.ts';
+import { RulesButton } from '../rules/RulesButton.tsx';
 import { signal } from '../settings/feedback.ts';
 import { warnOnce } from '../warnOnce.ts';
 import { actionLabel, bankTotal, completeCount, groupActions, logLine, promptText, shownCards } from './actions.ts';
@@ -304,6 +305,7 @@ export function Table({ view, legal, names, onAction }: TableProps) {
         onScrollBeginDrag={() => (scrolled.current.touched = Date.now())}
         onScrollEndDrag={() => (scrolled.current.touched = Date.now())}
       >
+        <View style={styles.help}><RulesButton /></View>
         <View style={styles.row}>
           <Text style={styles.target}>{t('board.goal', { count: view.options.countriesToWin })}</Text>
           <View style={styles.piles}>
@@ -422,6 +424,7 @@ const styles = StyleSheet.create({
   // Opponents retain a reachable viewport; large own holdings and prompts scroll independently.
   scroll: { flex: 1, minHeight: '36%' },
   board: { paddingHorizontal: 12, paddingBottom: 8, gap: 8 },
+  help: { alignItems: 'flex-end' },
   own: { flexGrow: 0, flexShrink: 1, borderTopWidth: 1, borderTopColor: colors.line, backgroundColor: colors.background },
   ownContent: { paddingTop: 8 },
   row: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline', gap: 8 },

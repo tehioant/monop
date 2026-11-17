@@ -1,0 +1,86 @@
+import assert from 'node:assert/strict';
+import test from 'node:test';
+import { RULES, CARDS, createGame, viewFor } from '@atlas/engine';
+import { english, translate } from '../src/i18n/strings.ts';
+import { animated, hooks, loadComponent, native, nodes } from './componentBoundary.ts';
+
+const french = translate('fr');
+
+const src = new URL('../src/', import.meta.url).pathname;
+const button = (tree: unknown, label: string) => nodes(tree).find((node) => node.props.label === label);
+
+for (const [t, title, evidence] of [
+  [english, 'Rules', [`${RULES.handLimit} cards`, `${CARDS.length} cards`, 'No change', 'Veto', 'complete countries']],
+  [french, 'Règles', [`${RULES.handLimit} cartes`, `${CARDS.length} cartes`, 'Pas de monnaie', 'Véto', 'pays complets']],
+] as const) {
+  test(`${title} opens over a shared table and closes without sending an action`, () => {
+    const h = hooks();
+    const mocks = {
+      react: h.react, 'react-native': { ...native, Modal: 'Modal' }, 'react-native-reanimated': animated,
+      'react-native-safe-area-context': { SafeAreaView: 'SafeAreaView' },
+      '../i18n/locale.tsx': { useTranslation: () => t },
+      '../settings/feedback.ts': { signal: () => assert.fail('opened rules sent feedback') },
+    };
+    const { Table } = loadComponent(`${src}table/Table.tsx`, mocks);
+    const game = createGame({ players: 2, countriesToWin: 3 }, 42);
+    const view = viewFor(game, 0);
+    const props = { view, legal: [], names: ['You', 'Bot'], onAction: () => assert.fail('rules sent a game action') };
+    const table = () => h.render(() => Table(props));
+    const findRules = (tree: unknown) => nodes(tree).find((node) => node.type?.name === 'RulesButton');
+    const rules = findRules(table());
+    assert.ok(rules, 'shared table exposes the rules');
+    const trigger = hooks();
+    // The rules child is rendered independently: no navigation or game-effect execution.
+    const { RulesButton } = loadComponent(`${src}rules/RulesButton.tsx`, { ...mocks, react: trigger.react });
+    const render = () => trigger.render(RulesButton);
+    button(render(), title).props.onPress();
+    const modal = nodes(render()).find((node) => node.type?.name === 'RulesModal');
+    assert.ok(modal);
+    const sheet = modal.type(modal.props);
+    const copy = nodes(sheet).flatMap((node) => typeof node.props.children === 'string' ? [node.props.children] : []).join('\n');
+    for (const expected of evidence) assert.ok(copy.includes(expected), expected);
+    assert.equal(sheet.type, 'Modal');
+    sheet.props.onRequestClose();
+    assert.ok(!nodes(render()).some((node) => node.type?.name === 'RulesModal'));
+    // With no legal move, a hand card still opens its real detail panel.
+    const card = nodes(table()).find((node) => node.type?.name === 'CardView' && view.hand.includes(node.props.id));
+    assert.ok(card);
+    card.props.onPress();
+    assert.ok(nodes(table()).some((node) => node.type?.name === 'CardText' && node.props.card === card.props.id));
+  });
+}
+
+test('Home lets a saved player skip once, replay, and resume without writing the solo save', () => {
+  const saved = createGame({ players: 2, countriesToWin: 3 }, 17);
+  const values = new Map<string, string>();
+  const writes: string[] = [];
+  const paths: string[] = [];
+  const h = hooks();
+  const loadHome = (react: typeof h.react) => loadComponent(`${src}app/index.tsx`, {
+    react, 'react-native': native, 'react-native-reanimated': animated,
+    'react-native-safe-area-context': { SafeAreaView: 'SafeAreaView' },
+    'expo-router': { router: { push: (path: string) => paths.push(path) } },
+    'expo-secure-store': {
+      getItem: (key: string) => values.get(key) ?? null,
+      setItem: (key: string, value: string) => { writes.push(key); values.set(key, value); },
+    },
+    '../i18n/locale.tsx': { useTranslation: () => english },
+    '../solo/store.ts': { useSolo: (pick: Function) => pick({ game: { state: saved }, abandon: () => assert.fail('abandoned solo') }) },
+  }).default;
+  const home = loadHome(h.react);
+  const render = () => h.render(home);
+  assert.ok(nodes(render()).some((node) => node.type?.name === 'RulesButton'));
+  const skip = button(render(), 'Skip tutorial');
+  assert.ok(skip, 'first launch offers an explicit skip');
+  skip.props.onPress();
+  assert.ok(!button(render(), 'Skip tutorial'));
+  assert.equal(writes.length, 1);
+  assert.deepEqual(paths, []);
+  const restarted = hooks();
+  const afterRestart = restarted.render(loadHome(restarted.react));
+  assert.ok(!button(afterRestart, 'Skip tutorial'));
+  button(afterRestart, 'Play tutorial').props.onPress();
+  button(afterRestart, english('home.resume')).props.onPress();
+  assert.deepEqual(paths, ['/tutorial', '/solo/table']);
+  assert.equal(writes.length, 1);
+});

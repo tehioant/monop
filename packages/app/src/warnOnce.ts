@@ -1,4 +1,4 @@
-type Scope = 'flights' | 'audio' | 'haptics' | 'settings-save' | 'locale';
+type Scope = 'flights' | 'audio' | 'haptics' | 'settings-save' | 'locale' | 'tutorial-offer' | 'tutorial';
 const warned = new Set<Scope>();
 
 /** One sanitized developer warning per capability per app session. Never disrupt gameplay. */
