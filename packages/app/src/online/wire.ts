@@ -86,6 +86,8 @@ function validLog(value: unknown, players: number): boolean {
 
 export function validState(value: unknown): boolean {
   if (!record(value) || !count(value.stateVersion) || !record(value.view)) return false;
+  if (value.paused !== undefined && (value.paused !== true || value.deadline !== undefined || value.serverTime !== undefined ||
+    !Array.isArray(value.legalActions) || value.legalActions.length !== 0)) return false;
   if (value.deadline !== undefined || value.serverTime !== undefined) {
     if (!record(value.deadline) || !count(value.deadline.at) || !count(value.serverTime) ||
       (value.deadline.kind !== 'turn' && value.deadline.kind !== 'response')) return false;

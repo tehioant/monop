@@ -51,8 +51,10 @@ type LeaveProps = { onLeave: () => void; leaving: boolean; leaveFailed: boolean 
 
 function Playing({ game, room, reconnecting, onAction, onLeave, leaving, leaveFailed }: LeaveProps & { game: Game; room: Room; reconnecting: boolean; onAction: (action: Action) => void }) {
   const names = room.players.map((player) => player.name);
+  const paused = game.paused === true;
+  const localExit = reconnecting || paused;
   // The server's states can come in a burst (a bot's whole turn): the table shows them one at a time.
-  const { view, legal, settled } = usePaced(game.view, game.legalActions, game.deadline?.kind === 'response');
+  const { view, legal, settled } = usePaced(game.view, game.legalActions, paused || game.deadline?.kind === 'response');
   const over = view.phase.kind === 'over' && settled;
   return (
     <SafeAreaView style={styles.game}>
@@ -61,15 +63,15 @@ function Playing({ game, room, reconnecting, onAction, onLeave, leaving, leaveFa
           {reconnecting && <Reconnecting />}
           <Presence room={room} />
           <Button quiet label="Settings" onPress={() => router.push('/settings')} />
-          {reconnecting
-            ? <Button quiet label="Back" onPress={home} />
-            : <Button quiet label={leaving ? 'Leaving…' : 'Leave game'} disabled={leaving} onPress={onLeave} />}
+          {localExit && <Button quiet label="Back" onPress={home} />}
+          {!reconnecting && <Button quiet label={leaving ? 'Leaving…' : 'Leave game'} disabled={leaving} onPress={onLeave} />}
         </View>
       )}
-      {!reconnecting && game.deadline && <Countdown deadline={game.deadline} />}
-      {reconnecting && leaving && <Text style={styles.error}>Your leave request may still complete. Going back does not cancel it.</Text>}
+      {!localExit && game.deadline && <Countdown deadline={game.deadline} />}
+      {paused && <Text style={styles.error}>This game is paused.</Text>}
+      {localExit && leaving && <Text style={styles.error}>Your leave request may still complete. Going back does not cancel it.</Text>}
       {leaveFailed && <Text style={styles.error}>Could not leave the room. Try again.</Text>}
-      {over ? <Results view={view} names={names} /> : <Table view={view} legal={reconnecting || leaving ? [] : legal} names={names} onAction={onAction} />}
+      {over ? <Results view={view} names={names} /> : <Table view={view} legal={localExit || leaving ? [] : legal} names={names} onAction={onAction} />}
       {over && (
         <View style={styles.home}>
           <Button label="Home" onPress={home} />

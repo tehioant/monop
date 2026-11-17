@@ -588,6 +588,7 @@ function stateFor(room: Room, game: GameState, seat: PlayerId): ServerMessage {
     stateVersion: room.stateVersion,
     view: viewFor(game, seat),
     legalActions: room.halted ? [] : legalActions(game, seat),
+    ...(room.halted && { paused: room.halted }),
     ...(room.deadline && { deadline: room.deadline, serverTime: Date.now() }),
   };
 }

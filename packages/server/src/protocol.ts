@@ -85,7 +85,7 @@ export type ServerMessage =
    * at the start of the turn in progress, so the `state` that follows a `welcome` may have a lower `stateVersion`
    * than the last one received: it replaces whatever the client knew.
    */
-  | { type: 'state'; stateVersion: number; view: PlayerView; legalActions: Action[]; deadline?: Deadline; serverTime?: number }
+  | { type: 'state'; stateVersion: number; view: PlayerView; legalActions: Action[]; deadline?: Deadline; serverTime?: number; paused?: true }
   /** The client's last message was refused and changed nothing. */
   | { type: 'error'; code: ErrorCode; message: string };
 

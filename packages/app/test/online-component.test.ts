@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { applyAction, createGame, legalActions, viewFor, type GameState } from '@atlas/engine';
-import { PROTOCOL_VERSION } from '@atlas/server/protocol';
+import { PROTOCOL_VERSION, type ServerMessage } from '@atlas/server/protocol';
+import { Rooms } from '../../server/src/rooms.ts';
 import { offline, decode, disconnected, receive } from '../src/online/session.ts';
 import { hooks, loadComponent, native, nodes } from './componentBoundary.ts';
 const state = createGame({ players: 2, countriesToWin: 3 }, 1);
@@ -166,4 +167,70 @@ test('a timed response bypasses queued animation without a delayed packet extend
   active = clock.react;
   assert.match(JSON.stringify(clock.render(() => countdown.type(countdown.props))), /Response.*0s/);
   screen.unmount(); table.unmount(); clock.unmount();
+});
+
+test('a paused room visibly disables play and allows local Back across resync and reconnect', (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout', 'Date'], now: 1000 });
+  t.mock.method(console, 'warn', () => {});
+  const runtime = hooks();
+  let session = offline('Bo', 'issued');
+  const send = (message: ServerMessage) => {
+    session = receive(session, decode(JSON.stringify({ v: PROTOCOL_VERSION, ...message }))).session;
+  };
+  const invalid: GameState = { ...state, phase: { kind: 'pay', player: 1, receiver: 0, owed: 1, amount: 1, queue: [] } };
+  const rooms = new Rooms(() => state, () => { throw Error('unexpected bot'); }, { save() {}, finish() {}, discard() {} }, [{
+    code: room.code, countriesToWin: 3, startedAt: new Date(0), stateVersion: 9, game: invalid,
+    players: [{ account: 'a', name: 'Ada' }, { account: 'b', name: 'Bo' }],
+  }], { turnMs: 100, responseMs: 20, graceMs: 30, abandonedMs: 300 });
+  t.after(() => { runtime.unmount(); rooms.stop(); });
+  const bo = { account: 'b', name: 'Bo', send, close() {} };
+  rooms.resume(bo);
+
+  let homes = 0;
+  const Online = loadComponent(new URL('../src/app/online.tsx', import.meta.url).pathname, {
+    react: runtime.react, '../table/parts.tsx': { Button() {}, Panel() {}, shared: {} }, '../table/Choice.tsx': { Choice() {} },
+    'react-native': native, 'react-native-safe-area-context': { SafeAreaView: 'SafeAreaView' },
+    'expo-router': { router: { dismissTo(path: string) { assert.equal(path, '/'); homes++; } } },
+    '../online/store.ts': { useOnline: () => ({ session, resume() {}, leave() {}, leaveRoom() { assert.fail('local Back cannot release the seat'); } }) },
+    '../table/usePaced.ts': { usePaced: (view: unknown, legal: unknown) => ({ view, legal, settled: true }) },
+    '../table/Table.tsx': { Table() {} }, '../table/Results.tsx': { Results() {} },
+  }).default;
+  const draw = () => {
+    const playing: any = runtime.render(Online);
+    return nodes(runtime.render(() => playing.type(playing.props)));
+  };
+  const hasPauseNotice = (tree: ReturnType<typeof draw>) => tree.some(n => n.props?.children === 'This game is paused.');
+  const pausedTree = () => {
+    const tree = draw();
+    assert.ok(hasPauseNotice(tree), 'the current room state visibly explains why play stopped');
+    assert.deepEqual(tree.find(n => n.type?.name === 'Table').props.legal, []);
+    assert.ok(!tree.some(n => n.type?.name === 'Countdown'));
+    return tree;
+  };
+  assert.ok(draw().some(n => n.type?.name === 'Countdown'));
+  t.mock.timers.tick(20);
+  const back = pausedTree().find(n => n.props?.label === 'Back');
+  assert.ok(back && !back.props.disabled);
+  back.props.onPress();
+  assert.equal(homes, 1);
+
+  rooms.resync(bo);
+  pausedTree();
+  rooms.leave(bo);
+  session = disconnected(session);
+  send({ type: 'welcome', name: 'Bo', token: 'issued', resumed: true });
+  rooms.resume({ ...bo });
+  assert.equal(session.synced, true);
+  pausedTree();
+
+  const live: GameState = { ...state, phase: { kind: 'play', player: 1 }, turn: { player: 1, played: 0 } };
+  const clean = { ...game, view: viewFor(live, 1), legalActions: legalActions(live, 1) };
+  assert.ok(clean.legalActions.length > 0);
+  for (const malformed of [{ ...clean, paused: 'private error' }, { ...clean, paused: true }]) {
+    assert.throws(() => decode(JSON.stringify({ v: PROTOCOL_VERSION, ...malformed })), /Invalid/);
+  }
+  session = receive(session, decode(JSON.stringify({ v: PROTOCOL_VERSION, ...clean }))).session;
+  const active = draw();
+  assert.equal(hasPauseNotice(active), false);
+  assert.deepEqual(active.find(n => n.type?.name === 'Table').props.legal, clean.legalActions);
 });
