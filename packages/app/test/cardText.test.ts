@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { ACTIONS, CARDS, COUNTRIES, RULES } from '@atlas/engine';
-import { english } from '../src/i18n/strings.ts';
+import { english, translate } from '../src/i18n/strings.ts';
 import { countryName, countryPerk } from '../src/table/actions.ts';
 import { cardText } from '../src/table/cardText.ts';
 
@@ -50,6 +50,12 @@ test('a wild city lists the countries it can be laid as', () => {
     const expected = any ? 'any country' : card.countries.map((id) => countryName(id, english)).join(' or ');
     assert.ok(text(card.id).startsWith(`A wild city: lay it as a city of ${expected}.`), card.id);
   }
+});
+
+test('wild-city details limit free reassignment to the play phase in both languages', () => {
+  const id = 'wild-egypt-italy';
+  assert.match(text(id), /During the play phase of your turn.*without using a play/);
+  assert.match(cardText(id, translate('fr')).lines.join(' '), /Pendant la phase de jeu de votre tour.*sans dépenser d’action/);
 });
 
 test('a card the table does not know has a name and no text', () => {

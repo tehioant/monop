@@ -10,8 +10,18 @@ const src = new URL('../src/', import.meta.url).pathname;
 const button = (tree: unknown, label: string) => nodes(tree).find((node) => node.props.label === label);
 
 for (const [t, title, evidence] of [
-  [english, 'Rules', [`${RULES.handLimit} cards`, `${CARDS.length} cards`, 'No change', 'Veto', 'complete countries']],
-  [french, 'Règles', [`${RULES.handLimit} cartes`, `${CARDS.length} cartes`, 'Pas de monnaie', 'Véto', 'pays complets']],
+  [english, 'Rules', [
+    `${RULES.handLimit} cards`, `${CARDS.length} cards`, 'No change', 'Veto', 'complete countries',
+    `draw ${RULES.drawsOnEmptyHand} if your hand is empty. Otherwise, on your first turn`,
+    'During the play phase of your turn', 'separately for each target in turn order',
+    `draw ${RULES.drawsWithPerk} cards at the start of later turns if your hand is not empty`,
+  ]],
+  [french, 'Règles', [
+    `${RULES.handLimit} cartes`, `${CARDS.length} cartes`, 'Pas de monnaie', 'Véto', 'pays complets',
+    `piochez ${RULES.drawsOnEmptyHand} cartes si votre main est vide. Sinon, au premier tour`,
+    'Pendant la phase de jeu de votre tour', 'séparément pour chaque cible, dans l’ordre du tour',
+    `piochez ${RULES.drawsWithPerk} cartes au début de vos tours suivants si votre main n’est pas vide`,
+  ]],
 ] as const) {
   test(`${title} opens over a shared table and closes without sending an action`, () => {
     const h = hooks();
