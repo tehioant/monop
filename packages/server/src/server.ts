@@ -7,6 +7,7 @@ import Fastify from 'fastify';
 import type { WebSocket } from 'ws';
 import {
   createAccount,
+  discardSnapshot,
   findAccount,
   finishGame,
   loadSnapshots,
@@ -59,6 +60,7 @@ export async function startServer(options: ServerOptions): Promise<Server> {
     {
       save: (snapshot) => write(() => saveSnapshot(sql, snapshot)),
       finish: (code, summary) => write(() => finishGame(sql, code, summary)),
+      discard: (code) => write(() => discardSnapshot(sql, code)),
     },
     await loadSnapshots(sql),
     options.timing,

@@ -55,6 +55,8 @@ export interface RoomStore {
   save(snapshot: Snapshot): void;
   /** The game of room `code` is over: keeps its summary instead of its snapshot. */
   finish(code: string, summary: Summary): void;
+  /** Removes an abandoned snapshot without recording a completed game. */
+  discard(code: string): void;
 }
 
 /** A refused client message. Refusing never changes a room. */
@@ -78,6 +80,8 @@ interface Room {
   turnEndsAt?: number;
   deadline?: Deadline;
   moveTimer?: ReturnType<typeof setTimeout>;
+  abandonTimer?: ReturnType<typeof setTimeout>;
+  covered: Set<Member>;
 }
 
 export interface RoomTiming {
@@ -103,6 +107,8 @@ export class Rooms {
   #bot: Bot;
   #store: RoomStore;
   #timing: RoomTiming;
+  #stopped = false;
+  #grace = new Map<Member, ReturnType<typeof setTimeout>>();
   #byCode = new Map<string, Room>();
   /** The room of every connected member. A person whose seat is not in it is disconnected. */
   #byMember = new Map<Member, Room>();
@@ -124,11 +130,11 @@ export class Rooms {
     this.#timing = timing;
     for (const { code, countriesToWin, players, startedAt, stateVersion, game } of snapshots) {
       const members = players.map(absent);
-      const room = { code, countriesToWin, members, game, stateVersion, startedAt: startedAt.getTime() };
+      const room: Room = { code, countriesToWin, members, game, stateVersion, startedAt: startedAt.getTime(), covered: new Set() };
       this.#byCode.set(code, room);
-      // A game saved at the start of a bot's turn has nobody else to move it on.
       this.#setDeadline(room, game);
-      this.#playBots(room);
+      if (!isOver(game)) members.filter(isPerson).forEach(member => this.#startGrace(room, member));
+      this.#refreshPresence(room);
     }
   }
 
@@ -153,11 +159,14 @@ export class Rooms {
       previous.close();
     }
     // Like the seats, the names of a game are final once it has started.
+    this.#clearGrace(previous);
+    room.covered.delete(previous);
     member.name = previous.name;
     room.members[seat] = member;
     this.#byMember.set(member, room);
     this.#sendRoom(room);
     member.send(stateFor(room, room.game!, seat));
+    this.#refreshPresence(room);
   }
 
   /** The member asks for what they should already have: their room and, once the game has started, its state. */
@@ -176,7 +185,7 @@ export class Rooms {
     let code: string;
     do code = Array.from({ length: CODE_LENGTH }, () => CODE_LETTERS[randomInt(CODE_LETTERS.length)]).join('');
     while (this.#byCode.has(code));
-    const room: Room = { code, countriesToWin, members: [], stateVersion: 0, startedAt: 0 };
+    const room: Room = { code, countriesToWin, members: [], stateVersion: 0, startedAt: 0, covered: new Set() };
     this.#byCode.set(code, room);
     this.#seat(room, member);
   }
@@ -257,9 +266,56 @@ export class Rooms {
       const host = room.members.findIndex(isPerson);
       if (host > 0) room.members.unshift(...room.members.splice(host, 1));
     }
+    if (room.game && !isOver(room.game)) this.#startGrace(room, member);
     this.#sendRoom(room);
-    const inProgress = room.game && !isOver(room.game);
-    if (!inProgress && !room.members.some((other) => this.#byMember.has(other))) this.#byCode.delete(room.code);
+    this.#refreshPresence(room);
+  }
+
+  #hasHumans(room: Room): boolean {
+    return room.members.some(member => this.#byMember.has(member));
+  }
+
+  #clearGrace(member: Member): void {
+    clearTimeout(this.#grace.get(member));
+    this.#grace.delete(member);
+  }
+
+  #startGrace(room: Room, member: Member): void {
+    if (this.#stopped) return;
+    const timer = setTimeout(() => {
+      if (this.#grace.get(member) !== timer) return;
+      this.#grace.delete(member);
+      if (!room.game || isOver(room.game)) return;
+      room.covered.add(member);
+      this.#sendRoom(room);
+      this.#refreshPresence(room);
+    }, this.#timing.graceMs);
+    this.#grace.set(member, timer);
+    timer.unref();
+  }
+
+  #refreshPresence(room: Room): void {
+    if (this.#stopped) return;
+    if (this.#hasHumans(room)) {
+      clearTimeout(room.abandonTimer);
+      delete room.abandonTimer;
+      if (room.game) this.#playBots(room);
+      this.#scheduleMove(room);
+      return;
+    }
+    this.#scheduleMove(room); // Pause play while nobody is connected.
+    if (!room.game || isOver(room.game)) {
+      this.#byCode.delete(room.code);
+    } else if (!room.abandonTimer) {
+      const timer = setTimeout(() => {
+        if (room.abandonTimer !== timer || this.#byCode.get(room.code) !== room) return;
+        room.members.forEach(member => this.#clearGrace(member));
+        this.#store.discard(room.code);
+        this.#byCode.delete(room.code);
+      }, this.#timing.abandonedMs);
+      room.abandonTimer = timer;
+      timer.unref();
+    }
   }
 
   /**
@@ -270,6 +326,7 @@ export class Rooms {
     const turnPassed = room.game?.turn.player !== game.turn.player;
     this.#setDeadline(room, game, room.game);
     room.game = game;
+    this.#scheduleMove(room);
     room.stateVersion++;
     room.members.forEach((member, seat) => member.send(stateFor(room, game, seat)));
     if (!turnPassed && !isOver(game)) return;
@@ -277,6 +334,7 @@ export class Rooms {
     const { code, countriesToWin, stateVersion } = room;
     const players = room.members.map(({ account, name }) => ({ account, name }));
     if (game.phase.kind === 'over') {
+      room.members.forEach(member => this.#clearGrace(member));
       const durationSeconds = Math.round((Date.now() - room.startedAt) / 1000);
       this.#store.finish(code, { players, countriesToWin, winner: game.phase.winner, durationSeconds });
     } else {
@@ -285,7 +343,6 @@ export class Rooms {
   }
 
   #setDeadline(room: Room, game: GameState, previous?: GameState): void {
-    clearTimeout(room.moveTimer);
     const { phase } = game;
     if (phase.kind === 'over') {
       delete room.deadline;
@@ -301,18 +358,34 @@ export class Rooms {
     } else {
       room.deadline = { kind: 'turn', at: room.turnEndsAt! };
     }
+  }
+
+  #scheduleMove(room: Room): void {
+    clearTimeout(room.moveTimer);
+    delete room.moveTimer;
+    const { game, deadline } = room;
+    if (this.#stopped || !game || !deadline || game.phase.kind === 'over') return;
+    const { player } = game.phase;
+    if (!this.#byMember.has(room.members[player]!)) return;
     const timer = setTimeout(() => {
       if (room.moveTimer !== timer || this.#byCode.get(room.code) !== room || room.game !== game) return;
-      this.#botMove(room, game, phase.player);
+      this.#botMove(room, game, player);
       this.#playBots(room);
-    }, Math.max(0, room.deadline.at - now));
+    }, Math.max(0, deadline.at - Date.now()));
     room.moveTimer = timer;
     timer.unref();
   }
 
   /** Cancels pending clock work before the server closes its connections and store. */
   stop(): void {
-    for (const room of this.#byCode.values()) clearTimeout(room.moveTimer);
+    this.#stopped = true;
+    for (const room of this.#byCode.values()) {
+      clearTimeout(room.moveTimer);
+      clearTimeout(room.abandonTimer);
+      delete room.moveTimer;
+      delete room.abandonTimer;
+    }
+    for (const member of this.#grace.keys()) this.#clearGrace(member);
   }
 
   /**
@@ -320,9 +393,11 @@ export class Rooms {
    * A bot is given what a player in its seat would be given: that seat's view and legal actions.
    */
   #playBots(room: Room): void {
+    if (this.#stopped || !this.#hasHumans(room)) return;
     for (let game = room.game!; game.phase.kind !== 'over'; game = room.game!) {
       const seat = game.phase.player;
-      if (isPerson(room.members[seat]!)) return;
+      const actor = room.members[seat]!;
+      if (isPerson(actor) && !room.covered.has(actor)) return;
       this.#botMove(room, game, seat);
     }
   }
@@ -358,7 +433,7 @@ export class Rooms {
     const players = room.members.map((member): RoomPlayer => ({
       name: member.name,
       bot: !isPerson(member),
-      status: !isPerson(member) || this.#byMember.has(member) ? 'connected' : 'disconnected',
+      status: room.covered.has(member) ? 'bot-replaced' : !isPerson(member) || this.#byMember.has(member) ? 'connected' : 'disconnected',
     }));
     return { type: 'room', code: room.code, countriesToWin: room.countriesToWin, players, you };
   }

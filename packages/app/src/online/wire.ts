@@ -19,7 +19,7 @@ export function validRoom(value: unknown): boolean {
     value.players.length >= 1 && value.players.length <= Math.max(...RULES.playerCounts) &&
     seat(value.you, value.players.length) && value.players.every(player => record(player) &&
       typeof player.name === 'string' && typeof player.bot === 'boolean' &&
-      (player.status === 'connected' || player.status === 'disconnected'));
+      (player.status === 'connected' || player.status === 'disconnected' || player.status === 'bot-replaced'));
 }
 
 function validAction(value: unknown, players: number): boolean {

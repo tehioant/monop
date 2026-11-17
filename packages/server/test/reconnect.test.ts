@@ -58,7 +58,7 @@ test('a player who loses the connection keeps the seat, is seen disconnected, an
   const back = await hello({ token });
   assert.equal(back.welcome.resumed, true);
   assert.deepEqual(await back.client.next('room'), room);
-  assert.deepEqual(await back.client.next('state'), {
+  assert.partialDeepStrictEqual(await back.client.next('state'), {
     v,
     type: 'state',
     stateVersion: stateVersion + 1,

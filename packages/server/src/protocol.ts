@@ -11,7 +11,8 @@ import type { Action, PlayerId, PlayerView } from '@atlas/engine';
  */
 // Version 2 requires welcome.resumed and per-seat status, and supports resync.
 // A v2 client cannot safely recover against v1 (which rejects resync).
-export const PROTOCOL_VERSION = 2;
+// Older clients reject the new seat status, so both peers must update.
+export const PROTOCOL_VERSION = 3;
 
 /**
  * A client sends something, a `ping` if nothing else, at least this often. The server closes a connection it has
@@ -88,7 +89,7 @@ export interface RoomPlayer {
   name: string;
   bot: boolean;
   /** Whether the player's connection is there. A bot is always `connected`; so is everyone in a lobby. */
-  status: 'connected' | 'disconnected';
+  status: 'connected' | 'disconnected' | 'bot-replaced';
 }
 
 export type ErrorCode =

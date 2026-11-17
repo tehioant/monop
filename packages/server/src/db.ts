@@ -92,6 +92,10 @@ export async function finishGame(sql: Sql, code: string, summary: Summary): Prom
   });
 }
 
+export async function discardSnapshot(sql: Sql, code: string): Promise<void> {
+  await sql`delete from room_snapshots where code = ${code}`;
+}
+
 function hashOf(token: string): string {
   return hash('sha256', token);
 }

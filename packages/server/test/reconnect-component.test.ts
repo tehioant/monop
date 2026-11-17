@@ -9,7 +9,7 @@ import { loadComponent } from '../../app/test/componentBoundary.ts';
 const game = createGame({ players: 2, countriesToWin: 3 }, 1);
 const snapshot: Snapshot = { code: 'BCDFG', countriesToWin: 3, players: [{ account: 'a', name: 'Ada' }, { account: 'b', name: 'Bo' }], startedAt: new Date(0), stateVersion: 9, game };
 function prepared() {
-  const rooms = new Rooms(() => { throw Error('no new game'); }, () => { throw Error('no bots'); }, { save() { throw Error('no write'); }, finish() { throw Error('no finish'); } }, [snapshot]);
+  const rooms = new Rooms(() => { throw Error('no new game'); }, () => { throw Error('no bots'); }, { save() { throw Error('no write'); }, finish() { throw Error('no finish'); }, discard() { throw Error('no discard'); } }, [snapshot]);
   const member = (account: string) => {
     const messages: ServerMessage[] = []; let closed = false;
     const member: Member = { account, name: 'changed', send: m => { messages.push(m); }, close() { closed = true; } };

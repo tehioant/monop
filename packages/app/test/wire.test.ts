@@ -60,7 +60,7 @@ for (const phase of [
 test('wire accepts actual Rooms room and private state output without advancing a game', () => {
   const game = base();
   const rooms = new Rooms(() => { throw Error('no start'); }, () => { throw Error('no bot turn'); },
-    { save() { throw Error('no save'); }, finish() { throw Error('no finish'); } },
+    { save() { throw Error('no save'); }, finish() { throw Error('no finish'); }, discard() { throw Error('no discard'); } },
     [{ code: 'BCDFG', countriesToWin: 3, players: [{ account: 'a', name: 'Ada' }, { account: null, name: 'Bot' }], startedAt: new Date(0), stateVersion: 1, game }]);
   const messages: ServerMessage[] = [];
   rooms.resume({ account: 'a', name: 'Ada', send: m => messages.push(m), close() {} });
@@ -93,15 +93,14 @@ test('wire accepts known action and log payloads with nested table collections',
   ] } };
   assert.deepEqual(decode(JSON.stringify(full)), full);
 });
-test('wire preserves v2 and cross-version unsupported-version refusal', () => {
-  assert.equal(v, 2);
+test('wire refuses the v2 predecessor and preserves its update error', () => {
+  assert.equal(v, 3);
   const refusal = { v: v - 1, type: 'error', code: 'unsupported_version', message: 'Update required' };
   assert.deepEqual(decode(JSON.stringify(refusal)), refusal);
   assert.deepEqual(decode(JSON.stringify({ v: v - 1, type: 'state' })), { type: 'error', code: 'unsupported_version', message: '' });
 });
-test('wire keeps protocol v2 and cross-version refusal shape', () => {
-  assert.equal(v, 2);
-  for (const version of [1, 3]) {
+test('wire keeps older and newer cross-version refusal shapes', () => {
+  for (const version of [1, v + 1]) {
     const refusal = { v: version, type: 'error', code: 'unsupported_version', message: 'Update' };
     assert.deepEqual(decode(JSON.stringify(refusal)), refusal);
     assert.equal((decode(JSON.stringify({ v: version, type: 'state' })) as any).code, 'unsupported_version');
