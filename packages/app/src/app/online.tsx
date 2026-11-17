@@ -22,7 +22,7 @@ const MAX_PLAYERS = Math.max(...RULES.playerCounts);
 const home = () => router.dismissTo('/');
 
 export default function Online() {
-  const { session, setName, resume, createRoom, joinRoom, addBot, removePlayer, startGame, play, leave } = useOnline();
+  const { session, setName, resume, createRoom, joinRoom, addBot, removePlayer, startGame, play, leave, leaveRoom } = useOnline();
   const { room, game } = session;
   const reconnecting = session.lost !== null;
 
@@ -32,19 +32,24 @@ export default function Online() {
     resume();
     return leave;
   }, [resume, leave]);
+  useEffect(() => { if (session.left) home(); }, [session.left]);
+
+  const leaveProps = { onLeave: leaveRoom, leaving: !!session.leaving, leaveFailed: session.error === 'leave_failed' };
 
   if (session.error === 'unsupported_version') return <UpdateNeeded />;
   if (!room) return <Entry session={session} onName={setName} onCreate={createRoom} onJoin={joinRoom} />;
   if (!game) {
     return (
-      <Lobby room={room} reconnecting={reconnecting} onAddBot={addBot} onRemove={removePlayer} onStart={startGame} />
+      <Lobby room={room} reconnecting={reconnecting} onAddBot={addBot} onRemove={removePlayer} onStart={startGame} {...leaveProps} />
     );
   }
 
-  return <Playing game={game} room={room} reconnecting={reconnecting || !session.synced} onAction={play} />;
+  return <Playing game={game} room={room} reconnecting={reconnecting || !session.synced} onAction={play} {...leaveProps} />;
 }
 
-function Playing({ game, room, reconnecting, onAction }: { game: Game; room: Room; reconnecting: boolean; onAction: (action: Action) => void }) {
+type LeaveProps = { onLeave: () => void; leaving: boolean; leaveFailed: boolean };
+
+function Playing({ game, room, reconnecting, onAction, onLeave, leaving, leaveFailed }: LeaveProps & { game: Game; room: Room; reconnecting: boolean; onAction: (action: Action) => void }) {
   const names = room.players.map((player) => player.name);
   // The server's states can come in a burst (a bot's whole turn): the table shows them one at a time.
   const { view, legal, settled } = usePaced(game.view, game.legalActions);
@@ -56,10 +61,12 @@ function Playing({ game, room, reconnecting, onAction }: { game: Game; room: Roo
           {reconnecting && <Reconnecting />}
           <Presence room={room} />
           <Button quiet label="Settings" onPress={() => router.push('/settings')} />
-          <Button quiet label="Quit" onPress={home} />
+          <Button quiet label={leaving ? 'Leaving…' : 'Leave game'} disabled={reconnecting || leaving} onPress={onLeave} />
         </View>
       )}
-      {over ? <Results view={view} names={names} /> : <Table view={view} legal={reconnecting ? [] : legal} names={names} onAction={onAction} />}
+      {!reconnecting && game.deadline && <Countdown deadline={game.deadline} clockOffset={game.clockOffset ?? 0} />}
+      {leaveFailed && <Text style={styles.error}>Could not leave the room. Try again.</Text>}
+      {over ? <Results view={view} names={names} /> : <Table view={view} legal={reconnecting || leaving ? [] : legal} names={names} onAction={onAction} />}
       {over && (
         <View style={styles.home}>
           <Button label="Home" onPress={home} />
@@ -67,6 +74,16 @@ function Playing({ game, room, reconnecting, onAction }: { game: Game; room: Roo
       )}
     </SafeAreaView>
   );
+}
+
+function Countdown({ deadline, clockOffset }: { deadline: NonNullable<Game['deadline']>; clockOffset: number }) {
+  const [, refresh] = useState(0);
+  useEffect(() => {
+    const tick = setInterval(() => refresh(Date.now()), 250);
+    return () => clearInterval(tick);
+  }, []);
+  const seconds = Math.max(0, Math.ceil((deadline.at - Date.now() - clockOffset) / 1000));
+  return <Text style={shared.small}>{`${deadline.kind === 'response' ? 'Response' : 'Turn'}: ${seconds}s`}</Text>;
 }
 
 /** Why the player is back on the form, in words. */
@@ -116,11 +133,11 @@ function Presence({ room }: { room: Room }) {
       {room.players.map((player, seat) =>
         player.status === 'connected' ? (
           <Text key={seat} style={shared.small}>
-            <Text style={styles.here}>●</Text> {player.name}
+            <Text style={styles.here}>●</Text> {player.name}{player.bot ? ' (Bot)' : ''}
           </Text>
         ) : (
           <Text key={seat} style={[shared.small, styles.away]}>
-            ○ {player.name} (offline)
+            ○ {player.name} {player.status === 'bot-replaced' ? '(Bot covering)' : '(offline)'}
           </Text>
         ),
       )}
@@ -180,14 +197,14 @@ function Entry(props: {
   );
 }
 
-function Lobby(props: {
+function Lobby(props: LeaveProps & {
   room: Room;
   reconnecting: boolean;
   onAddBot: () => void;
   onRemove: (seat: number) => void;
   onStart: () => void;
 }) {
-  const { room, reconnecting, onAddBot, onRemove, onStart } = props;
+  const { room, reconnecting, onAddBot, onRemove, onStart, onLeave, leaving, leaveFailed } = props;
   const host = room.you === 0;
   return (
     <SafeAreaView style={styles.screen}>
@@ -222,7 +239,8 @@ function Lobby(props: {
           {host ? 'Waiting for another player to join…' : 'Waiting for the host to start the game…'}
         </Text>
       )}
-      <Button quiet label="Leave" onPress={home} />
+      {leaveFailed && <Text style={styles.error}>Could not leave the room. Try again.</Text>}
+      <Button quiet label={leaving ? 'Leaving…' : 'Leave'} disabled={reconnecting || leaving} onPress={onLeave} />
     </SafeAreaView>
   );
 }

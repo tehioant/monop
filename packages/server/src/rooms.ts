@@ -50,9 +50,9 @@ export interface Summary {
   durationSeconds: number;
 }
 
-/** Where rooms are saved. Both calls return at once; the writes are done later, in the order of the calls. */
+/** Room writes are queued in call order. Permanent leave waits for its snapshot write. */
 export interface RoomStore {
-  save(snapshot: Snapshot): void;
+  save(snapshot: Snapshot): void | Promise<void>;
   /** The game of room `code` is over: keeps its summary instead of its snapshot. */
   finish(code: string, summary: Summary): void;
   /** Removes an abandoned snapshot without recording a completed game. */
@@ -82,6 +82,7 @@ interface Room {
   moveTimer?: ReturnType<typeof setTimeout>;
   abandonTimer?: ReturnType<typeof setTimeout>;
   covered: Set<Member>;
+  leaving?: true;
 }
 
 export interface RoomTiming {
@@ -237,6 +238,7 @@ export class Rooms {
   intent(member: Member, stateVersion: unknown, action: unknown): void {
     const room = this.#roomOf(member);
     if (!room.game) throw new Rejection('illegal_action', 'The game has not started');
+    if (room.leaving) throw new Rejection('stale', 'A seat change is in progress');
     if (stateVersion !== room.stateVersion) {
       throw new Rejection('stale', `The game is at state version ${room.stateVersion}`);
     }
@@ -252,7 +254,7 @@ export class Rooms {
   }
 
   /**
-   * The member's connection is gone: frees their lobby seat, and drops a room nobody is connected to.
+   * The member's connection is gone: frees their lobby seat and starts cleanup for an empty room.
    * A game in progress keeps its room and its seats, so that its players can come back (see `resume`); the
    * other players see the member disconnected.
    */
@@ -269,6 +271,38 @@ export class Rooms {
     if (room.game && !isOver(room.game)) this.#startGrace(room, member);
     this.#sendRoom(room);
     this.#refreshPresence(room);
+  }
+
+  /** Releases the current socket's seat permanently, without changing its display name. */
+  async depart(member: Member): Promise<void> {
+    const room = this.#roomOf(member);
+    if (!room.game || isOver(room.game)) {
+      this.leave(member);
+      member.send({ type: 'left' });
+      return;
+    }
+    if (room.leaving) throw new Rejection('leave_failed', 'A seat change is in progress');
+    const seat = room.members.indexOf(member);
+    const bot = absent({ account: null, name: member.name });
+    const players = room.members.map(({ account, name }) => ({ account, name }));
+    players[seat] = { account: bot.account, name: bot.name };
+
+    // No game write can overtake this snapshot while the seat change is pending.
+    room.leaving = true;
+    this.#scheduleMove(room);
+    try {
+      await this.#save(room, players);
+      const current = room.members[seat]!;
+      this.#byMember.delete(current);
+      this.#clearGrace(current);
+      room.covered.delete(current);
+      room.members[seat] = bot;
+      current.send({ type: 'left' });
+      this.#sendRoom(room);
+    } finally {
+      delete room.leaving;
+      this.#refreshPresence(room);
+    }
   }
 
   #hasHumans(room: Room): boolean {
@@ -296,10 +330,11 @@ export class Rooms {
 
   #refreshPresence(room: Room): void {
     if (this.#stopped) return;
-    if (this.#hasHumans(room)) {
+    const occupied = this.#hasHumans(room);
+    if (occupied || room.leaving) {
       clearTimeout(room.abandonTimer);
       delete room.abandonTimer;
-      if (room.game) this.#playBots(room);
+      if (room.game && occupied) this.#playBots(room);
       this.#scheduleMove(room);
       return;
     }
@@ -331,15 +366,20 @@ export class Rooms {
     room.members.forEach((member, seat) => member.send(stateFor(room, game, seat)));
     if (!turnPassed && !isOver(game)) return;
 
-    const { code, countriesToWin, stateVersion } = room;
+    const { code, countriesToWin } = room;
     const players = room.members.map(({ account, name }) => ({ account, name }));
     if (game.phase.kind === 'over') {
       room.members.forEach(member => this.#clearGrace(member));
       const durationSeconds = Math.round((Date.now() - room.startedAt) / 1000);
       this.#store.finish(code, { players, countriesToWin, winner: game.phase.winner, durationSeconds });
     } else {
-      this.#store.save({ code, countriesToWin, players, startedAt: new Date(room.startedAt), stateVersion, game });
+      void this.#save(room, players);
     }
+  }
+
+  #save(room: Room, players: Player[]): void | Promise<void> {
+    const { code, countriesToWin, startedAt, stateVersion, game } = room;
+    return this.#store.save({ code, countriesToWin, players, startedAt: new Date(startedAt), stateVersion, game: game! });
   }
 
   #setDeadline(room: Room, game: GameState, previous?: GameState): void {
@@ -364,7 +404,7 @@ export class Rooms {
     clearTimeout(room.moveTimer);
     delete room.moveTimer;
     const { game, deadline } = room;
-    if (this.#stopped || !game || !deadline || game.phase.kind === 'over') return;
+    if (this.#stopped || room.leaving || !game || !deadline || game.phase.kind === 'over') return;
     const { player } = game.phase;
     if (!this.#byMember.has(room.members[player]!)) return;
     const timer = setTimeout(() => {
@@ -393,7 +433,7 @@ export class Rooms {
    * A bot is given what a player in its seat would be given: that seat's view and legal actions.
    */
   #playBots(room: Room): void {
-    if (this.#stopped || !this.#hasHumans(room)) return;
+    if (this.#stopped || room.leaving || !this.#hasHumans(room)) return;
     for (let game = room.game!; game.phase.kind !== 'over'; game = room.game!) {
       const seat = game.phase.player;
       const actor = room.members[seat]!;
@@ -472,6 +512,6 @@ function stateFor(room: Room, game: GameState, seat: PlayerId): ServerMessage {
     stateVersion: room.stateVersion,
     view: viewFor(game, seat),
     legalActions: legalActions(game, seat),
-    ...(room.deadline && { deadline: room.deadline }),
+    ...(room.deadline && { deadline: room.deadline, serverTime: Date.now() }),
   };
 }

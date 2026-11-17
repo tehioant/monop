@@ -64,13 +64,13 @@ export async function renameAccount(sql: Sql, id: string, name: string): Promise
   await sql`update accounts set name = ${name} where id = ${id}`;
 }
 
-/** Saves a room over its previous snapshot. The players and the start time of a room never change. */
+/** Saves a room over its previous snapshot, including any permanent seat release. */
 export async function saveSnapshot(sql: Sql, snapshot: Snapshot): Promise<void> {
   const { code, countriesToWin, players, startedAt, stateVersion, game } = snapshot;
   await sql`
     insert into room_snapshots (code, countries_to_win, players, started_at, state_version, game)
     values (${code}, ${countriesToWin}, ${sql.json(players)}, ${startedAt}, ${stateVersion}, ${sql.json(game)})
-    on conflict (code) do update set state_version = excluded.state_version, game = excluded.game`;
+    on conflict (code) do update set players = excluded.players, state_version = excluded.state_version, game = excluded.game`;
 }
 
 /** Every room whose game was in progress when the server last saved it. */

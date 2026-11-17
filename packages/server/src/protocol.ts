@@ -47,6 +47,8 @@ export type ClientMessage =
   | { type: 'removePlayer'; seat: PlayerId }
   /** Host only. */
   | { type: 'startGame' }
+  /** Deliberately gives up the seat; a lost connection does not. */
+  | { type: 'leaveRoom' }
   /** `action` must be one of the legal actions received with the state numbered `stateVersion`. */
   | { type: 'intent'; stateVersion: number; action: Action }
   /**
@@ -68,6 +70,8 @@ export type ServerMessage =
   | { type: 'room'; code: string; countriesToWin: number; players: RoomPlayer[]; you: PlayerId }
   /** The host has removed the receiver from the lobby: they are in no room any more. */
   | { type: 'removed' }
+  /** The seat was released, and the player is no longer in the room. */
+  | { type: 'left' }
   /**
    * Another connection of the receiver's account has taken its seat (the same player, connected again): this
    * connection is in no room any more, and the server closes it.
@@ -81,14 +85,14 @@ export type ServerMessage =
    * at the start of the turn in progress, so the `state` that follows a `welcome` may have a lower `stateVersion`
    * than the last one received: it replaces whatever the client knew.
    */
-  | { type: 'state'; stateVersion: number; view: PlayerView; legalActions: Action[]; deadline?: Deadline }
+  | { type: 'state'; stateVersion: number; view: PlayerView; legalActions: Action[]; deadline?: Deadline; serverTime?: number }
   /** The client's last message was refused and changed nothing. */
   | { type: 'error'; code: ErrorCode; message: string };
 
 export interface RoomPlayer {
   name: string;
   bot: boolean;
-  /** Whether the player's connection is there. A bot is always `connected`; so is everyone in a lobby. */
+  /** Connection and temporary cover. A permanent bot is identified by `bot`. */
   status: 'connected' | 'disconnected' | 'bot-replaced';
 }
 
@@ -103,4 +107,5 @@ export type ErrorCode =
   | 'not_enough_players'
   | 'stale'
   | 'illegal_action'
+  | 'leave_failed'
   | 'internal';

@@ -108,7 +108,7 @@ test('scripted clients play a full game to a win, each receiving only its own vi
     const { stateVersion } = states[0];
     states = await act(players, states);
     states.forEach((state, viewer) => {
-      assert.deepEqual(Object.keys(state).sort(), ['legalActions', 'stateVersion', 'type', 'v', 'view']);
+      assert.deepEqual(Object.keys(state).sort(), [...(state.view.phase.kind === 'over' ? [] : ['deadline', 'serverTime']), 'legalActions', 'stateVersion', 'type', 'v', 'view'].sort());
       assert.equal(state.stateVersion, stateVersion + 1);
       assert.equal(state.view.viewer, viewer);
     });

@@ -6,7 +6,7 @@ import { validRoom, validState } from './wire.ts';
 import { PROTOCOL_VERSION, type ClientMessage, type ErrorCode, type ServerMessage } from '@atlas/server/protocol';
 
 export type Room = Extract<ServerMessage, { type: 'room' }>;
-export type Game = Extract<ServerMessage, { type: 'state' }>;
+export type Game = Extract<ServerMessage, { type: 'state' }> & { clockOffset?: number };
 /**
  * What a connection is opened for: a new room, a room to join, or with `resync` the game the account already
  * holds a seat in, if any.
@@ -34,6 +34,8 @@ export interface Session {
    * The room and the game stay as they were last known until the server gives them again.
    */
   lost: number | null;
+  leaving?: boolean;
+  left?: true;
   /**
    * Why the player is not in a room: the server's code for a refused message (`unsupported_version`: the app
    * must be updated), `disconnected` when the server could not be reached, `removed` when the host removed them
@@ -79,13 +81,16 @@ export function receive(session: Session, message: ServerMessage): { session: Se
     case 'removed':
     case 'replaced':
       return out(message.type);
+    case 'left':
+      return { session: { ...offline(session.name, session.token), left: true }, send: [] };
     case 'state': {
       // Every state is a full view. One that neither follows the known one nor repeats it (the answer to a
       // resync) is a gap: it is not trusted, and the server is asked for the current one.
       const known = session.game?.stateVersion ?? message.stateVersion;
       const follows = message.stateVersion === known || message.stateVersion === known + 1;
       if (session.synced && !follows) return { session: { ...session, synced: false }, send: [{ type: 'resync' }] };
-      return { session: { ...session, game: message, synced: true, lost: null }, send: [] };
+      const game = message.serverTime === undefined ? message : { ...message, clockOffset: message.serverTime - Date.now() };
+      return { session: { ...session, game, synced: true, lost: null }, send: [] };
     }
     case 'pong':
       return { session, send: [] };
@@ -98,6 +103,7 @@ export function receive(session: Session, message: ServerMessage): { session: Se
       }
       // A refused request, or an app too old for this server: no room.
       if (session.request || message.code === 'unsupported_version') return out(message.code);
+      if (message.code === 'leave_failed') return { session: { ...session, leaving: false, error: message.code }, send: [] };
       return { session: { ...session, error: message.code }, send: [] };
   }
 }
@@ -110,9 +116,9 @@ export function receive(session: Session, message: ServerMessage): { session: Se
 export function disconnected(session: Session): Session {
   const { room, game, lost } = session;
   if (game?.view.phase.kind === 'over') return session;
-  if (!room) return { ...offline(session.name, session.token), error: 'disconnected' };
+  if (!room || (!game && session.leaving)) return { ...offline(session.name, session.token), error: 'disconnected' };
   const request: RoomRequest = game ? { type: 'resync' } : { type: 'joinRoom', code: room.code };
-  return { ...session, synced: false, request, lost: lost === null ? 0 : lost + 1 };
+  return { ...session, ...(session.leaving && { leaving: false }), synced: false, request, lost: lost === null ? 0 : lost + 1 };
 }
 
 /** How long to wait before opening the connection again, in milliseconds, after `failed` attempts in a row. */
@@ -141,7 +147,7 @@ export function decode(text: string): ServerMessage {
       case 'room': return validRoom(message);
       case 'state': return validState(message);
       case 'error': return typeof message.code === 'string' && typeof message.message === 'string';
-      case 'removed': case 'replaced': case 'pong': return true;
+      case 'removed': case 'replaced': case 'left': case 'pong': return true;
       default: return false;
     }
   })();

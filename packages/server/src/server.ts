@@ -50,8 +50,10 @@ export async function startServer(options: ServerOptions): Promise<Server> {
 
   // Rooms are saved in the background, one write at a time, so that the writes reach the database in order.
   let saved: Promise<unknown> = Promise.resolve();
-  const write = (query: () => Promise<void>): void => {
-    saved = saved.then(query).catch(console.error);
+  const write = (query: () => Promise<void>): Promise<void> => {
+    const result = saved.then(query);
+    saved = result.catch(console.error);
+    return result;
   };
   const rooms = new Rooms(
     options.newGame ?? ((gameOptions) => createGame(gameOptions, randomInt(2 ** 32))),
@@ -142,6 +144,10 @@ export function serve(socket: WebSocket, sql: Sql, rooms: Rooms, alive: () => vo
         return rooms.remove(member, message.seat);
       case 'startGame':
         return rooms.start(member);
+      case 'leaveRoom':
+        try { await rooms.depart(member); }
+        catch { send({ type: 'error', code: 'leave_failed', message: 'Could not leave the room. Try again.' }); }
+        return;
       case 'intent':
         return rooms.intent(member, message.stateVersion, message.action);
       case 'resync':

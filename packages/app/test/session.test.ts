@@ -163,6 +163,8 @@ test('a connection lost in a lobby joins the room again, if it is still there', 
   assert.deepEqual(lost, { ...waiting, request: again, lost: 0 });
   assert.deepEqual(after(lost, welcome, room), { session: waiting, sent: [again] });
   assert.deepEqual(after(lost, welcome, refusal('room_not_found')).session, { ...offline('Bo', 'issued'), error: 'room_not_found' });
+  // An explicit leave whose reply was lost must not re-seat the player in the lobby.
+  assert.deepEqual(disconnected({ ...waiting, leaving: true }), { ...offline('Bo', 'issued'), error: 'disconnected' });
 });
 
 test('a connection lost before any room is given up, and one lost after the game is over changes nothing', () => {

@@ -78,7 +78,8 @@ test('a player who loses the connection keeps the seat, is seen disconnected, an
   assert.deepEqual(await ada.next('room'), { ...room, you: 0 });
   ada.send({ type: 'resync' });
   assert.deepEqual(await ada.next('room'), { ...room, you: 0 });
-  assert.deepEqual(await ada.next('state'), current);
+  const resynced = await ada.next('state');
+  assert.deepEqual(resynced, { ...current, serverTime: resynced.serverTime });
 });
 
 test('a resync in a lobby gives the room; outside a room it is refused', async () => {

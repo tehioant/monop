@@ -34,7 +34,9 @@ interface OnlineStore {
   startGame: () => void;
   /** `action` is one of the legal actions of the current state. */
   play: (action: Action) => void;
-  /** Closes the connection and forgets the room and its game. */
+  /** Deliberately releases the current seat; waits for the server before leaving the screen. */
+  leaveRoom: () => void;
+  /** Closes the connection on unmount without relinquishing the seat. */
   leave: () => void;
 }
 
@@ -79,8 +81,14 @@ export const useOnline = create<OnlineStore>((set, get) => {
     removePlayer: (seat) => server.send({ type: 'removePlayer', seat }),
     startGame: () => server.send({ type: 'startGame' }),
     play: (action) => {
-      const { game, synced, lost } = get().session;
-      if (game && synced && lost === null) server.send(intent(game, action));
+      const { game, synced, lost, leaving } = get().session;
+      if (game && synced && lost === null && !leaving) server.send(intent(game, action));
+    },
+    leaveRoom: () => {
+      const { session } = get();
+      if (!session.room || session.lost !== null || session.leaving || (session.game && !session.synced)) return;
+      set({ session: { ...session, error: null, leaving: true } });
+      server.send({ type: 'leaveRoom' });
     },
     leave: () => {
       server.close();

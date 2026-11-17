@@ -1,12 +1,14 @@
 import assert from 'node:assert/strict';
 import { after, before, test } from 'node:test';
 import { act, Client, newGame, nextStates, person, startTestServer, type Players, type TestServer } from './helpers.ts';
+import { DEFAULT_ROOM_TIMING } from '../src/rooms.ts';
 
 let server: TestServer;
 const clients: Client[] = [];
 
 before(async () => {
-  server = await startTestServer({ newGame });
+  // This fixture jumps ahead by 754 seconds to check the persisted game duration, not timer expiry.
+  server = await startTestServer({ newGame, timing: { ...DEFAULT_ROOM_TIMING, turnMs: 900_000, responseMs: 800_000 } });
 });
 
 after(async () => {
@@ -58,7 +60,8 @@ test('a game survives a server restart in mid-turn, is finished by its players, 
   assert.deepEqual(await players[0].next('room'), { ...lobby, you: 0 });
   assert.deepEqual(await players[1].next('room'), lobby);
   states = [await players[0].next('state'), boState];
-  assert.deepEqual(states, turnStart);
+  const withoutClock = ({ deadline: _deadline, serverTime: _serverTime, ...state }: (typeof states)[number]) => state;
+  assert.deepEqual(states.map(withoutClock), turnStart.map(withoutClock));
 
   t.mock.timers.setTime(startedAt + 754_000);
   for (let step = 0; states[0].view.phase.kind !== 'over'; step++) {
