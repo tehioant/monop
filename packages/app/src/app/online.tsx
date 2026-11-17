@@ -17,13 +17,13 @@ import { Results } from '../table/Results.tsx';
 import { Table } from '../table/Table.tsx';
 import { colors } from '../table/theme.ts';
 import { usePaced } from '../table/usePaced.ts';
+import { warnOnce } from '../warnOnce.ts';
 
 const DEFAULT_COUNTRIES = Math.min(...RULES.countriesToWin);
 const MIN_PLAYERS = Math.min(...RULES.playerCounts);
 const MAX_PLAYERS = Math.max(...RULES.playerCounts);
 
 const home = () => router.dismissTo('/');
-let warnedShareFailure = false;
 
 export default function Online() {
   const { session, setName, resume, createRoom, joinRoom, addBot, removePlayer, startGame, play, leave, leaveRoom } = useOnline();
@@ -225,10 +225,7 @@ function Lobby(props: LeaveProps & {
       await Share.share(Platform.OS === 'ios' ? { url: link } : { message: link });
     } catch {
       setShareFailed(true);
-      if (!warnedShareFailure) {
-        warnedShareFailure = true;
-        console.warn('[atlas:online] Could not share invite link.');
-      }
+      warnOnce('invite-share', 'Could not share invite link.');
     }
   };
   return (

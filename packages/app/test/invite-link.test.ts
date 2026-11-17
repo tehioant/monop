@@ -47,7 +47,7 @@ test('host lobby shares its room link with native Share; dismissal is quiet and 
   await assert.doesNotReject(share().props.onPress(), 'link formatting failures stay inside the share callback');
   assert.equal(payloads.length, 1, 'a formatting failure never reaches native Share');
   assert.ok(failed());
-  assert.deepEqual(warn.mock.calls.map(call => call.arguments), [['[atlas:online] Could not share invite link.']]);
+  assert.deepEqual(warn.mock.calls.map(call => call.arguments), [['[atlas:invite-share] Could not share invite link.']]);
 
   session = { ...session, room };
   platform.OS = 'android';
