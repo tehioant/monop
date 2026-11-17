@@ -54,8 +54,8 @@ test('a wild city lists the countries it can be laid as', () => {
 
 test('wild-city details limit free reassignment to the play phase in both languages', () => {
   const id = 'wild-egypt-italy';
-  assert.match(text(id), /During the play phase of your turn.*without using a play/);
-  assert.match(cardText(id, translate('fr')).lines.join(' '), /Pendant la phase de jeu de votre tour.*sans dépenser d’action/);
+  assert.match(text(id), /During the play phase of your turn, if this wild is on your table.*without using a play/);
+  assert.match(cardText(id, translate('fr')).lines.join(' '), /Pendant la phase de jeu de votre tour, si cette ville joker est sur votre table.*sans dépenser d’action/);
 });
 
 test('a card the table does not know has a name and no text', () => {
