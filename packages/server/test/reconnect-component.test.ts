@@ -147,3 +147,34 @@ test('snapshot SQL replaces persisted seat owners and deletes only the abandoned
   await discardSnapshot(sql, 'BCDFG');
   assert.deepEqual(queries[1], { text: 'delete from room_snapshots where code = ?', values: ['BCDFG'] });
 });
+
+test('heartbeats answer while a reconnect waits for leave, without advancing game commands', async (t) => {
+  const { promise, reject } = Promise.withResolvers<void>();
+  const { rooms, member } = prepared(() => promise);
+  const departing = member('a');
+  rooms.resume(departing.member);
+  const departure = assert.rejects(rooms.depart(departing.member), /write refused/);
+  t.after(async () => { reject(Error('write refused')); await departure; rooms.stop(); });
+
+  const socket = new Socket();
+  handler()(socket, {}, rooms, () => {});
+  const send = (type: string, version = v) => socket.emit('message', JSON.stringify({ v: version, type, token: 'saved' }));
+  send('hello');
+  await flush();
+  send('resync');
+  send('ping');
+  await flush();
+  assert.deepEqual([...socket.sent], [{ v, type: 'pong' }], 'only the heartbeat bypasses pending welcome');
+
+  send('ping', v - 1);
+  socket.emit('message', '{');
+  send('ping');
+  await flush();
+  reject(Error('write refused'));
+  await departure;
+  await flush();
+  assert.deepEqual(socket.sent.filter(m => m.type === 'error').map(m => m.code), ['unsupported_version', 'bad_message']);
+  assert.equal(socket.sent.filter(m => m.type === 'pong').length, 2);
+  assert.deepEqual(socket.sent.filter(m => m.type !== 'error' && m.type !== 'pong').map(m => m.type), ['welcome', 'room', 'state', 'room', 'state']);
+  assert.equal(socket.sent.find(m => m.type === 'welcome').resumed, true);
+});

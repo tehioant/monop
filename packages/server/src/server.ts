@@ -99,7 +99,7 @@ export async function startServer(options: ServerOptions): Promise<Server> {
   };
 }
 
-/** One client connection. Its messages are handled strictly one after the other. `alive` is called for each. */
+/** One client connection. Commands run in order; transport heartbeats are independent. */
 export function serve(socket: WebSocket, sql: Sql, rooms: Rooms, alive: () => void): void {
   let member: Member | undefined;
   let queue = Promise.resolve();
@@ -141,10 +141,8 @@ export function serve(socket: WebSocket, sql: Sql, rooms: Rooms, alive: () => vo
     rooms.resume(member);
   };
 
-  const handle = async (text: string): Promise<void> => {
-    const message = parse(text);
+  const handle = async (message: Record<string, unknown>): Promise<void> => {
     if (message.type === 'hello') return hello(message.token, message.name);
-    if (message.type === 'ping') return send({ type: 'pong' });
     if (!member) throw new Rejection('bad_message', 'Say hello first');
     switch (message.type) {
       case 'createRoom':
@@ -170,15 +168,21 @@ export function serve(socket: WebSocket, sql: Sql, rooms: Rooms, alive: () => vo
     }
   };
 
+  const report = (error: unknown): void => {
+    if (error instanceof Rejection) return send({ type: 'error', code: error.code, message: error.message });
+    warn();
+    send({ type: 'error', code: 'internal', message: 'Internal error' });
+  };
   socket.on('message', (data) => {
     alive();
-    queue = queue
-      .then(() => handle(data.toString()))
-      .catch((error: unknown) => {
-        if (error instanceof Rejection) return send({ type: 'error', code: error.code, message: error.message });
-        warn();
-        send({ type: 'error', code: 'internal', message: 'Internal error' });
-      });
+    let message: Record<string, unknown>;
+    try { message = parse(data.toString()); }
+    catch (error) {
+      queue = queue.then(() => report(error));
+      return;
+    }
+    if (message.type === 'ping') return send({ type: 'pong' });
+    queue = queue.then(() => handle(message)).catch(report);
   });
   socket.on('close', () => {
     queue = queue.then(() => {
