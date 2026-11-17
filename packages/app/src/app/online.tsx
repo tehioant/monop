@@ -62,11 +62,12 @@ function Playing({ game, room, reconnecting, onAction, onLeave, leaving, leaveFa
           <Presence room={room} />
           <Button quiet label="Settings" onPress={() => router.push('/settings')} />
           {reconnecting
-            ? <Button quiet label="Back (keep seat)" onPress={home} />
+            ? <Button quiet label="Back" onPress={home} />
             : <Button quiet label={leaving ? 'Leaving…' : 'Leave game'} disabled={leaving} onPress={onLeave} />}
         </View>
       )}
       {!reconnecting && game.deadline && <Countdown deadline={game.deadline} />}
+      {reconnecting && leaving && <Text style={styles.error}>Your leave request may still complete. Going back does not cancel it.</Text>}
       {leaveFailed && <Text style={styles.error}>Could not leave the room. Try again.</Text>}
       {over ? <Results view={view} names={names} /> : <Table view={view} legal={reconnecting || leaving ? [] : legal} names={names} onAction={onAction} />}
       {over && (
