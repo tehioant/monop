@@ -8,11 +8,11 @@ export function shouldOfferTutorial(): boolean {
   if (choice) return false;
   try {
     const saved = SecureStore.getItem(KEY);
-    return saved !== 'started' && saved !== 'skipped';
+    if (saved === 'started' || saved === 'skipped') choice = saved;
   } catch {
     warnOnce('tutorial-offer', 'Could not read tutorial preference.');
-    return true;
   }
+  return choice === undefined;
 }
 
 export function dismissTutorialOffer(decision: 'started' | 'skipped'): void {

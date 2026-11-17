@@ -85,8 +85,14 @@ test('abandon refuses failed deletion and clears durable and memory state only o
 test('home confirmation cancel retains a save; accept calls actual abandon; Settings stays reachable', () => {
   const io = device(prepared()); const store = io.load(); let buttons: any[] = [];
   const useSolo = (selector: any) => selector(store.getState());
-  const Home = loadComponent(path('app/index.tsx'), { '../i18n/locale.tsx': englishLocale, '../solo/store.ts': { useSolo }, 'expo-router': { router: { push() {} } }, 'react-native': { ...native, Alert: { alert(_a: any, _b: any, options: any) { buttons = options; } } }, '../table/parts.tsx': { Button() {} } }).default;
-  const tree = Home(); assert.ok(nodes(tree).some(n => n.props?.label === 'Settings'));
+  const runtime = hooks();
+  const Home = loadComponent(path('app/index.tsx'), {
+    react: runtime.react, '../i18n/locale.tsx': englishLocale, '../solo/store.ts': { useSolo },
+    'expo-router': { router: { push() {} } }, 'expo-secure-store': { getItem: () => 'skipped' },
+    'react-native': { ...native, Alert: { alert(_a: any, _b: any, options: any) { buttons = options; } } },
+    '../table/parts.tsx': { Button() {} },
+  }).default;
+  const tree = runtime.render(Home); assert.ok(nodes(tree).some(n => n.props?.label === 'Settings'));
   nodes(tree).find(n => n.props?.label === 'Abandon solo game').props.onPress();
   buttons.find(b => b.style === 'cancel').onPress?.(); assert.ok(store.getState().game);
   buttons.find(b => b.style === 'destructive').onPress(); assert.equal(store.getState().game, null);

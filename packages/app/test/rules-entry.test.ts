@@ -75,6 +75,7 @@ test('Home lets a saved player skip once, replay, and resume without writing the
   skip.props.onPress();
   assert.ok(!button(render(), 'Skip tutorial'));
   assert.equal(writes.length, 1);
+  assert.deepEqual([...values], [['atlas.tutorial-offer', 'skipped']]);
   assert.deepEqual(paths, []);
   const restarted = hooks();
   const afterRestart = restarted.render(loadHome(restarted.react));
@@ -83,4 +84,29 @@ test('Home lets a saved player skip once, replay, and resume without writing the
   button(afterRestart, english('home.resume')).props.onPress();
   assert.deepEqual(paths, ['/tutorial', '/solo/table']);
   assert.equal(writes.length, 1);
+});
+
+test('starting practice still works when the device cannot store the decision', (t) => {
+  const h = hooks();
+  const paths: string[] = [];
+  const writes: unknown[][] = [];
+  const warn = t.mock.method(console, 'warn', () => {});
+  const Home = loadComponent(`${src}app/index.tsx`, {
+    react: h.react, 'react-native': native, 'react-native-reanimated': animated,
+    'expo-router': { router: { push: (path: string) => paths.push(path) } },
+    'expo-secure-store': {
+      getItem: () => { throw Error('private device read details'); },
+      setItem: (...args: unknown[]) => { writes.push(args); throw Error('private device write details'); },
+    },
+    '../i18n/locale.tsx': { useTranslation: () => english },
+    '../solo/store.ts': { useSolo: (pick: Function) => pick({ game: null }) },
+  }).default;
+  const render = () => h.render(Home);
+  button(render(), 'Start tutorial').props.onPress();
+  assert.deepEqual(paths, ['/tutorial']);
+  assert.deepEqual(writes, [['atlas.tutorial-offer', 'started']]);
+  assert.ok(!button(render(), 'Skip tutorial'));
+  assert.ok(button(render(), 'Play tutorial'));
+  assert.equal(warn.mock.callCount(), 1);
+  assert.ok(!JSON.stringify(warn.mock.calls[0]?.arguments).includes('private device'));
 });

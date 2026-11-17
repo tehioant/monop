@@ -24,6 +24,7 @@ export function componentLoader(mocks: Record<string, any>) {
     ] }).code;
     const require = (name: string): any => {
       if (name in mocks) return mocks[name];
+      if (name === 'react-native-safe-area-context') return { SafeAreaView: 'SafeAreaView' };
       if (name.endsWith('.wav')) return name;
       if (name.startsWith('.')) return load(resolve(dirname(file), name));
       return createRequire(file)(name);
