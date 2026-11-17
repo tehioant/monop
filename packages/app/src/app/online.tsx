@@ -7,7 +7,7 @@ import { useEffect, useState } from 'react';
 import { StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useTranslation } from '../i18n/locale.tsx';
-import { explainOnlineError, onlineName } from '../online/display.ts';
+import { explainOnlineError } from '../online/display.ts';
 import type { Game, Room, Session } from '../online/session.ts';
 import { useOnline } from '../online/store.ts';
 import { Choice } from '../table/Choice.tsx';
@@ -53,7 +53,7 @@ type LeaveProps = { onLeave: () => void; leaving: boolean; leaveFailed: boolean 
 
 function Playing({ game, room, reconnecting, onAction, onLeave, leaving, leaveFailed }: LeaveProps & { game: Game; room: Room; reconnecting: boolean; onAction: (action: Action) => void }) {
   const t = useTranslation();
-  const names = room.players.map((player) => onlineName(player, t));
+  const names = room.players.map((player) => player.name);
   const paused = game.paused === true;
   const localExit = reconnecting || paused;
   // The server's states can come in a burst (a bot's whole turn): the table shows them one at a time.
@@ -124,11 +124,11 @@ function Presence({ room }: { room: Room }) {
       {room.players.map((player, seat) =>
         player.status === 'connected' ? (
           <Text key={seat} style={shared.small}>
-            <Text style={styles.here}>●</Text> {onlineName(player, t)}{player.bot ? ` (${t('online.bot')})` : ''}
+            <Text style={styles.here}>●</Text> {player.name}{player.bot ? ` (${t('online.bot')})` : ''}
           </Text>
         ) : (
           <Text key={seat} style={[shared.small, styles.away]}>
-            ○ {onlineName(player, t)} ({t(player.status === 'bot-replaced' ? 'online.botCovering' : 'online.offline')})
+            ○ {player.name} ({t(player.status === 'bot-replaced' ? 'online.botCovering' : 'online.offline')})
           </Text>
         ),
       )}
@@ -214,7 +214,7 @@ function Lobby(props: LeaveProps & {
         {room.players.map((player, seat) => (
           <View key={seat} style={styles.seat}>
             <Text style={shared.name}>
-              {onlineName(player, t)}
+              {player.name}
               <Text style={shared.small}>
                 {seat === 0 ? `  ${t('online.host')}` : ''}
                 {seat === room.you ? `  ${t('common.you')}` : ''}

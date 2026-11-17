@@ -1,12 +1,5 @@
-import type { RoomPlayer } from '@atlas/server/protocol';
 import type { Translate } from '../i18n/strings.ts';
 import type { Session } from './session.ts';
-
-/** Only the server's own bot names are translated; human names are opaque. */
-export function onlineName(player: RoomPlayer, t: Translate): string {
-  const number = player.bot ? /^Bot (\d+)$/.exec(player.name)?.[1] : undefined;
-  return number === undefined ? player.name : t('common.bot', { number });
-}
 
 export function explainOnlineError(error: NonNullable<Session['error']>, t: Translate): string {
   switch (error) {

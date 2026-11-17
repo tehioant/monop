@@ -33,6 +33,51 @@ test('storage read/write errors do not crash store or suppress received state; s
   assert.ok(warnings.length > 0 && warnings.length <= 1); assert.ok(!JSON.stringify(warnings).includes('private'));
 });
 
+test('blank online names use the chosen language without letting a locale read block room entry', (t) => {
+  const warn = t.mock.method(console, 'warn', () => {});
+  const storage = new Map<string, string>();
+  let broken = true;
+  let reads = 0;
+  let opens = 0;
+  const fixture = () => loadComponent(new URL('../src/online/store.ts', import.meta.url).pathname, {
+    'expo-localization': { getLocales() {
+      reads++;
+      if (broken) throw Error('private locale details');
+      return [{ languageTag: 'fr-CA' }];
+    } },
+    'expo-secure-store': { getItem: (key: string) => storage.get(key) ?? null, setItem: (key: string, value: string) => storage.set(key, value) },
+    './connection.ts': { connection: () => ({ open() { opens++; } }) },
+  }).useOnline;
+  const store = fixture();
+  const create = (expected: RegExp) => {
+    const before = opens;
+    store.getState().setName('   ');
+    store.getState().createRoom(3);
+    assert.equal(opens, before + 1);
+    assert.deepEqual(store.getState().session.request, { type: 'createRoom', countriesToWin: 3 });
+    assert.match(store.getState().session.name, expected);
+    assert.equal(storage.get('atlas.name'), store.getState().session.name);
+  };
+  create(/^Guest [0-9]{4}$/);
+  create(/^Guest [0-9]{4}$/);
+  assert.equal(reads, 2);
+  assert.equal(warn.mock.callCount(), 1);
+  assert.match(String(warn.mock.calls[0]!.arguments[0]), /locale/i);
+  assert.doesNotMatch(JSON.stringify(warn.mock.calls[0]!.arguments), /private/);
+  broken = false;
+  create(/^Invité [0-9]{4}$/);
+  const readsBeforeOverride = reads;
+  broken = true;
+  storage.set('atlas.settings', JSON.stringify({ language: 'fr' }));
+  const explicit = fixture();
+  explicit.getState().setName('');
+  explicit.getState().joinRoom('BCDFG');
+  assert.equal(opens, 4);
+  assert.deepEqual(explicit.getState().session.request, { type: 'joinRoom', code: 'BCDFG' });
+  assert.match(explicit.getState().session.name, /^Invité [0-9]{4}$/);
+  assert.equal(reads, readsBeforeOverride, 'explicit override never reaches the throwing adapter');
+});
+
 test('online actual screen composes pacing, settings, reconnecting, all-seat presence and update prompt', () => {
   const runtime = hooks(); let session: any = { ...offline('Ada', 'issued'), room, game, synced: false, lost: 0 };
   let homes = 0; let closes = 0; let permanentLeaves = 0;
@@ -91,7 +136,7 @@ test('online screen shows the response clock and bot cover, and navigates only a
   const runtime = hooks(); const clock = hooks(); let active = runtime.react;
   const react = { ...active, useState: (initial: unknown) => active.useState(initial), useEffect: (effect: () => unknown, deps: unknown[]) => active.useEffect(effect, deps) };
   let tOnline = englishLocale.useTranslation();
-  const coveredRoom = { ...room, players: [room.players[0], { ...room.players[1], status: 'bot-replaced' }] };
+  const coveredRoom = { ...room, players: [{ ...room.players[0], name: 'Ada  {amount}' }, { ...room.players[1], name: 'Bot 4', status: 'bot-replaced' }] };
   const live = decode(JSON.stringify({ ...game, v: PROTOCOL_VERSION, deadline: { kind: 'response', at: 3300 }, serverTime: 2000 }));
   let session = receive({ ...offline('Ada', 'issued'), room: coveredRoom } as any, live).session;
   let requests = 0; let homes = 0; let closes = 0;
@@ -116,8 +161,15 @@ test('online screen shows the response clock and bot cover, and navigates only a
   tOnline = translate('fr');
   assert.equal(drawClock().props.children, 'Réponse : 1 s');
   assert.match(JSON.stringify(presence.type(presence.props)), /Remplacé par un robot/);
+  assert.match(JSON.stringify(presence.type(presence.props)), /Bot 4/);
   active = runtime.react;
-  const frenchTree = nodes(playing.type(playing.props));
+  assert.deepEqual(nodes(playing.type(playing.props)).find(n => n.type?.name === 'Table').props.names, ['Ada  {amount}', 'Bot 4']);
+  const permanentRoom = { ...coveredRoom, players: [coveredRoom.players[0], { ...coveredRoom.players[1], bot: true, status: 'connected' }] };
+  const frenchTree = nodes(playing.type({ ...playing.props, room: permanentRoom }));
+  assert.deepEqual(frenchTree.find(n => n.type?.name === 'Table').props.names, ['Ada  {amount}', 'Bot 4']);
+  const permanentPresence = frenchTree.find(n => n.type?.name === 'Presence');
+  const seat = nodes(permanentPresence.type(permanentPresence.props)).find(n => n.props?.children?.includes('Bot 4'));
+  assert.ok(seat?.props.children.includes(' (Robot)'), 'the role is localized separately from the retained name');
   frenchTree.find(n => n.props?.label === 'Quitter la partie').props.onPress();
   assert.equal(requests, 1); assert.equal(homes, 0);
   active = runtime.react; clock.unmount();

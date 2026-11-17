@@ -2,11 +2,11 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { ACTIONS, CARDS, RULES, type Action, type PlayerView } from '@atlas/engine';
 import { createStore, type StateCreator } from 'zustand/vanilla';
-import { animated, componentLoader, native, nodes } from './componentBoundary.ts';
+import { animated, componentLoader, hooks, native, nodes } from './componentBoundary.ts';
 import { actionLabel, logLine, promptText } from '../src/table/actions.ts';
 import { cardText } from '../src/table/cardText.ts';
 import { cardPrompt, payPrompt, vetoPrompt } from '../src/table/prompts.ts';
-import { explainOnlineError, onlineName } from '../src/online/display.ts';
+import { explainOnlineError } from '../src/online/display.ts';
 import { defaultName } from '../src/online/session.ts';
 import { en } from '../src/i18n/en.ts';
 import { fr } from '../src/i18n/fr.ts';
@@ -63,6 +63,15 @@ test('each catalog card has French text; French card effects use catalog and rul
   assert.equal(cardText('debt-1', french).lines[0], `Un adversaire de votre choix vous paie ${RULES.debtAmount}.`);
 });
 
+test('French city detail distinguishes the stack size, native city, valid wilds and named cities', () => {
+  assert.equal(cardText('cairo', french).lines[0],
+    'Pays : Égypte. Pour le compléter, réunissez 2 cartes Ville, dont au moins une ville du pays. Les jokers compatibles peuvent remplacer les autres villes. Villes du pays : Le Caire, Alexandrie.');
+});
+
+test('French Windfall specifies the deck and the rule-derived draw count', () => {
+  assert.equal(cardText('windfall-1', french).lines[0], `Piochez ${RULES.windfallDraws} cartes dans la pioche.`);
+});
+
 test('French actions, log, aim, payment and Veto keep canonical intents and literal player names', () => {
   const names = ['Bot 1', 'Ana {amount}'];
   const view: PlayerView = {
@@ -93,38 +102,52 @@ test('French actions, log, aim, payment and Veto keep canonical intents and lite
   assert.equal(answer.veto, veto);
 });
 
-test('online display localizes system identities and safe error codes without changing player names', () => {
+test('online display localizes generated guest names and safe error codes', () => {
   assert.match(defaultName(french), /^Invité [0-9]{4}$/);
-  assert.equal(onlineName({ name: 'Bot 4', bot: true, status: 'connected' }, french), 'Robot 4');
-  assert.equal(onlineName({ name: 'Bot 4', bot: false, status: 'bot-replaced' }, french), 'Bot 4');
   assert.equal(explainOnlineError('room_full', french), 'Ce salon est complet.');
   assert.equal(explainOnlineError('internal', french), 'Une erreur est survenue. Réessayez.');
 });
 
 const path = (name: string) => new URL(`../src/${name}`, import.meta.url).pathname;
 
-test('root locale drives real Settings and card copy; language override saves and can be reset', () => {
+test('root locale drives real Settings and card copy; language override saves and can be reset', (t) => {
   let saved: string | null = null;
   let languageTag = 'fr-CA';
   let refused = false;
+  let unavailable = false;
+  let reads = 0;
+  const warn = t.mock.method(console, 'warn', () => {});
+  const getLocales = () => {
+    reads++;
+    if (unavailable) throw Error('private locale details');
+    return [{ languageTag }];
+  };
   const storage = {
     getItem: () => saved,
     setItem: (_key: string, value: string) => { if (refused) throw Error('locked'); saved = value; },
   };
   // Render each consumer at the component boundary; React's context dispatch and native I/O are replaced.
   const fixture = () => {
+    const runtime = hooks();
     let locale: string;
+    let listener: ((state: string) => void) | undefined;
     const load = componentLoader({
-      react: { createContext: (initial: string) => { locale = initial; return { Provider: 'Provider' }; }, useContext: () => locale },
+      react: { ...runtime.react, createContext: (initial: string) => { locale = initial; return { Provider: 'Provider' }; }, useContext: () => locale },
       zustand: { create: (initializer: StateCreator<unknown>) => {
         const store = createStore(initializer);
         return Object.assign((select = (state: unknown) => state) => select(store.getState()), store);
       } },
-      'expo-localization': { useLocales: () => [{ languageTag }] },
+      'expo-localization': { useLocales: getLocales, getLocales },
       'expo-secure-store': storage,
       'expo-router': { Stack: Object.assign(() => {}, { Screen() {} }), router: { back() {} } },
       'expo-haptics': {}, 'expo-audio': {},
-      'react-native': { ...native, Switch: 'Switch' }, 'react-native-reanimated': animated,
+      'react-native': { ...native, Switch: 'Switch', AppState: {
+        addEventListener(event: string, fn: (state: string) => void) {
+          assert.equal(event, 'change');
+          listener = fn;
+          return { remove() { listener = undefined; } };
+        },
+      } }, 'react-native-reanimated': animated,
       'react-native-safe-area-context': { SafeAreaView: 'SafeAreaView' },
     });
     const Root = load(path('app/_layout.tsx')).default;
@@ -133,12 +156,19 @@ test('root locale drives real Settings and card copy; language override saves an
     return {
       render() {
         const root = Root();
-        const provider = root.type(root.props);
+        const draw = () => runtime.render(() => root.type(root.props)) as { type: string; props: { value: string; children: unknown } };
+        draw();
+        runtime.flush();
+        const provider = draw();
         assert.equal(provider.type, 'Provider');
+        assert.equal(provider.props.children, root.props.children);
         locale = provider.props.value;
         return nodes(Settings());
       },
       card: () => nodes(CardText({ card: 'debt-1' })),
+      foreground: () => listener?.('active'),
+      watching: () => listener !== undefined,
+      unmount: runtime.unmount,
     };
   };
   const visit = fixture();
@@ -152,11 +182,23 @@ test('root locale drives real Settings and card copy; language override saves an
   assert.ok(hasText(system, 'Paramètres'));
   assert.equal(button(system, 'Langue de l’appareil').selected, true);
   assert.ok(hasText(visit.card(), 'Dette'));
-  button(system, 'English').onPress();
+  unavailable = true;
+  visit.foreground();
+  assert.ok(hasText(visit.render(), 'Settings'), 'a failed foreground read falls back to English');
+  visit.foreground();
+  assert.equal(warn.mock.callCount(), 1);
+  assert.match(String(warn.mock.calls[0]!.arguments[0]), /locale/i);
+  assert.doesNotMatch(JSON.stringify(warn.mock.calls.map((call) => call.arguments)), /private/);
+  unavailable = false;
+  visit.foreground();
+  const recovered = visit.render();
+  assert.ok(hasText(recovered, 'Paramètres'), 'foreground refresh can recover French');
+  button(recovered, 'English').onPress();
   const english = visit.render();
   assert.ok(hasText(english, 'Settings'));
   assert.ok(hasText(visit.card(), 'Debt'));
   assert.equal(button(english, 'English').selected, true);
+  assert.equal(visit.watching(), false, 'explicit language releases the system listener');
   const next = fixture();
   assert.ok(hasText(next.render(), 'Settings'), 'saved English overrides a French device on the next launch');
   languageTag = 'de-DE';
@@ -164,6 +206,13 @@ test('root locale drives real Settings and card copy; language override saves an
   const override = next.render();
   assert.ok(hasText(override, 'Paramètres'), 'explicit French overrides another device locale');
   assert.ok(hasText(next.card(), `Un adversaire de votre choix vous paie ${RULES.debtAmount}.`));
+  unavailable = true;
+  const readsBeforeOverride = reads;
+  const explicit = fixture();
+  assert.ok(hasText(explicit.render(), 'Paramètres'), 'saved French works with no native locale');
+  explicit.foreground();
+  assert.equal(reads, readsBeforeOverride, 'explicit language does not read the device locale');
+  unavailable = false;
   refused = true;
   button(override, 'Langue de l’appareil').onPress();
   const unsaved = next.render();
@@ -173,4 +222,10 @@ test('root locale drives real Settings and card copy; language override saves an
   refused = false;
   button(unsaved, 'Device language').onPress();
   assert.ok(hasText(fixture().render(), 'Settings'), 'the restored system default persists');
+  unavailable = true;
+  const coldSystem = fixture();
+  assert.ok(hasText(coldSystem.render(), 'Settings'), 'system startup falls back to English');
+  assert.ok(coldSystem.watching());
+  coldSystem.unmount();
+  assert.equal(coldSystem.watching(), false, 'unmount releases the system listener');
 });

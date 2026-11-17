@@ -24,8 +24,8 @@ test('a city says what its country needs, charges and gives, from the card data'
   for (const country of COUNTRIES) {
     const city = text(country.cities[0]);
     const name = countryName(country.id, english);
-    assert.ok(city.includes(`A city of ${name}, which is complete with ${country.cities.length} cities: `), city);
-    for (const other of country.cities) assert.ok(city.includes(cardText(other).name), city);
+    assert.ok(city.includes(`A city of ${name}. Complete the country with ${country.cities.length} city cards, including at least one native city. Eligible wilds can stand in for the others.`), city);
+    assert.ok(city.includes(`Named cities: ${country.cities.map((id) => cardText(id).name).join(', ')}.`), city);
     // The whole toll scale, in order, the last step being the complete country.
     const scale = new RegExp(`A Toll on ${name} charges each opponent ${country.toll.join('\\b.*\\b')} once complete\\.`);
     assert.match(city, scale);

@@ -117,7 +117,7 @@ export const en = {
   'card.tollComplete': '{amount} once complete',
   'card.tollOne': '{amount} with {count} city',
   'card.tollMany': '{amount} with {count} cities',
-  'card.cityDetails': 'A city of {country}, which is complete with {count} cities: {cities}.',
+  'card.cityDetails': 'A city of {country}. Complete the country with {count} city cards, including at least one native city. Eligible wilds can stand in for the others. Named cities: {cities}.',
   'card.countryToll': 'A Toll on {country} charges each opponent {scale}.',
   'card.countryPerk': 'Held complete: {text}.',
   'card.worthLaid': 'Worth {value} as payment, laid or banked.',

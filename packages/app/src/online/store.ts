@@ -2,10 +2,10 @@
 // on the device; the connection to the game server is in `connection.ts`, what the messages mean in `session.ts`.
 
 import type { Action } from '@atlas/engine';
-import { getLocales } from 'expo-localization';
 import * as SecureStore from 'expo-secure-store';
 import { create } from 'zustand';
-import { resolveLanguage, translate } from '../i18n/strings.ts';
+import { readLanguage } from '../i18n/deviceLanguage.ts';
+import { translate } from '../i18n/strings.ts';
 import { useSettings } from '../settings/store.ts';
 import { connection, type Socket } from './connection.ts';
 import { defaultName, intent, offline, type RoomRequest, type Session } from './session.ts';
@@ -67,7 +67,7 @@ export const useOnline = create<OnlineStore>((set, get) => {
     let name = get().session.name.trim();
     if (!name) {
       const choice = useSettings.getState().settings.language;
-      name = defaultName(translate(resolveLanguage(choice, getLocales()[0]?.languageTag)));
+      name = defaultName(translate(readLanguage(choice)));
     }
     write(NAME_KEY, name);
     const token = get().session.token ?? read(TOKEN_KEY);
