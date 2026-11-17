@@ -1,0 +1,1 @@
+export const inviteLink = (code: string): string => `atlas:///invite?code=${encodeURIComponent(code)}`;

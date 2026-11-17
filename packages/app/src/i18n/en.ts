@@ -302,6 +302,8 @@ export const en = {
   'online.join': 'Join',
   'online.room': 'Room',
   'online.share': 'Share this code with your friends',
+  'online.shareInvite': 'Share invite link',
+  'online.shareFailed': 'Could not share the invite link. Try again.',
   'online.goal': 'The first player with {count} complete countries wins',
   'online.remove': 'Remove',
   'online.addBot': 'Add a bot',

@@ -4,10 +4,11 @@ import { RULES, type Action } from '@atlas/engine';
 import { MAX_NAME_LENGTH } from '@atlas/server/protocol';
 import { router } from 'expo-router';
 import { useEffect, useState } from 'react';
-import { StyleSheet, Text, TextInput, View } from 'react-native';
+import { Platform, Share, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useTranslation } from '../i18n/locale.tsx';
 import { explainOnlineError } from '../online/display.ts';
+import { inviteLink } from '../online/invite.ts';
 import type { Game, Room, Session } from '../online/session.ts';
 import { useOnline } from '../online/store.ts';
 import { Choice } from '../table/Choice.tsx';
@@ -201,6 +202,16 @@ function Lobby(props: LeaveProps & {
   const t = useTranslation();
   const { room, reconnecting, onAddBot, onRemove, onStart, onLeave, leaving, leaveFailed } = props;
   const host = room.you === 0;
+  const [shareFailed, setShareFailed] = useState(false);
+  const shareInvite = async () => {
+    setShareFailed(false);
+    const link = inviteLink(room.code);
+    try {
+      await Share.share(Platform.OS === 'ios' ? { url: link } : { message: link });
+    } catch {
+      setShareFailed(true);
+    }
+  };
   return (
     <SafeAreaView style={styles.screen}>
       <Text style={styles.title}>{t('online.room')}</Text>
@@ -209,6 +220,8 @@ function Lobby(props: LeaveProps & {
       <Text style={styles.code} selectable>
         {room.code}
       </Text>
+      {host && <Button quiet label={t('online.shareInvite')} onPress={shareInvite} />}
+      {host && shareFailed && <Text style={styles.error}>{t('online.shareFailed')}</Text>}
       <Text style={styles.label}>{t('online.goal', { count: room.countriesToWin })}</Text>
       <Panel>
         {room.players.map((player, seat) => (

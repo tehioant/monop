@@ -304,6 +304,8 @@ export const fr = {
   'online.join': 'Rejoindre',
   'online.room': 'Salon',
   'online.share': 'Partagez ce code avec vos amis',
+  'online.shareInvite': 'Partager le lien d’invitation',
+  'online.shareFailed': 'Impossible de partager le lien d’invitation. Réessayez.',
   'online.goal': 'Le premier à compléter {count} pays remporte la partie',
   'online.remove': 'Retirer',
   'online.addBot': 'Ajouter un robot',
