@@ -17,7 +17,7 @@ import {
   type Sql,
 } from './db.ts';
 import { HEARTBEAT_MS, MAX_NAME_LENGTH, PROTOCOL_VERSION, type ServerMessage } from './protocol.ts';
-import { Rejection, Rooms, type Member, type RoomTiming } from './rooms.ts';
+import { Rejection, Rooms, type Member, type RoomStore, type RoomTiming } from './rooms.ts';
 
 export interface ServerOptions {
   databaseUrl: string;
@@ -40,6 +40,24 @@ export interface Server {
 const BOT_LEVEL: Difficulty = 'normal';
 const MAX_MESSAGE_BYTES = 16 * 1024;
 
+/** Serializes snapshot writes, finalization and deletion on the same queue. */
+export function roomWrites(sql: Sql): RoomStore & { drain(): Promise<void> } {
+  let queued = Promise.resolve();
+  const write = (query: () => Promise<void>, reportFailure = true): Promise<void> => {
+    const result = queued.then(query);
+    queued = result.catch(() => {
+      if (reportFailure) console.warn('[atlas:rooms] Room write failed.');
+    });
+    return result;
+  };
+  return {
+    save: (snapshot) => write(() => saveSnapshot(sql, snapshot)),
+    finish: (code, summary) => write(() => finishGame(sql, code, summary)),
+    discard: (code) => write(() => discardSnapshot(sql, code), false),
+    drain: () => queued,
+  };
+}
+
 /**
  * Starts the game server: one WebSocket endpoint, `/ws`, speaking the protocol of `protocol.ts`.
  * The games that were in progress when the previous server stopped are restored from their last snapshot.
@@ -48,22 +66,12 @@ export async function startServer(options: ServerOptions): Promise<Server> {
   const { port, host } = options;
   const sql = await openDatabase(options.databaseUrl);
 
-  // Rooms are saved in the background, one write at a time, so that the writes reach the database in order.
-  let saved: Promise<unknown> = Promise.resolve();
-  const write = (query: () => Promise<void>): Promise<void> => {
-    const result = saved.then(query);
-    saved = result.catch(console.error);
-    return result;
-  };
+  const store = roomWrites(sql);
   const rooms = new Rooms(
     options.newGame ?? ((gameOptions) => createGame(gameOptions, randomInt(2 ** 32))),
     // A bot keeps nothing from one decision to the next, so one is made for each, with its own seed.
     options.bot ?? ((view, legal) => createBot(BOT_LEVEL, randomInt(2 ** 32))(view, legal)),
-    {
-      save: (snapshot) => write(() => saveSnapshot(sql, snapshot)),
-      finish: (code, summary) => write(() => finishGame(sql, code, summary)),
-      discard: (code) => write(() => discardSnapshot(sql, code)),
-    },
+    store,
     await loadSnapshots(sql),
     options.timing,
   );
@@ -85,7 +93,7 @@ export async function startServer(options: ServerOptions): Promise<Server> {
       clearInterval(sweep);
       rooms.stop();
       await app.close();
-      await saved;
+      await store.drain();
       await sql.end();
     },
   };

@@ -56,7 +56,7 @@ export interface RoomStore {
   /** The game of room `code` is over: keeps its summary instead of its snapshot. */
   finish(code: string, summary: Summary): void;
   /** Removes an abandoned snapshot without recording a completed game. */
-  discard(code: string): void;
+  discard(code: string): void | Promise<void>;
 }
 
 /** A refused client message. Refusing never changes a room. */
@@ -81,6 +81,7 @@ interface Room {
   deadline?: Deadline;
   moveTimer?: ReturnType<typeof setTimeout>;
   abandonTimer?: ReturnType<typeof setTimeout>;
+  expiring?: true;
   covered: Set<Member>;
   leaving?: true;
 }
@@ -98,6 +99,7 @@ export const DEFAULT_ROOM_TIMING: RoomTiming = { turnMs: 60_000, responseMs: 15_
 const CODE_LETTERS = 'BCDFGHJKMNPQRSTVWXYZ';
 const CODE_LENGTH = 5;
 const MAX_SEATS = Math.max(...RULES.playerCounts);
+const DISCARD_RETRY_MS = 1_000;
 
 /**
  * The live rooms, held in memory and saved to `store` at each turn boundary of their game.
@@ -329,7 +331,7 @@ export class Rooms {
   }
 
   #refreshPresence(room: Room): void {
-    if (this.#stopped) return;
+    if (this.#stopped || room.expiring) return;
     const occupied = this.#hasHumans(room);
     if (occupied || room.leaving) {
       clearTimeout(room.abandonTimer);
@@ -342,15 +344,32 @@ export class Rooms {
     if (!room.game || isOver(room.game)) {
       this.#byCode.delete(room.code);
     } else if (!room.abandonTimer) {
-      const timer = setTimeout(() => {
-        if (room.abandonTimer !== timer || this.#byCode.get(room.code) !== room) return;
-        room.members.forEach(member => this.#clearGrace(member));
-        this.#store.discard(room.code);
-        this.#byCode.delete(room.code);
-      }, this.#timing.abandonedMs);
-      room.abandonTimer = timer;
-      timer.unref();
+      this.#scheduleDiscard(room, this.#timing.abandonedMs);
     }
+  }
+
+  #scheduleDiscard(room: Room, delay: number): void {
+    const timer = setTimeout(() => {
+      if (room.abandonTimer !== timer || this.#byCode.get(room.code) !== room) return;
+      delete room.abandonTimer;
+      void this.#discard(room);
+    }, delay);
+    room.abandonTimer = timer;
+    timer.unref();
+  }
+
+  async #discard(room: Room): Promise<void> {
+    const retrying = room.expiring;
+    room.expiring = true;
+    room.members.forEach(member => this.#clearGrace(member));
+    try {
+      await this.#store.discard(room.code);
+    } catch {
+      if (!retrying) console.warn('[atlas:rooms] Could not delete an expired room; will retry.');
+      if (!this.#stopped) this.#scheduleDiscard(room, DISCARD_RETRY_MS);
+      return;
+    }
+    this.#byCode.delete(room.code);
   }
 
   /**
@@ -458,7 +477,7 @@ export class Rooms {
   /** The seat the account holds in a game in progress, if any. */
   #seatOf(account: string): { room: Room; seat: PlayerId } | undefined {
     for (const room of this.#byCode.values()) {
-      if (!room.game || isOver(room.game)) continue;
+      if (room.expiring || !room.game || isOver(room.game)) continue;
       const seat = room.members.findIndex((held) => held.account === account);
       if (seat >= 0) return { room, seat };
     }

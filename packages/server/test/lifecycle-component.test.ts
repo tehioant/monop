@@ -3,6 +3,8 @@ import { test } from 'node:test';
 import { createGame, legalActions, type GameState } from '@atlas/engine';
 import { Rooms, type Member, type Snapshot } from '../src/rooms.ts';
 import type { ServerMessage } from '../src/protocol.ts';
+import { roomWrites } from '../src/server.ts';
+import type { Sql } from '../src/db.ts';
 
 const game = createGame({ players: 2, countriesToWin: 3 }, 1);
 const snapshot: Snapshot = { code: 'BCDFG', countriesToWin: 3, players: [{ account: 'a', name: 'Ada' }, { account: 'b', name: 'Bo' }], startedAt: new Date(0), stateVersion: 9, game };
@@ -14,7 +16,7 @@ function prepared(state: GameState = game) {
   const rooms = new Rooms(() => { throw Error('no new game'); }, (view, legal) => {
     moves.push(view.viewer);
     return legal.find(a => a.type === 'endTurn') ?? legal[0]!;
-  }, { save(s) { writes.push(s); }, finish() {}, discard: code => discarded.push(code) }, [{ ...snapshot, game: state }], { turnMs: 100, responseMs: 20, graceMs: 30, abandonedMs: 300 });
+  }, { save(s) { writes.push(s); }, finish() {}, discard(code) { discarded.push(code); } }, [{ ...snapshot, game: state }], { turnMs: 100, responseMs: 20, graceMs: 30, abandonedMs: 300 });
   const player = (account: string) => {
     const inbox: ServerMessage[] = [];
     const member: Member = { account, name: account, send: m => inbox.push(m), close() {} };
@@ -87,7 +89,7 @@ test('disconnect waits for grace, covers the seat, and the same account reclaims
   assert.equal(bo.room().players[0]!.status, 'connected');
 });
 
-test('restored empty rooms do not play bots, cancel expiry on resume, and delete the snapshot after abandonment', (t) => {
+test('restored empty rooms do not play bots, cancel expiry on resume, and delete the snapshot after abandonment', async (t) => {
   t.mock.timers.enable({ apis: ['setTimeout', 'Date'], now: 1000 });
   const { rooms, moves, discarded, player } = prepared();
   t.mock.timers.tick(299);
@@ -100,6 +102,59 @@ test('restored empty rooms do not play bots, cancel expiry on resume, and delete
   assert.equal(rooms.playing('a'), true);
   t.mock.timers.tick(1);
   assert.deepEqual(discarded, ['BCDFG']);
+  await Promise.resolve();
   assert.equal(rooms.playing('a'), false);
   assert.equal(rooms.playing('b'), false);
+});
+
+test('expired rooms refuse reclaim while ordered deletion is pending and until a failed delete is retried', async (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout', 'Date'], now: 1000 });
+  const warnings = t.mock.method(console, 'warn', () => {});
+  const unrelated = { ...snapshot, code: 'HJKLM' };
+  const rows = new Map([[snapshot.code, snapshot], [unrelated.code, unrelated]]);
+  const calls: string[] = [];
+  const { promise: saveGate, resolve: allowSave } = Promise.withResolvers<void>();
+  const sql = Object.assign(async (parts: TemplateStringsArray, code: string) => {
+    if (parts[0]!.includes('insert into room_snapshots')) {
+      calls.push('save');
+      await saveGate;
+      return;
+    }
+    assert.match(parts[0]!, /delete from room_snapshots where code/);
+    calls.push(`delete ${code}`);
+    if (calls.length === 2) throw Error('private DB details');
+    rows.delete(code);
+  }, { json: (value: unknown) => value }) as unknown as Sql;
+  const store = roomWrites(sql);
+  const restore = (snapshots: Snapshot[]) => new Rooms(() => game, () => { throw Error('unexpected bot'); }, store, snapshots,
+    { turnMs: 100, responseMs: 20, graceMs: 30, abandonedMs: 300 });
+  const rooms = restore([snapshot]);
+  t.after(() => rooms.stop());
+  const save = store.save(snapshot);
+  await Promise.resolve();
+  t.mock.timers.tick(300);
+  const messages: ServerMessage[] = [];
+  const returning: Member = { account: 'a', name: 'Ada', send: m => messages.push(m), close() {} };
+  rooms.resume(returning);
+  assert.deepEqual(messages, []);
+  assert.equal(rooms.playing('a'), false);
+  assert.deepEqual(calls, ['save']);
+  allowSave();
+  await save;
+  await new Promise(setImmediate);
+  assert.deepEqual(calls, ['save', `delete ${snapshot.code}`]);
+  assert.equal(rows.get(snapshot.code), snapshot);
+  assert.equal(warnings.mock.callCount(), 1);
+  assert.doesNotMatch(JSON.stringify(warnings.mock.calls[0]!.arguments), /private/);
+  rooms.resume(returning);
+  assert.deepEqual(messages, []);
+  t.mock.timers.tick(999);
+  assert.equal(calls.length, 2);
+  t.mock.timers.tick(1);
+  await new Promise(setImmediate);
+  assert.deepEqual(calls, ['save', `delete ${snapshot.code}`, `delete ${snapshot.code}`]);
+  assert.deepEqual([...rows.values()], [unrelated]);
+  const restored = restore([...(rows.has(snapshot.code) ? [rows.get(snapshot.code)!] : [])]);
+  t.after(() => restored.stop());
+  assert.equal(restored.playing('a'), false);
 });
