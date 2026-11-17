@@ -28,7 +28,7 @@ interface OnlineStore {
   /** Goes back to the game in progress this device's account holds a seat in, if there is one. */
   resume: () => void;
   createRoom: (countriesToWin: number) => void;
-  joinRoom: (code: string) => void;
+  joinRoom: (code: string, options?: { fromInvite: boolean }) => void;
   /** Host only, in the lobby. */
   addBot: () => void;
   /** Host only, in the lobby: empties the seat of a player or a bot. */
@@ -83,10 +83,16 @@ export const useOnline = create<OnlineStore>((set, get) => {
       if (get().session.token ?? read(TOKEN_KEY)) connect({ type: 'resync' });
     },
     createRoom: (countriesToWin) => connect({ type: 'createRoom', countriesToWin }),
-    joinRoom: (code) => {
-      const { room, game, request, lost, leaving, left } = get().session;
-      if (room || game || request || lost !== null || leaving || left) return;
-      connect({ type: 'joinRoom', code });
+    joinRoom: (code, options) => {
+      const session = get().session;
+      const { room, game, request, lost, leaving, left } = session;
+      if (room || game || lost !== null || leaving || left) return;
+      const join: RoomRequest = { type: 'joinRoom', code };
+      if (!request) connect(join);
+      else if (options?.fromInvite && request.type === 'resync') {
+        // Use the hello already in flight. Welcome only sends the join if it did not recover a seat.
+        set({ session: { ...session, request: join } });
+      }
     },
     addBot: () => server.send({ type: 'addBot' }),
     removePlayer: (seat) => server.send({ type: 'removePlayer', seat }),

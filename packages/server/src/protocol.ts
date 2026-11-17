@@ -1,6 +1,5 @@
 // The WebSocket protocol: JSON text messages, one object per message.
-// Types only (plus the version number and a limit), so a client can import this file without the server's
-// dependencies.
+// Types and constants only, so a client can import this file without the server's dependencies.
 
 import type { Action, PlayerId, PlayerView } from '@atlas/engine';
 
@@ -22,6 +21,10 @@ export const HEARTBEAT_MS = 5000;
 
 /** A display name is trimmed and cut to this many characters. */
 export const MAX_NAME_LENGTH = 20;
+
+/** Room codes are generated without vowels or L. */
+export const ROOM_CODE_ALPHABET = 'BCDFGHJKMNPQRSTVWXYZ';
+export const ROOM_CODE_LENGTH = 5;
 
 export type Versioned<Message> = Message & { v: number };
 

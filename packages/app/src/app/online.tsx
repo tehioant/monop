@@ -23,6 +23,7 @@ const MIN_PLAYERS = Math.min(...RULES.playerCounts);
 const MAX_PLAYERS = Math.max(...RULES.playerCounts);
 
 const home = () => router.dismissTo('/');
+let warnedShareFailure = false;
 
 export default function Online() {
   const { session, setName, resume, createRoom, joinRoom, addBot, removePlayer, startGame, play, leave, leaveRoom } = useOnline();
@@ -40,7 +41,7 @@ export default function Online() {
     consumed.current = delivery;
     setInvalidInvite(delivery !== undefined && invitedRoom === null);
     // Joining by code sends the same hello as resume. A saved seat takes priority at welcome.
-    if (delivery !== undefined && invitedRoom) joinRoom(invitedRoom);
+    if (delivery !== undefined && invitedRoom) joinRoom(invitedRoom, { fromInvite: true });
     else if (opening) resume();
   }, [delivery, invitedRoom, joinRoom, resume]);
   useEffect(() => { if (session.left) home(); }, [session.left]);
@@ -219,11 +220,15 @@ function Lobby(props: LeaveProps & {
   const [shareFailed, setShareFailed] = useState(false);
   const shareInvite = async () => {
     setShareFailed(false);
-    const link = inviteLink(room.code);
     try {
+      const link = inviteLink(room.code);
       await Share.share(Platform.OS === 'ios' ? { url: link } : { message: link });
     } catch {
       setShareFailed(true);
+      if (!warnedShareFailure) {
+        warnedShareFailure = true;
+        console.warn('[atlas:online] Could not share invite link.');
+      }
     }
   };
   return (

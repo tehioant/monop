@@ -12,7 +12,7 @@ import {
   type GameState,
   type PlayerId,
 } from '@atlas/engine';
-import type { Deadline, ErrorCode, RoomPlayer, ServerMessage } from './protocol.ts';
+import { ROOM_CODE_ALPHABET, ROOM_CODE_LENGTH, type Deadline, type ErrorCode, type RoomPlayer, type ServerMessage } from './protocol.ts';
 
 /** Who holds a seat: an account id, or null for a bot, and the display name it plays under. */
 export interface Player {
@@ -99,9 +99,6 @@ export interface RoomTiming {
 
 export const DEFAULT_ROOM_TIMING: RoomTiming = { turnMs: 60_000, responseMs: 15_000, graceMs: 10_000, abandonedMs: 300_000 };
 
-// No vowels, so a code never spells a word; no I, L or O either.
-const CODE_LETTERS = 'BCDFGHJKMNPQRSTVWXYZ';
-const CODE_LENGTH = 5;
 const MAX_SEATS = Math.max(...RULES.playerCounts);
 const DISCARD_RETRY_MS = 1_000;
 
@@ -198,7 +195,7 @@ export class Rooms {
       throw new Rejection('bad_message', `countriesToWin must be one of ${RULES.countriesToWin.join(', ')}`);
     }
     let code: string;
-    do code = Array.from({ length: CODE_LENGTH }, () => CODE_LETTERS[randomInt(CODE_LETTERS.length)]).join('');
+    do code = Array.from({ length: ROOM_CODE_LENGTH }, () => ROOM_CODE_ALPHABET[randomInt(ROOM_CODE_ALPHABET.length)]).join('');
     while (this.#byCode.has(code));
     const room: Room = { code, countriesToWin, members: [], stateVersion: 0, startedAt: 0, covered: new Set() };
     this.#byCode.set(code, room);

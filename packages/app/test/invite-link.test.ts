@@ -6,7 +6,8 @@ import { englishLocale, hooks, loadComponent, native, nodes } from './componentB
 const room: Room = { type: 'room', code: 'BCDFG', countriesToWin: 3, you: 0, players: [{ name: 'Ada', bot: false, status: 'connected' }] };
 const onlineScreen = new URL('../src/app/online.tsx', import.meta.url).pathname;
 
-test('host lobby shares its room link with native Share; dismissal is quiet and errors are local', async () => {
+test('host lobby shares its room link with native Share; dismissal is quiet and errors are local', async ({ mock }) => {
+  const warn = mock.method(console, 'warn', () => {});
   const screenHooks = hooks();
   const lobbyHooks = hooks();
   const platform = { OS: 'ios' };
@@ -33,22 +34,34 @@ test('host lobby shares its room link with native Share; dismissal is quiet and 
     return nodes(lobbyHooks.render(() => screen.type(screen.props)));
   };
   const share = () => draw().find(node => node.props?.label === 'Share invite link');
+  const failed = () => draw().some(node => node.props?.children === 'Could not share the invite link. Try again.');
   assert.ok(draw().some(node => node.props?.children === 'BCDFG' && node.props.selectable));
   const shareButton = share();
   assert.ok(shareButton, 'the host has a share action');
   await shareButton.props.onPress();
   assert.deepEqual(payloads, [{ url: 'atlas:///invite?code=BCDFG' }]);
-  assert.ok(!draw().some(node => node.props?.children === 'Could not share the invite link. Try again.'));
+  assert.ok(!failed());
+  assert.equal(warn.mock.callCount(), 0);
 
+  session = { ...session, room: { ...room, code: '\ud800' } };
+  await assert.doesNotReject(share().props.onPress(), 'link formatting failures stay inside the share callback');
+  assert.equal(payloads.length, 1, 'a formatting failure never reaches native Share');
+  assert.ok(failed());
+  assert.deepEqual(warn.mock.calls.map(call => call.arguments), [['[atlas:online] Could not share invite link.']]);
+
+  session = { ...session, room };
   platform.OS = 'android';
   rejectShare = true;
   await share().props.onPress();
   assert.deepEqual(payloads[1], { message: 'atlas:///invite?code=BCDFG' });
-  assert.ok(draw().some(node => node.props?.children === 'Could not share the invite link. Try again.'));
+  assert.ok(failed());
   assert.doesNotMatch(JSON.stringify(draw()), /private native detail/);
+  assert.equal(warn.mock.callCount(), 1, 'repeated failures do not spam the warning');
   rejectShare = false;
   await share().props.onPress();
-  assert.ok(!draw().some(node => node.props?.children === 'Could not share the invite link. Try again.'));
+  assert.deepEqual(payloads[2], { message: 'atlas:///invite?code=BCDFG' });
+  assert.ok(!failed());
+  assert.equal(warn.mock.callCount(), 1);
 
   session = { ...session, room: { ...room, you: 1 } };
   assert.equal(share(), undefined);
@@ -68,7 +81,7 @@ test('native invite intake isolates malformed links and gives each cold or warm 
   assert.equal(route('atlas:///settings?source=menu'), 'atlas:///settings?source=menu');
 });
 
-function entryFixture(initialParams: Record<string, unknown> = {}) {
+function entryFixture(initialParams: Record<string, unknown> = {}, useStore?: () => { session: Session }) {
   const screen = hooks();
   const entry = hooks();
   let active = screen.react;
@@ -81,7 +94,7 @@ function entryFixture(initialParams: Record<string, unknown> = {}) {
     '../table/parts.tsx': { Button() {}, Panel() {}, shared: {} }, '../table/Choice.tsx': { Choice() {} },
     'react-native': { ...native, TextInput: 'TextInput' },
     'expo-router': { router: {}, useLocalSearchParams: () => params },
-    '../online/store.ts': { useOnline: () => ({ session, ...actions }) },
+    '../online/store.ts': { useOnline: useStore ?? (() => ({ session, ...actions })) },
     '../table/usePaced.ts': {}, '../table/Table.tsx': {}, '../table/Results.tsx': {},
   }).default;
   const actions = { resume: () => requests.push('resume'), joinRoom: (code: string) => requests.push(code), leave: () => requests.push('close') };
@@ -140,7 +153,7 @@ test('online screen dispatches once per delivery, skips competing cold resume, a
   assert.deepEqual(ordinary.requests, ['resume', 'HJKMN']);
 });
 
-test('by-code store dispatch reuses the saved token, cannot replace busy sessions, and permits an explicit retry', () => {
+function storeFixture() {
   const opens: Session[] = [];
   const writes: [string, string][] = [];
   const stored = new Map([['atlas.token', 'saved'], ['atlas.name', 'Ada']]);
@@ -152,6 +165,42 @@ test('by-code store dispatch reuses the saved token, cannot replace busy session
     'expo-localization': {},
     './connection.ts': { connection: (_socket: unknown, get: () => Session) => ({ open: () => opens.push(get()) }) },
   });
+  return { useOnline: useOnline as typeof import('../src/online/store.ts').useOnline, opens, writes };
+}
+
+for (const resumed of [false, true]) {
+  test(`warm invite during saved-token resume ${resumed ? 'keeps the recovered seat' : 'joins once if no seat is recovered'}`, () => {
+    const { useOnline, opens, writes } = storeFixture();
+    const view = entryFixture({}, useOnline.getState);
+    view.draw();
+    assert.equal(opens.length, 1);
+    assert.equal(opens[0]?.token, 'saved');
+    assert.deepEqual(opens[0]?.request, { type: 'resync' });
+
+    view.params({ inviteDelivery: '1', inviteCode: 'HJKMN' });
+    view.draw();
+    view.draw();
+    view.params({ inviteDelivery: '2', inviteCode: 'BCDFG' });
+    view.draw();
+    assert.equal(opens.length, 1, 'warm invite does not reopen the connection');
+    assert.deepEqual(writes, [['atlas.name', 'Ada']], 'warm invite does not repeat connection setup');
+
+    const pending = useOnline.getState().session;
+    const welcome = receive(pending, { type: 'welcome', name: 'Ada', token: 'saved', resumed });
+    assert.deepEqual(welcome.send, resumed ? [] : [{ type: 'joinRoom', code: 'HJKMN' }]);
+    const settled = resumed
+      ? receive(welcome.session, room).session
+      : receive(welcome.session, { type: 'error', code: 'room_full', message: '' }).session;
+    useOnline.setState({ session: settled });
+    view.draw();
+    assert.equal(useOnline.getState().session, settled, 'settlement does not replay the invite');
+    assert.equal(opens.length, 1);
+    if (resumed) assert.equal(settled.room, room, 'the recovered room wins');
+  });
+}
+
+test('by-code store dispatch reuses the saved token, cannot replace busy sessions, and permits an explicit retry', () => {
+  const { useOnline, opens, writes } = storeFixture();
   const join = useOnline.getState().joinRoom;
   join('BCDFG');
   assert.equal(opens.length, 1);
@@ -164,12 +213,19 @@ test('by-code store dispatch reuses the saved token, cannot replace busy session
   assert.deepEqual(receive(pending, { ...welcomed, resumed: true }).send, [], 'a saved game takes priority');
 
   const idle = offline('Ada', 'saved');
-  const busy: Session[] = [pending, { ...idle, request: { type: 'resync' } }, { ...idle, room }, { ...idle, room, lost: 0 },
-    { ...idle, room, leaving: true }, { ...idle, left: true }];
+  const resync = { ...idle, request: { type: 'resync' as const } };
+  useOnline.setState({ session: resync });
+  join('HJKMN');
+  assert.equal(useOnline.getState().session, resync, 'manual join does not interrupt resume');
+
+  const busy: Session[] = [pending, { ...idle, request: { type: 'createRoom', countriesToWin: 3 } },
+    { ...resync, room }, { ...resync, lost: 0 }, { ...resync, leaving: true }, { ...resync, left: true }];
   for (const snapshot of busy) {
     useOnline.setState({ session: snapshot });
     join('HJKMN');
     assert.equal(useOnline.getState().session, snapshot);
+    join('HJKMN', { fromInvite: true });
+    assert.equal(useOnline.getState().session, snapshot, 'invite cannot replace a busy session');
   }
   assert.equal(opens.length, 1);
   assert.equal(writes.length, 1);
