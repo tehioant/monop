@@ -1,10 +1,11 @@
 // The pieces the table and the results screen are drawn from.
 
-import type { CardId, PlayerView } from '@atlas/engine';
+import { COUNTRIES, type CardId, type PlayerView } from '@atlas/engine';
 import type { ComponentRef, ReactNode, Ref } from 'react';
-import { Pressable, StyleSheet, Text, View, type ViewStyle } from 'react-native';
+import { Image, Platform, Pressable, StyleSheet, Text, View, type ViewStyle } from 'react-native';
 import Animated, { ZoomIn } from 'react-native-reanimated';
 import { cardInfo, countryPerk, countrySize, title } from './actions.ts';
+import { cardArtwork, deckBack } from './cardArt.ts';
 import { colors, countryColor } from './theme.ts';
 
 type Stack = PlayerView['players'][number]['table'][number];
@@ -23,6 +24,19 @@ export const CARD_WIDTH = 68;
 export const CARD_HEIGHT = 96;
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
+const FACE_INK = '#203b3f';
+const FACE_WHITE = '#fff7e4';
+const WILD_INK = '#614c72';
+const ACTION_INK = '#285d53';
+const COIN_INK = '#714a21';
+const ATLAS_COUNTRY_INK: Record<string, string> = {
+  egypt: '#775725', australia: '#25696e', france: '#244d64', uk: '#483d68', italy: '#375837',
+  japan: '#833e36', brazil: '#235b46', usa: '#884b32', china: '#773b52', india: '#865322',
+};
+
+function cardCountryInk(country: string) {
+  return ATLAS_COUNTRY_INK[country] ?? countryColor(country);
+}
 
 /**
  * A card that has just moved here shows only once it has landed. Decided when the card is first drawn there.
@@ -34,36 +48,80 @@ function landed(after: number | undefined) {
 
 /** A card drawn from its data. */
 export function CardView({ id, selected, dimmed, onPress, landing }: Tappable) {
-  const { name, kind, value, country } = cardInfo(id);
+  const { name, kind, value, country, countries, action } = cardInfo(id);
   const perk = country && countryPerk(country);
-  const band = country ? countryColor(country) : kind === 'coin' ? colors.coin : colors.action;
+  const anyCountry = countries?.length === COUNTRIES.length;
+  let artKey = action ?? id;
+  let displayName = name;
+  let ink = ACTION_INK;
+  let label = title(kind);
+  if (country) {
+    ink = cardCountryInk(country);
+    label = title(country);
+  } else if (countries) {
+    ink = WILD_INK;
+    displayName = 'Wild';
+    label = 'Any country';
+    if (anyCountry) artKey = 'wild-any';
+  } else if (kind === 'coin') {
+    ink = COIN_INK;
+    displayName = 'Coin';
+    artKey = 'mint';
+  }
+  const artwork = cardArtwork[artKey];
+  const split = countries && !anyCountry ? countries : undefined;
+  const splitName = displayName.length > 11 && displayName.includes(' ');
+  if (splitName) displayName = displayName.replace(/ (?=\S+$)/, '\n');
+  const nameSize = displayName.length >= 9 ? 11 : displayName.length >= 7 ? 13 : 15;
   return (
     <AnimatedPressable
       entering={landed(landing)}
       onPress={onPress}
       disabled={!onPress}
       accessibilityLabel={name}
+      accessibilityRole={onPress ? 'button' : undefined}
+      accessibilityState={{ selected: !!selected }}
       style={[styles.card, selected && styles.cardSelected, dimmed && styles.dimmed]}
     >
-      <View style={[styles.cardBand, { backgroundColor: band }]}>
-        <Text style={styles.cardBandText} numberOfLines={1}>
-          {country ? title(country) : title(kind)}
-        </Text>
+      <View style={styles.cardTop}>
+        <View style={styles.cardBadge}>
+          <Text allowFontScaling={false} style={styles.cardValue}>{value}</Text>
+          <View style={styles.coinMark} />
+        </View>
+        <Text allowFontScaling={false} style={[styles.cardKind, { color: ink }]}>{kind.toUpperCase()}</Text>
       </View>
-      {/* One line per word at most, shrunk to fit: a long name is never cut in the middle. */}
       <Text
-        style={styles.cardName}
-        numberOfLines={Math.min(name.split(/[ /]/).length, 3)}
+        style={[styles.cardName, { fontSize: nameSize }, splitName && styles.cardNameStacked]}
+        numberOfLines={splitName ? 2 : 1}
+        allowFontScaling={false}
         adjustsFontSizeToFit
-        minimumFontScale={0.6}
+        minimumFontScale={0.8}
       >
-        {name}
+        {displayName}
       </Text>
-      {/* What the city's country gives once complete: visible before the city is laid. */}
-      {perk && <Text style={styles.cardPerk}>{perk.label}</Text>}
-      <Text style={styles.cardValue}>{value}</Text>
+      <View style={styles.cardArtWindow}>
+        {artwork !== undefined && <Image source={artwork} resizeMode="cover" style={styles.cardIllustration} accessible={false} />}
+      </View>
+      {split ? (
+        <View style={styles.cardSplit}>
+          {split.map((entry) => (
+            <View key={entry} style={[styles.cardBand, { flex: entry.length, backgroundColor: cardCountryInk(entry) }]}>
+              <Text allowFontScaling={false} numberOfLines={1} style={[styles.cardBandText, styles.cardSplitText]}>{title(entry).toUpperCase()}</Text>
+            </View>
+          ))}
+        </View>
+      ) : (
+        <View style={[styles.cardBand, { backgroundColor: ink }]}>
+          <Text allowFontScaling={false} numberOfLines={1} style={[styles.cardBandText, label.length > 9 && styles.cardBandSmall]}>{label.toUpperCase()}</Text>
+          {perk && <Text allowFontScaling={false} numberOfLines={1} style={styles.cardPerk}>{perk.label}</Text>}
+        </View>
+      )}
     </AnimatedPressable>
   );
+}
+
+export function DeckBack({ full = false }: { full?: boolean } = {}) {
+  return <Image source={deckBack} style={[styles.deckBack, full && styles.fullBack]} accessible={false} />;
 }
 
 /**
@@ -163,20 +221,36 @@ const styles = StyleSheet.create({
   card: {
     width: CARD_WIDTH,
     height: CARD_HEIGHT,
-    borderRadius: 8,
+    borderRadius: 5,
     borderWidth: 1,
-    borderColor: colors.line,
-    backgroundColor: colors.surface,
+    borderColor: '#c9bc98',
+    backgroundColor: '#fbf3dd',
     overflow: 'hidden',
-    alignItems: 'center',
+    flexShrink: 0,
+    paddingHorizontal: 3,
+    paddingTop: 3,
+    paddingBottom: 4,
+    gap: 2,
   },
-  cardSelected: { borderColor: colors.accent, borderWidth: 3 },
+  cardSelected: { borderColor: colors.accent, boxShadow: `inset 0 0 0 1px ${colors.accent}` },
   dimmed: { opacity: 0.6 },
-  cardBand: { alignSelf: 'stretch', paddingVertical: 3, paddingHorizontal: 2 },
-  cardBandText: { color: '#fff', fontSize: 10, fontWeight: '700', textAlign: 'center' },
-  cardName: { flex: 1, color: colors.ink, fontSize: 12, fontWeight: '600', textAlign: 'center', padding: 4 },
-  cardPerk: { color: colors.muted, fontSize: 9, fontWeight: '600' },
-  cardValue: { color: colors.coin, fontSize: 13, fontWeight: '700', paddingBottom: 4 },
+  cardTop: { height: 14, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  cardBadge: { minWidth: 18, height: 13, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 2, paddingHorizontal: 2, borderRadius: 2, backgroundColor: FACE_INK },
+  cardValue: { color: FACE_WHITE, fontSize: 11, lineHeight: 12, fontWeight: '800', includeFontPadding: false },
+  coinMark: { width: 4, height: 4, borderRadius: 2, borderWidth: 0.7, borderColor: FACE_WHITE },
+  cardKind: { fontSize: 8, lineHeight: 10, fontWeight: '800', includeFontPadding: false },
+  cardName: { height: 19, color: FACE_INK, fontFamily: Platform.select({ ios: 'Georgia', default: 'serif' }), lineHeight: 19, fontWeight: '700', includeFontPadding: false },
+  cardNameStacked: { height: 22, lineHeight: 11 },
+  cardArtWindow: { flex: 1, overflow: 'hidden', backgroundColor: '#e4ddcb' },
+  cardIllustration: { width: '100%', height: '100%' },
+  cardSplit: { flexDirection: 'row', gap: 1 },
+  cardBand: { borderRadius: 2, paddingVertical: 1, justifyContent: 'center', minHeight: 15 },
+  cardBandText: { color: FACE_WHITE, fontSize: 8.5, lineHeight: 10, fontWeight: '800', textAlign: 'center', includeFontPadding: false },
+  cardBandSmall: { fontSize: 7 },
+  cardSplitText: { fontSize: 6.25 },
+  cardPerk: { color: FACE_WHITE, fontSize: 8, lineHeight: 9, textAlign: 'center', includeFontPadding: false },
+  deckBack: { width: 18, height: 25.4, borderRadius: 2 },
+  fullBack: { width: CARD_WIDTH, height: CARD_HEIGHT, borderRadius: 5 },
   country: {
     flexDirection: 'row',
     alignItems: 'center',

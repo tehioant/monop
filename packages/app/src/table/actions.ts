@@ -21,6 +21,8 @@ export interface CardInfo {
   value: number;
   /** Cities only. */
   country?: string;
+  /** Wild cities only. */
+  countries?: readonly string[];
   /** Action cards only. */
   action?: ActionId;
 }
@@ -32,7 +34,7 @@ const cards = new Map<CardId, CardInfo>(
     if (kind === 'coin') return [id, { name: `Coin ${value}`, kind, value }];
     if (kind === 'wild') {
       const any = card.countries.length === COUNTRIES.length;
-      return [id, { name: `Wild ${any ? 'Any' : card.countries.map(title).join('/')}`, kind, value }];
+      return [id, { name: `Wild ${any ? 'Any' : card.countries.map(title).join('/')}`, kind, value, countries: card.countries }];
     }
     return [id, { name: title(card.action), kind, value, action: card.action }];
   }),
