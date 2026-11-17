@@ -131,6 +131,24 @@ test('both expiry and grace callbacks contain bot faults and apply a progressing
   assert.doesNotMatch(JSON.stringify(warnings.mock.calls.map(call => call.arguments)), /private/);
 });
 
+test('an unplayable timer state pauses only its room without retrying or offering actions', (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout', 'Date'], now: 1000 });
+  const warnings = t.mock.method(console, 'warn', () => {});
+  const invalid: GameState = { ...game, phase: { kind: 'pay', player: 1, receiver: 0, owed: 1, amount: 1, queue: [] } };
+  const { rooms, moves, player } = prepared(invalid);
+  const bo = player('b');
+  assert.deepEqual(bo.state().deadline, { kind: 'response', at: 1020 });
+  t.mock.timers.tick(20);
+  assert.equal(bo.state().deadline, undefined);
+  assert.deepEqual(bo.state().legalActions, []);
+  assert.equal(bo.state().stateVersion, 9);
+  assert.throws(() => rooms.intent(bo.member, 9, { type: 'pay', card: 'coin-1-1' }), /game is paused/);
+  t.mock.timers.tick(300);
+  assert.equal(warnings.mock.callCount(), 1);
+  assert.deepEqual(moves, []);
+  rooms.stop();
+});
+
 test('normal bots can complete a country by reassigning a wild; expiry and cyclic bots must progress', (t) => {
   t.mock.timers.enable({ apis: ['setTimeout', 'Date'], now: 1000 });
   const state = structuredClone(game);
@@ -209,7 +227,7 @@ test('restored empty rooms do not play bots, cancel expiry on resume, and delete
 test('expired rooms refuse reclaim while ordered deletion is pending and until a failed delete is retried', async (t) => {
   t.mock.timers.enable({ apis: ['setTimeout', 'Date'], now: 1000 });
   const warnings = t.mock.method(console, 'warn', () => {});
-  const unrelated = { ...snapshot, code: 'HJKLM' };
+  const unrelated = { ...snapshot, code: 'HJKLM', players: [{ account: 'c', name: 'Cy' }, { account: 'd', name: 'Dee' }] };
   const rows = new Map([[snapshot.code, snapshot], [unrelated.code, unrelated]]);
   const calls: string[] = [];
   const { promise: saveGate, resolve: allowSave } = Promise.withResolvers<void>();
@@ -221,7 +239,7 @@ test('expired rooms refuse reclaim while ordered deletion is pending and until a
     }
     assert.match(parts[0]!, /delete from room_snapshots where code/);
     calls.push(`delete ${code}`);
-    if (calls.length === 2) throw Error('private DB details');
+    if (calls.length === 2 || code === unrelated.code) throw Error('private DB details');
     rows.delete(code);
   }, { json: (value: unknown) => value }) as unknown as Sql;
   const store = roomWrites(sql);
@@ -253,7 +271,15 @@ test('expired rooms refuse reclaim while ordered deletion is pending and until a
   await new Promise(setImmediate);
   assert.deepEqual(calls, ['save', `delete ${snapshot.code}`, `delete ${snapshot.code}`]);
   assert.deepEqual([...rows.values()], [unrelated]);
-  const restored = restore([...(rows.has(snapshot.code) ? [rows.get(snapshot.code)!] : [])]);
-  t.after(() => restored.stop());
+  const restored = restore([...rows.values()]);
   assert.equal(restored.playing('a'), false);
+  assert.equal(restored.playing('c'), true);
+  t.mock.timers.tick(300);
+  await new Promise(setImmediate);
+  assert.equal(calls.at(-1), `delete ${unrelated.code}`);
+  assert.equal(warnings.mock.callCount(), 2);
+  const count = calls.length;
+  restored.stop();
+  t.mock.timers.tick(2_000);
+  assert.equal(calls.length, count, 'shutdown cancelled the scheduled retry');
 });

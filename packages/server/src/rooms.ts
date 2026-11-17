@@ -152,7 +152,8 @@ export class Rooms {
   /** Before welcoming a reconnect, wait for any in-flight release of its own seat. */
   pendingDeparture(account: string): Promise<void> | undefined {
     const held = this.#seatOf(account);
-    if (held && held.room.leaving?.member === held.room.members[held.seat]) return held.room.leaving?.settled;
+    const leaving = held?.room.leaving;
+    if (held && leaving?.member === held.room.members[held.seat]) return leaving?.settled;
   }
 
   /**
@@ -459,7 +460,7 @@ export class Rooms {
 
   /**
    * Plays the bots in the room's seats, one action after the other, until the game waits on a person or is over.
-   * A bot is given what a player in its seat would be given: that seat's view and legal actions.
+   * A bot sees only its seat's view and legal actions. `expired` forces the first move for a timed-out human.
    */
   #playBots(room: Room, expired = false): void {
     if (this.#stopped || room.halted || room.leaving || !this.#hasHumans(room)) return;
@@ -498,7 +499,11 @@ export class Rooms {
       delete room.deadline;
       this.#scheduleMove(room);
       console.warn('[atlas:rooms] Game paused because it could not progress.');
-      room.members.forEach((member, seat) => member.send(stateFor(room, room.game!, seat)));
+      room.members.forEach((member, seat) => {
+        if (!this.#byMember.has(member)) return;
+        try { member.send(stateFor(room, room.game!, seat)); }
+        catch { member.send({ type: 'error', code: 'internal', message: 'This game is paused.' }); }
+      });
     }
   }
 
