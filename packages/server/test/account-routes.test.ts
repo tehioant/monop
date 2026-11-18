@@ -12,16 +12,35 @@ const accounts = new Map([[token, { id: 'original-account', name: 'Original gues
 test('authenticated account removal is unavailable without ownership and never claims success on refusal', async t => {
   const app = Fastify();
   t.after(() => app.close());
-  const attempts: string[] = [];
+  const refusedToken = 'c'.repeat(43);
+  const unknownToken = 'x'.repeat(43);
+  const currentAccounts = new Map(accounts).set(refusedToken, { id: 'refused-account', name: 'Another guest' });
+  const calls: [operation: 'account' | 'erase', candidate: string][] = [];
   accountRoutes(app, {}, {
-    account: async () => undefined, providers: async () => [], ownerOf: async () => undefined, link: async () => false, restore: async () => undefined,
-  }, async candidate => { attempts.push(candidate); return candidate === token; });
+    account: async candidate => {
+      calls.push(['account', candidate]);
+      return currentAccounts.get(candidate);
+    },
+    providers: async () => [], ownerOf: async () => undefined, link: async () => false, restore: async () => undefined,
+  }, async candidate => { calls.push(['erase', candidate]); return candidate === token; });
   const remove = (authorization?: string) => app.inject({ method: 'DELETE', url: '/account', headers: authorization ? { authorization } : {} });
-  assert.equal((await remove()).statusCode, 401);
-  assert.equal((await remove('Bearer nonsense')).statusCode, 401);
-  assert.deepEqual(attempts, []);
-  assert.equal((await remove(`Bearer ${'x'.repeat(43)}`)).statusCode, 401);
+  const assertRefused = async (authorization?: string) => {
+    const reply = await remove(authorization);
+    assert.equal(reply.statusCode, 401);
+    assert.deepEqual(reply.json(), { error: 'invalid_token' });
+    assert.equal(reply.headers['cache-control'], 'no-store');
+    assert.equal(reply.headers['referrer-policy'], 'no-referrer');
+  };
+
+  await assertRefused();
+  await assertRefused('Bearer nonsense');
+  assert.deepEqual(calls, []);
+  await assertRefused(`Bearer ${unknownToken}`);
+  assert.deepEqual(calls.splice(0), [['account', unknownToken]]);
+  await assertRefused(`Bearer ${refusedToken}`);
+  assert.deepEqual(calls.splice(0), [['account', refusedToken], ['erase', refusedToken]]);
   const success = await remove(headers.authorization);
+  assert.deepEqual(calls, [['account', token], ['erase', token]]);
   assert.equal(success.statusCode, 204);
   assert.equal(success.body, '');
   assert.equal(success.headers['cache-control'], 'no-store');
