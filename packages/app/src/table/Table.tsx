@@ -14,7 +14,7 @@ import { FLIGHT_MS, Flights, STAGGER_MS, type Flight, type Point } from './Fligh
 import { sinceLastTurn } from './log.ts';
 import { LogSheet } from './LogSheet.tsx';
 import { cueBetween, movesBetween, type Cue, type Move, type Zone } from './moves.ts';
-import { Button, CARD_HEIGHT, CARD_WIDTH, CardView, Chip, CountryView, Panel, shared, type Tappable } from './parts.tsx';
+import { Button, CARD_HEIGHT, CARD_WIDTH, CardView, Chip, CountryView, DeckBack, Panel, shared, type Tappable } from './parts.tsx';
 import { CardPanel, CardText, PayPanel, VetoPanel } from './Prompt.tsx';
 import { cardPrompt, payPrompt, togglePay, vetoPrompt, type PayPrompt, type Picks } from './prompts.ts';
 import { colors, countryColor } from './theme.ts';
@@ -306,12 +306,13 @@ export function Table({ view, legal, names, onAction }: TableProps) {
         onScrollEndDrag={() => (scrolled.current.touched = Date.now())}
       >
         <View style={styles.help}><RulesButton /></View>
-        <View style={styles.row}>
+        <View style={[styles.row, styles.tableHeader]}>
           <Text style={styles.target}>{t('board.goal', { count: view.options.countriesToWin })}</Text>
           <View style={styles.piles}>
-            <Text ref={anchor('deck')} style={shared.small}>
-              {t('board.deck', { count: view.deckSize })}
-            </Text>
+            <View ref={anchor('deck')} style={styles.piles}>
+              {view.deckSize > 0 && <DeckBack />}
+              <Text style={shared.small}>{t('board.deck', { count: view.deckSize })}</Text>
+            </View>
             <View ref={anchor('discard')} style={styles.piles}>
               <Text style={shared.small}>· {t(view.discardTop === null ? 'board.emptyDiscard' : 'board.discard')}</Text>
               {view.discardTop !== null && <Chip {...readable(view.discardTop)} />}
@@ -428,6 +429,7 @@ const styles = StyleSheet.create({
   own: { flexGrow: 0, flexShrink: 1, borderTopWidth: 1, borderTopColor: colors.line, backgroundColor: colors.background },
   ownContent: { paddingTop: 8 },
   row: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline', gap: 8 },
+  tableHeader: { flexWrap: 'wrap', rowGap: 4 },
   middle: { flexDirection: 'row', gap: 8 },
   // The latest entries, beside the Market and no taller than it.
   log: { flex: 1, justifyContent: 'flex-end', gap: 2, overflow: 'hidden' },

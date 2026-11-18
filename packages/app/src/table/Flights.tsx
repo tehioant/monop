@@ -3,10 +3,9 @@
 
 import type { CardId } from '@atlas/engine';
 import { useEffect } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 import Animated, { Easing, useAnimatedStyle, useSharedValue, withDelay, withTiming } from 'react-native-reanimated';
-import { CARD_HEIGHT, CARD_WIDTH, CardView } from './parts.tsx';
-import { colors } from './theme.ts';
+import { CARD_HEIGHT, CARD_WIDTH, CardView, DeckBack } from './parts.tsx';
 
 /** How long a card takes to get where it goes. */
 export const FLIGHT_MS = 420;
@@ -59,13 +58,7 @@ function Flying({ card, from, to, delay }: Flight) {
   });
   return (
     <Animated.View style={[styles.flying, style]}>
-      {card === null ? (
-        <View style={styles.back}>
-          <Text style={styles.backMark}>A</Text>
-        </View>
-      ) : (
-        <CardView id={card} />
-      )}
+      {card === null ? <DeckBack full /> : <CardView id={card} />}
     </Animated.View>
   );
 }
@@ -82,15 +75,4 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 3 },
     elevation: 6,
   },
-  back: {
-    width: CARD_WIDTH,
-    height: CARD_HEIGHT,
-    borderRadius: 8,
-    borderWidth: 3,
-    borderColor: colors.surface,
-    backgroundColor: colors.accent,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  backMark: { color: colors.surface, fontSize: 32, fontWeight: '800' },
 });

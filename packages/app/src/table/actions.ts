@@ -23,6 +23,7 @@ export interface CardInfo {
   value: number;
   /** Cities only. */
   country?: string;
+  countries?: readonly string[];
   /** Action cards only. */
   action?: ActionId;
 }
@@ -50,7 +51,7 @@ export function cardInfo(id: CardId, t: Translate = english): CardInfo {
   if (kind === 'wild') {
     const name = card.countries.length === COUNTRIES.length ? t('card.wildAny')
       : t('card.wild', { countries: card.countries.map((country) => countryName(country, t)).join('/') });
-    return { name, kind, value };
+    return { name, kind, value, countries: card.countries };
   }
   return { name: t(`card.action.${card.action}`), kind, value, action: card.action };
 }

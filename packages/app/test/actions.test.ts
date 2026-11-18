@@ -17,7 +17,7 @@ test('actions are labelled from their type and card', () => {
   assert.equal(label({ type: 'play', card: 'windfall-1' }), 'Play Windfall');
   assert.equal(label({ type: 'play', card: 'debt-1', target: 2 }), 'Play Debt (target: Bot 2)');
   assert.equal(label({ type: 'lay', card: 'wild-egypt-italy', country: 'italy' }), 'Lay Wild Egypt/Italy (country: Italy)');
-  assert.equal(label({ type: 'reassign', card: 'wild-any-1', country: 'uk' }), 'Reassign Wild Any (country: UK)');
+  assert.equal(label({ type: 'reassign', card: 'wild-any-1', country: 'uk' }), 'Reassign Wild Any (country: Thailand)');
   assert.equal(label({ type: 'play', card: 'raid-1', target: 1, city: 'lyon' }), 'Play Raid (target: Bot 1, city: Lyon)');
   assert.equal(label({ type: 'decline' }), 'Decline');
   assert.equal(label({ type: 'endTurn' }), 'End turn');
@@ -27,7 +27,7 @@ test('an action type the table does not know is still labelled with everything i
   const embargo = unknown<Action>({ type: 'tradeEmbargo', card: 'windfall-1', target: 2, city: 'lyon' });
   assert.equal(actionLabel(embargo, names), 'Trade embargo Windfall (target: Bot 2, city: Lyon)');
   const blockade = unknown<Action>({ type: 'blockade', target: 1, country: 'uk', cost: { coins: 2 } });
-  assert.equal(actionLabel(blockade, names), 'Blockade (target: Bot 1, country: UK, cost: coins: 2)');
+  assert.equal(actionLabel(blockade, names), 'Blockade (target: Bot 1, country: Thailand, cost: coins: 2)');
 });
 
 test('log entries name the player, when there is one', () => {

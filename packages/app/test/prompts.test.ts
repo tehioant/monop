@@ -25,7 +25,7 @@ const bank = (card: CardId): Action => ({ type: 'bank', card });
 
 /**
  * Ann's second turn, holding one of each card that needs a target. She has laid Paris and Lyon; Bob has laid
- * London and banked 6, with two Vetoes in hand; Cy holds Australia complete and Tokyo.
+ * Bangkok and banked 6, with two Vetoes in hand; Cy holds Australia complete and Tokyo.
  */
 function annToPlay(): GameState {
   const state = createGame({ players: 3, countriesToWin: 3 }, 1);
@@ -69,7 +69,7 @@ test('a card that needs a target lists them by opponent, and designates an actio
   const state = annToPlay();
   const raid = promptOf(state, 'raid-1');
   assert.deepEqual(raid.direct, [bank('raid-1')]);
-  assert.deepEqual(labels(raid), [['Take which city?', [1, 'London'], [2, 'Tokyo']]]);
+  assert.deepEqual(labels(raid), [['Take which city?', [1, 'Bangkok'], [2, 'Tokyo']]]);
   assert.deepEqual([raid.chosen, raid.confirm], [null, 'Take which city?']);
   const tokyo = raid.steps[0]!.groups[1]!.options[0]!;
   assert.equal(tokyo.country, 'japan');
@@ -86,7 +86,7 @@ test('an Exchange is two picks, not a list of every pair', () => {
   const prompt = promptOf(state, 'exchange-1');
   assert.deepEqual(labels(prompt), [
     ['Give which of your cities?', [null, 'Paris', 'Lyon']],
-    ['For which city?', [1, 'London'], [2, 'Tokyo']],
+    ['For which city?', [1, 'Bangkok'], [2, 'Tokyo']],
   ]);
   const give = prompt.steps[0]!.groups[0]!.options[1]!.key;
   const aim = prompt.steps[1]!.groups[0]!.options[0]!.key;
@@ -94,7 +94,7 @@ test('an Exchange is two picks, not a list of every pair', () => {
   assert.deepEqual([promptOf(state, 'exchange-1', { give }).chosen, promptOf(state, 'exchange-1', { give }).confirm], [null, 'For which city?']);
   const { chosen, confirm } = promptOf(state, 'exchange-1', { give, aim });
   assert.deepEqual(chosen, { type: 'play', card: 'exchange-1', target: 1, give: 'lyon', take: 'london' });
-  assert.equal(confirm, "Give Lyon for Bob's London");
+  assert.equal(confirm, "Give Lyon for Bob's Bangkok");
 });
 
 test('a single target is picked already, and a pick that names no option counts as none', () => {
@@ -143,7 +143,7 @@ test('every legal action of a card is offered once, directly or by one pick per 
 });
 
 test('the payment prompt adds up the picked cards, and sends them only once they cover what is owed', () => {
-  // Ann plays her Debt on Bob, who lets it happen: he owes 5, with London (2) and 6 in the bank.
+  // Ann plays her Debt on Bob, who lets it happen: he owes 5, with Bangkok (2) and 6 in the bank.
   const state = act(annToPlay(), { type: 'play', card: 'debt-1', target: 1 }, { type: 'decline' });
   const view = viewFor(state, 1);
   const legal = legalActions(state, 1);
@@ -156,7 +156,7 @@ test('the payment prompt adds up the picked cards, and sends them only once they
   assert.deepEqual(none.cards, [
     { key: 'coin-5-1', label: 'Coin 5', country: undefined, picked: false, disabled: false },
     { key: 'coin-1-1', label: 'Coin 1', country: undefined, picked: false, disabled: false },
-    { key: 'london', label: 'London (2)', country: 'uk', picked: false, disabled: false },
+    { key: 'london', label: 'Bangkok (2)', country: 'uk', picked: false, disabled: false },
   ]);
 
   // Short of the amount: nothing to send yet. Covered: no further card can be added, so none is ever refused.
@@ -200,10 +200,10 @@ test('the Veto prompt says what is at stake, to the target and to the player who
     const player = awaited(state);
     return vetoPrompt(viewFor(state, player), legalActions(state, player), names)!.text;
   };
-  assert.equal(stakes({ type: 'play', card: 'raid-1', target: 1, city: 'london' }), 'Ann plays Raid: you lose London. Cancel it with a Veto?');
+  assert.equal(stakes({ type: 'play', card: 'raid-1', target: 1, city: 'london' }), 'Ann plays Raid: you lose Bangkok. Cancel it with a Veto?');
   assert.equal(
     stakes({ type: 'play', card: 'exchange-1', target: 1, give: 'lyon', take: 'london' }),
-    'Ann plays Exchange: you get Lyon for your London. Cancel it with a Veto?',
+    'Ann plays Exchange: you get Lyon for your Bangkok. Cancel it with a Veto?',
   );
   assert.equal(stakes({ type: 'play', card: 'toll-1', country: 'france' }), 'Ann plays Toll: you pay 2. Cancel it with a Veto?');
 });
