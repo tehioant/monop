@@ -40,13 +40,13 @@ class Socket extends EventEmitter {
   close() { this.readyState = 3; this.emit('close'); if (this.failClose) throw Error('private token'); }
 }
 const flush = () => new Promise(setImmediate);
-function handler() {
+function handler(findAccount = async (_sql: unknown, _token: string): Promise<{ id: string; name: string } | undefined> => ({ id: 'a', name: 'Ada' })) {
   return loadComponent(new URL('../src/server.ts', import.meta.url).pathname, {
-    './db.ts': { async findAccount() { return { id: 'a', name: 'Ada' }; }, async renameAccount() {}, async createAccount() { throw Error('no guest'); } },
-  }).serve;
+    './db.ts': { findAccount, async renameAccount() {}, async createAccount() { throw Error('no guest'); } },
+  });
 }
 test('actual serve hello uses token and current Rooms snapshot; malformed/version packets refuse without auth', async () => {
-  const { rooms } = prepared(); const socket = new Socket(); const serve = handler();
+  const { rooms } = prepared(); const socket = new Socket(); const { serve } = handler();
   serve(socket, {}, rooms, () => {});
   for (const data of ['{', 'null', JSON.stringify({ v: v - 1, type: 'hello' })]) { socket.emit('message', data); await flush(); }
   assert.deepEqual(socket.sent.map(m => m.code), ['bad_message', 'bad_message', 'unsupported_version']);
@@ -55,9 +55,35 @@ test('actual serve hello uses token and current Rooms snapshot; malformed/versio
   socket.emit('message', JSON.stringify({ v, type: 'resync' })); await flush();
   assert.equal(socket.sent.at(-1).stateVersion, 9); socket.close(); await flush();
 });
+test('erasure revokes an authenticated socket and refuses an in-flight stale token lookup', async t => {
+  const { rooms } = prepared();
+  t.after(() => rooms.stop());
+  const old = new Socket(), racing = new Socket();
+  const lookup = Promise.withResolvers<{ id: string; name: string }>();
+  let reads = 0;
+  const { serve, accountConnections } = handler(async () => {
+    if (++reads === 1) return { id: 'a', name: 'Ada' };
+    if (reads === 2) return lookup.promise;
+    return undefined;
+  });
+  const connections = accountConnections();
+  const hello = JSON.stringify({ v, type: 'hello', token: 'saved' });
+  serve(old, {}, rooms, () => {}, connections);
+  old.emit('message', hello); await flush();
+  assert.equal(old.sent[0]?.type, 'welcome');
+  serve(racing, {}, rooms, () => {}, connections);
+  racing.emit('message', hello); await flush();
+  assert.equal(reads, 2);
+  connections.erase('a'); rooms.eraseAccount('a');
+  lookup.resolve({ id: 'a', name: 'Ada' }); await flush();
+  assert.equal(old.readyState, 3);
+  assert.equal(rooms.playing('a'), false);
+  assert.deepEqual(racing.sent.map(m => m.code), ['invalid_token']);
+});
+
 test('serve contains send/close failures without rejected queues or private diagnostics', async (t) => {
   const warnings: any[] = []; t.mock.method(console, 'warn', (...args: unknown[]) => warnings.push(args));
-  const { rooms } = prepared(); const socket = new Socket(); const serve = handler();
+  const { rooms } = prepared(); const socket = new Socket(); const { serve } = handler();
   serve(socket, {}, rooms, () => {}); socket.failSend = true; socket.failClose = true;
   socket.emit('message', JSON.stringify({ v, type: 'ping' })); await flush(); await flush();
   assert.equal(socket.readyState, 3); assert.equal(warnings.length, 1);
@@ -73,7 +99,7 @@ test('explicit leave acknowledges only a durable mid-turn release; a refused wri
     if (writes.length === 1) throw Error('store unavailable');
     return new Promise<void>(resolve => { stored = resolve; });
   });
-  const socket = new Socket(); const serve = handler();
+  const socket = new Socket(); const { serve } = handler();
   serve(socket, {}, rooms, () => {});
   const send = (type: string) => socket.emit('message', JSON.stringify({ v, type, token: 'saved' }));
   send('hello'); await flush();
@@ -82,7 +108,7 @@ test('explicit leave acknowledges only a durable mid-turn release; a refused wri
   assert.equal(rooms.playing('a'), true);
   send('leaveRoom'); await flush();
   assert.equal(writes.length, 2);
-  assert.deepEqual(writes[1]!.players[0], { account: null, name: 'Ada' });
+  assert.deepEqual(writes[1]!.players[0], { account: null, name: 'Ada', departedAccount: 'a' });
   assert.equal(writes[1]!.stateVersion, 9);
   assert.ok(!socket.sent.some(m => m.type === 'left'));
   stored(); await flush();
@@ -97,7 +123,7 @@ test('explicit leave acknowledges only a durable mid-turn release; a refused wri
 });
 
 test('a reconnect sees the settled leave outcome, never an acknowledgement addressed to the old socket', async (t) => {
-  const serve = handler();
+  const { serve } = handler();
   const send = (socket: Socket, type: string) => socket.emit('message', JSON.stringify({ v, type, token: 'saved' }));
   for (const commits of [true, false]) {
     const { promise, resolve, reject } = Promise.withResolvers<void>();
@@ -157,7 +183,7 @@ test('heartbeats answer while a reconnect waits for leave, without advancing gam
   t.after(async () => { reject(Error('write refused')); await departure; rooms.stop(); });
 
   const socket = new Socket();
-  handler()(socket, {}, rooms, () => {});
+  handler().serve(socket, {}, rooms, () => {});
   const send = (type: string, version = v) => socket.emit('message', JSON.stringify({ v: version, type, token: 'saved' }));
   send('hello');
   await flush();

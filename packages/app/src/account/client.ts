@@ -15,8 +15,10 @@ const base64url = (value: string) => value.replaceAll('+', '-').replaceAll('/', 
 
 export function accountClient(io: typeof fetch = fetch) {
   const request = async (path: string, token: string | null, method = 'GET', body?: object) => {
-    const endpoint = new URL(serverUrl);
-    if (endpoint.protocol !== 'wss:' || endpoint.username || endpoint.password) throw Error('Account requires HTTPS');
+    // React Native's URL implementation only parses hosts for HTTP(S), not WebSocket schemes.
+    if (!/^wss:\/\//i.test(serverUrl) || /[\s\\]/.test(serverUrl)) throw Error('Account requires HTTPS');
+    const endpoint = new URL(serverUrl.replace(/^wss:/i, 'https:'));
+    if (!endpoint.host || endpoint.username || endpoint.password || /^https:\/\/[^/]*@/.test(endpoint.href)) throw Error('Invalid account origin');
     // The account routes share the game server origin, not the WebSocket path.
     const response = await io(`https://${endpoint.host}/account${path}`, {
       method, redirect: 'error', signal: AbortSignal.timeout(10_000),
@@ -33,6 +35,10 @@ export function accountClient(io: typeof fetch = fetch) {
       if (!Array.isArray(providers) || !providers.every(isProvider) || !Array.isArray(linked) || !linked.every(isProvider) ||
           typeof authenticated !== 'boolean') throw Error('Invalid account status');
       return { providers, linked, authenticated };
+    },
+    async deleteAccount(token: string): Promise<void> {
+      const response = await request('', token, 'DELETE');
+      if (response.status !== 204) throw Error('Deletion not confirmed');
     },
     async signIn(provider: Provider, mode: Mode, token: string | null): Promise<RestoredAccount | { linked: true } | undefined> {
       const verifier = base64url(btoa(String.fromCharCode(...await Crypto.getRandomBytesAsync(32))));

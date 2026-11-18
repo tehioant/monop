@@ -1,7 +1,7 @@
 import * as Linking from 'expo-linking';
 import { router } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
-import { ScrollView, StyleSheet, Text } from 'react-native';
+import { Alert, ScrollView, StyleSheet, Text } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { accountClient, type AccountStatus, type Mode, type Provider } from '../account/client.ts';
 import { useOnline } from '../online/store.ts';
@@ -17,7 +17,7 @@ export default function AccountScreen() {
   const [policyError, setPolicyError] = useState(false);
   const [status, setStatus] = useState<AccountStatus | null>(null);
   const [busy, setBusy] = useState(false);
-  const [signInError, setSignInError] = useState(false);
+  const [notice, setNotice] = useState<'signInError' | 'deleteError' | 'deleted' | 'deletedLocalError' | null>(null);
   const pending = useRef(false);
   const mounted = useRef(true);
   const online = useOnline.getState;
@@ -35,18 +35,44 @@ export default function AccountScreen() {
     if (pending.current) return;
     pending.current = true;
     setBusy(true);
-    setSignInError(false);
+    setNotice(null);
     const token = online().accountToken();
     try {
       const result = await client.signIn(provider, mode, token);
       if (!result || !mounted.current) return;
       if ('token' in result && !online().replaceAccount(token, result)) throw Error('Could not store restored account');
       await refresh();
-    } catch { if (mounted.current) setSignInError(true); }
+    } catch { if (mounted.current) setNotice('signInError'); }
     finally {
       pending.current = false;
       if (mounted.current) setBusy(false);
     }
+  };
+  const remove = async (token: string) => {
+    if (pending.current || online().accountToken() !== token) return;
+    pending.current = true;
+    setBusy(true);
+    setNotice(null);
+    try {
+      await client.deleteAccount(token);
+      const cleared = online().clearAccount(token);
+      if (mounted.current) {
+        setStatus(current => current && { ...current, authenticated: false, linked: [] });
+        setNotice(cleared ? 'deleted' : 'deletedLocalError');
+      }
+    } catch { if (mounted.current) setNotice('deleteError'); }
+    finally {
+      pending.current = false;
+      if (mounted.current) setBusy(false);
+    }
+  };
+  const confirmRemoval = () => {
+    const token = online().accountToken();
+    if (!token || pending.current) return;
+    Alert.alert(t('account.delete'), t('account.deleteConfirm'), [
+      { text: t('common.cancel'), style: 'cancel' },
+      { text: t('account.delete'), style: 'destructive', onPress: () => remove(token) },
+    ]);
   };
   const policy = safePolicyUrl(privacyPolicyUrl);
   const openPolicy = async () => {
@@ -73,7 +99,8 @@ export default function AccountScreen() {
               <Button quiet disabled={busy} label={t('account.restore', { provider: t(`account.${provider}`) })} onPress={() => signIn(provider, 'restore')} />
             </Panel>
           ))}
-          {signInError && <Text accessibilityRole="alert" style={shared.small}>{t('account.signInError')}</Text>}
+          {status?.authenticated && <Button quiet disabled={busy} label={t('account.delete')} onPress={confirmRemoval} />}
+          {notice && <Text accessibilityRole="alert" style={shared.small}>{t(`account.${notice}`)}</Text>}
         </Panel>
         <Panel>
           {policy ? <Button quiet label={t('account.privacy')} onPress={openPolicy} /> :
@@ -90,7 +117,7 @@ function safePolicyUrl(value: string | undefined): string | undefined {
   if (!value || !/^https:\/\//i.test(value) || /[\s\\]/.test(value)) return;
   try {
     const url = new URL(value);
-    if (url.protocol === 'https:' && !url.username && !url.password) return url.href;
+    if (url.protocol === 'https:' && url.host && !url.username && !url.password) return url.href;
   } catch { /* Invalid build configuration: leave the link unavailable. */ }
 }
 

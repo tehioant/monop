@@ -17,6 +17,8 @@ import { ROOM_CODE_ALPHABET, ROOM_CODE_LENGTH, type Deadline, type ErrorCode, ty
 /** Who holds a seat: an account id, or null for a bot, and the display name it plays under. */
 export interface Player {
   account: string | null;
+  // A released seat cannot be resumed; this tag only lets deletion remove the retained display name.
+  departedAccount?: string;
   name: string;
 }
 
@@ -29,6 +31,12 @@ export interface Member extends Player {
 
 /** A seat nobody is connected to: a bot's, or a person's in a game restored from its snapshot. */
 const absent = (player: Player): Member => ({ ...player, send() {}, close() {} });
+const storedPlayer = ({ account, name, departedAccount }: Player): Player =>
+  departedAccount ? { account, name, departedAccount } : { account, name };
+const ownsData = (player: Player, id: string) => player.account === id || player.departedAccount === id;
+export function redactPlayers(players: Player[], id: string): Player[] {
+  return players.map((player, seat) => ownsData(player, id) ? { account: null, name: `Bot ${seat + 1}` } : player);
+}
 
 /** A room whose game is in progress, as saved at a turn boundary. */
 export interface Snapshot {
@@ -181,6 +189,27 @@ export class Rooms {
     this.#refreshPresence(room);
   }
 
+  /** Purge released/active seats without changing the engine's seat order in a running game. */
+  eraseAccount(id: string): void {
+    for (const room of this.#byCode.values()) {
+      if (!room.members.some(member => ownsData(member, id))) continue;
+      const replacements = redactPlayers(room.members, id);
+      room.members = room.members.flatMap((member, seat) => {
+        if (!ownsData(member, id)) return [member];
+        this.#byMember.delete(member);
+        this.#clearGrace(member);
+        room.covered.delete(member);
+        return room.game ? [absent(replacements[seat]!)] : [];
+      });
+      if (!room.game) {
+        const host = room.members.findIndex(isPerson);
+        if (host > 0) room.members.unshift(...room.members.splice(host, 1));
+      }
+      this.#sendRoom(room);
+      this.#refreshPresence(room);
+    }
+  }
+
   /** The member asks for what they should already have: their room and, once the game has started, its state. */
   resync(member: Member): void {
     const room = this.#roomOf(member);
@@ -295,9 +324,9 @@ export class Rooms {
     }
     if (room.leaving) throw new Rejection('leave_failed', 'A seat change is in progress');
     const seat = room.members.indexOf(member);
-    const bot = absent({ account: null, name: member.name });
-    const players = room.members.map(({ account, name }) => ({ account, name }));
-    players[seat] = { account: bot.account, name: bot.name };
+    const bot = absent({ account: null, name: member.name, departedAccount: member.account! });
+    const players = room.members.map(storedPlayer);
+    players[seat] = storedPlayer(bot);
 
     // No game write can overtake this snapshot while the seat change is pending.
     const { promise: settled, resolve } = Promise.withResolvers<void>();
@@ -305,6 +334,8 @@ export class Rooms {
     this.#scheduleMove(room);
     try {
       await this.#save(room, players);
+      // Account erasure may have replaced the seat while this write was queued.
+      if (room.members[seat] !== member) return;
       this.#byMember.delete(member);
       this.#clearGrace(member);
       room.covered.delete(member);
@@ -404,7 +435,7 @@ export class Rooms {
     if (!turnPassed && !isOver(game)) return;
 
     const { code, countriesToWin } = room;
-    const players = room.members.map(({ account, name }) => ({ account, name }));
+    const players = room.members.map(storedPlayer);
     if (game.phase.kind === 'over') {
       room.members.forEach(member => this.#clearGrace(member));
       const durationSeconds = Math.round((Date.now() - room.startedAt) / 1000);

@@ -14,9 +14,13 @@ function fixture(url?: string, t = english, linked: string[] = []) {
   let refuse = false;
   let replacement: unknown;
   const signIns: unknown[][] = [];
+  const deletes: string[] = [];
+  const clearances: string[] = [];
+  let refuseDelete = true;
+  let confirmation: any[] = [];
   const token = 'guest-token';
   const load = (screen: string) => loadComponent(`${src}app/${screen}.tsx`, {
-    react: h.react, 'react-native': { ...native, Switch: 'Switch' }, 'react-native-reanimated': animated,
+    react: h.react, 'react-native': { ...native, Switch: 'Switch', Alert: { alert: (_a: string, _b: string, actions: any[]) => { confirmation = actions; } } }, 'react-native-reanimated': animated,
     'expo-router': { router: { push: (path: string) => paths.push(path) } },
     'expo-linking': { openURL: async (address: string) => {
       opened.push(address);
@@ -28,14 +32,17 @@ function fixture(url?: string, t = english, linked: string[] = []) {
     '../account/config.ts': { privacyPolicyUrl: url },
     '../account/client.ts': { accountClient: () => ({
       status: async () => ({ providers: ['google'], linked, authenticated: true }),
+      deleteAccount: async (candidate: string) => { deletes.push(candidate); if (refuseDelete) throw Error('private'); },
       signIn: async (...args: unknown[]) => { signIns.push(args); return { token: 'restored-token', name: 'Guest' }; },
     }) },
     '../online/store.ts': { useOnline: { getState: () => ({
       accountToken: () => token,
+      clearAccount: (candidate: string) => { clearances.push(candidate); return true; },
       replaceAccount: (...args: unknown[]) => { replacement = args; return true; },
     }) } },
   }).default;
-  return { opened, paths, load, render: h.render, flush: h.flush, signIns, replacement: () => replacement, refuse: () => { refuse = true; } };
+  return { opened, paths, load, render: h.render, flush: h.flush, signIns, deletes, clearances,
+    confirm: () => confirmation, allowDelete: () => { refuseDelete = false; }, replacement: () => replacement, refuse: () => { refuse = true; } };
 }
 
 test('Settings opens Account, where a guest can open the configured privacy policy and retry a native refusal', async () => {
@@ -80,4 +87,25 @@ test('Account shows its linked provider and uses restored credentials for the on
   await restore.props.onPress();
   assert.deepEqual(f.signIns, [['google', 'restore', 'guest-token']]);
   assert.deepEqual(f.replacement(), ['guest-token', { token: 'restored-token', name: 'Guest' }]);
+});
+
+test('Account deletion needs explicit confirmation and only clears credentials after success', async () => {
+  const f = fixture();
+  const screen = f.load('account');
+  const render = () => f.render(screen);
+  render(); f.flush(); await new Promise(resolve => setImmediate(resolve));
+  const deleteButton = () => button(render(), 'Delete account');
+  assert.ok(deleteButton());
+  deleteButton().props.onPress();
+  assert.deepEqual(f.deletes, []);
+  assert.equal(f.confirm()[0].style, 'cancel');
+  await f.confirm()[1].onPress();
+  assert.deepEqual(f.deletes, ['guest-token']);
+  assert.deepEqual(f.clearances, []);
+  assert.ok(copy(render()).includes('Could not delete the account. Try again.'));
+  f.allowDelete();
+  deleteButton().props.onPress();
+  await f.confirm()[1].onPress();
+  assert.deepEqual(f.clearances, ['guest-token']);
+  assert.ok(copy(render()).includes('Online account deleted.'));
 });

@@ -20,6 +20,7 @@ const NAME_KEY = 'atlas.name';
 interface OnlineStore {
   session: Session;
   accountToken: () => string | null;
+  clearAccount: (expected: string) => boolean;
   replaceAccount: (previous: string | null, account: RestoredAccount) => boolean;
   /** The display name to go online under next. A blank one is replaced by a generated name. */
   setName: (name: string) => void;
@@ -50,7 +51,8 @@ export const useOnline = create<OnlineStore>((set, get) => {
   };
   const read = (key: string) => { try { return SecureStore.getItem(key); } catch { warn(); return null; } };
   const write = (key: string, value: string) => { try { SecureStore.setItem(key, value); } catch { warn(); } };
-  const accountToken = () => get().session.token ?? read(TOKEN_KEY);
+  let forgetStoredToken = false;
+  const accountToken = () => get().session.token ?? (forgetStoredToken ? null : read(TOKEN_KEY) || null);
   const server = connection(
     () => new WebSocket(serverUrl) as Socket,
     () => get().session,
@@ -69,7 +71,7 @@ export const useOnline = create<OnlineStore>((set, get) => {
       name = defaultName(translate(readLanguage(choice)));
     }
     write(NAME_KEY, name);
-    const token = get().session.token ?? read(TOKEN_KEY);
+    const token = accountToken();
     set({ session: { ...offline(name, token), request } });
     server.open();
   };
@@ -77,6 +79,15 @@ export const useOnline = create<OnlineStore>((set, get) => {
   return {
     session: offline(read(NAME_KEY) ?? '', null),
     accountToken,
+    clearAccount: (expected) => {
+      if (accountToken() !== expected) return false;
+      server.close();
+      forgetStoredToken = true;
+      set({ session: offline('', null) });
+      try { SecureStore.setItem(TOKEN_KEY, ''); SecureStore.setItem(NAME_KEY, ''); }
+      catch { warn(); return false; }
+      return true;
+    },
     replaceAccount: (previous, account) => {
       const { request, room } = get().session;
       if (request || room || accountToken() !== previous) return false;
@@ -89,7 +100,7 @@ export const useOnline = create<OnlineStore>((set, get) => {
     setName: (name) => set({ session: { ...get().session, name } }),
     resume: () => {
       // Only an account the server has already issued can hold a seat.
-      if (get().session.token ?? read(TOKEN_KEY)) connect({ type: 'resync' });
+      if (accountToken()) connect({ type: 'resync' });
     },
     createRoom: (countriesToWin) => connect({ type: 'createRoom', countriesToWin }),
     joinRoom: (code, options) => {

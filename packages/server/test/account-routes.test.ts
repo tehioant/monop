@@ -9,6 +9,24 @@ const token = 'b'.repeat(43);
 const headers = { authorization: `Bearer ${token}` };
 const accounts = new Map([[token, { id: 'original-account', name: 'Original guest' }]]);
 
+test('authenticated account removal is unavailable without ownership and never claims success on refusal', async t => {
+  const app = Fastify();
+  t.after(() => app.close());
+  const attempts: string[] = [];
+  accountRoutes(app, {}, {
+    account: async () => undefined, providers: async () => [], link: async () => false, restore: async () => undefined,
+  }, async candidate => { attempts.push(candidate); return candidate === token; });
+  const remove = (authorization?: string) => app.inject({ method: 'DELETE', url: '/account', headers: authorization ? { authorization } : {} });
+  assert.equal((await remove()).statusCode, 401);
+  assert.equal((await remove('Bearer nonsense')).statusCode, 401);
+  assert.deepEqual(attempts, []);
+  assert.equal((await remove(`Bearer ${'x'.repeat(43)}`)).statusCode, 401);
+  const success = await remove(headers.authorization);
+  assert.equal(success.statusCode, 204);
+  assert.equal(success.body, '');
+  assert.equal(success.headers['cache-control'], 'no-store');
+});
+
 test('account HTTP routes return a proof-bound callback and issue credentials only in a no-store response body', async (t) => {
   const app = Fastify();
   t.after(() => app.close());

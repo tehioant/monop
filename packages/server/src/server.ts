@@ -10,6 +10,7 @@ import { accountRoutes } from './account/routes.ts';
 import {
   createAccount,
   discardSnapshot,
+  eraseAccount,
   findAccount,
   finishGame,
   identityStore,
@@ -20,7 +21,7 @@ import {
   type Sql,
 } from './db.ts';
 import { HEARTBEAT_MS, MAX_NAME_LENGTH, PROTOCOL_VERSION, type ServerMessage } from './protocol.ts';
-import { Rejection, Rooms, type Member, type RoomStore, type RoomTiming } from './rooms.ts';
+import { redactPlayers, Rejection, Rooms, type Member, type Player, type RoomStore, type RoomTiming } from './rooms.ts';
 
 export interface ServerOptions {
   databaseUrl: string;
@@ -45,20 +46,64 @@ const BOT_LEVEL: Difficulty = 'normal';
 const MAX_MESSAGE_BYTES = 16 * 1024;
 
 /** Serializes snapshot writes, finalization and deletion on the same queue. */
-export function roomWrites(sql: Sql): RoomStore & { drain(): Promise<void> } {
+export function roomWrites(sql: Sql) {
   let queued = Promise.resolve();
-  const write = (query: () => Promise<void>, reportFailure = true): Promise<void> => {
+  const write = <T>(query: () => Promise<T>, reportFailure = true): Promise<T> => {
     const result = queued.then(query);
-    queued = result.catch(() => {
+    queued = result.then(() => {}, () => {
       if (reportFailure) console.warn('[atlas:rooms] Room write failed.');
     });
     return result;
   };
+  const erasures = new Set<{ erased?: string }>();
+  // Any write captured during erasure is queued behind it and rechecks that exact outcome.
+  const sanitizeAfterPendingErasures = () => {
+    const pending = [...erasures];
+    return (players: Player[]) => pending.reduce((current, { erased }) => erased ? redactPlayers(current, erased) : current, players);
+  };
   return {
-    save: (snapshot) => write(() => saveSnapshot(sql, snapshot)),
-    finish: (code, summary) => write(() => finishGame(sql, code, summary)),
-    discard: (code) => write(() => discardSnapshot(sql, code), false),
+    save(snapshot: Parameters<RoomStore['save']>[0]) {
+      const sanitize = sanitizeAfterPendingErasures();
+      return write(() => saveSnapshot(sql, { ...snapshot, players: sanitize(snapshot.players) }));
+    },
+    finish(code: string, summary: Parameters<RoomStore['finish']>[1]) {
+      const sanitize = sanitizeAfterPendingErasures();
+      void write(() => finishGame(sql, code, { ...summary, players: sanitize(summary.players) }));
+    },
+    discard: (code: string) => write(() => discardSnapshot(sql, code), false),
+    async erase(purge: () => Promise<string | undefined>, committed: (id: string) => void): Promise<boolean> {
+      const outcome: { erased?: string } = {};
+      erasures.add(outcome);
+      try {
+        return await write(async () => {
+          outcome.erased = await purge();
+          if (!outcome.erased) return false;
+          committed(outcome.erased);
+          return true;
+        }, false);
+      } finally { erasures.delete(outcome); }
+    },
     drain: () => queued,
+  };
+}
+
+/** Tracks all authenticated sockets, even ones that aren't currently in a room. */
+export function accountConnections() {
+  let revision = 0;
+  const connected = new Map<string, Set<() => void>>();
+  return {
+    revision: () => revision,
+    track(id: string, revoke: () => void) {
+      const sockets = connected.get(id) ?? new Set();
+      sockets.add(revoke);
+      connected.set(id, sockets);
+      return () => { sockets.delete(revoke); if (!sockets.size && connected.get(id) === sockets) connected.delete(id); };
+    },
+    erase(id: string) {
+      revision++;
+      for (const revoke of connected.get(id) ?? []) revoke();
+      connected.delete(id);
+    },
   };
 }
 
@@ -71,6 +116,7 @@ export async function startServer(options: ServerOptions): Promise<Server> {
   const sql = await openDatabase(options.databaseUrl);
 
   const store = roomWrites(sql);
+  const connections = accountConnections();
   const rooms = new Rooms(
     options.newGame ?? ((gameOptions) => createGame(gameOptions, randomInt(2 ** 32))),
     // A bot keeps nothing from one decision to the next, so one is made for each, with its own seed.
@@ -88,12 +134,16 @@ export async function startServer(options: ServerOptions): Promise<Server> {
         typeof error.statusCode === 'number' && error.statusCode >= 400 && error.statusCode < 500;
       reply.header('cache-control', 'no-store').code(clientError ? 400 : 503).send({ error: 'account_unavailable' });
     });
-    accountRoutes(account, options.providers ?? {}, identityStore(sql));
+    const apple = options.providers?.apple;
+    accountRoutes(account, options.providers ?? {}, identityStore(sql), token => store.erase(
+      () => eraseAccount(sql, token, apple?.revoke?.bind(apple)),
+      id => { connections.erase(id); rooms.eraseAccount(id); },
+    ));
   });
   // The connections heard from since the last sweep. One that is not among them at the next sweep is taken for
   // dead and closed, which is how the server learns of a connection lost without a goodbye.
   const heard = new Set<WebSocket>();
-  app.get('/ws', { websocket: true }, (socket) => serve(socket, sql, rooms, () => heard.add(socket)));
+  app.get('/ws', { websocket: true }, (socket) => serve(socket, sql, rooms, () => heard.add(socket), connections));
   const sweep = setInterval(() => {
     for (const socket of app.websocketServer.clients) if (!heard.has(socket)) socket.terminate();
     heard.clear();
@@ -128,8 +178,11 @@ export async function closeRoomResources(
 }
 
 /** One client connection. Commands run in order; transport heartbeats are independent. */
-export function serve(socket: WebSocket, sql: Sql, rooms: Rooms, alive: () => void): void {
+export function serve(socket: WebSocket, sql: Sql, rooms: Rooms, alive: () => void,
+  connections = accountConnections()): void {
   let member: Member | undefined;
+  let untrack: (() => void) | undefined;
+  let revoked = false;
   let queue = Promise.resolve();
   alive();
 
@@ -149,6 +202,10 @@ export function serve(socket: WebSocket, sql: Sql, rooms: Rooms, alive: () => vo
   const hello = async (token: unknown, name: unknown): Promise<void> => {
     if (member) throw new Rejection('bad_message', 'Already said hello');
     const wanted = typeof name === 'string' ? name.trim().slice(0, MAX_NAME_LENGTH) : '';
+    if (token !== undefined && (typeof token !== 'string' || !token.length || token.length > 128)) {
+      throw new Rejection('invalid_token', 'Unknown token');
+    }
+    let revision = connections.revision();
     let account: { id: string; token: string; name: string };
     if (typeof token === 'string') {
       const known = await findAccount(sql, token);
@@ -159,17 +216,24 @@ export function serve(socket: WebSocket, sql: Sql, rooms: Rooms, alive: () => vo
       const guest = wanted || 'Guest';
       account = { name: guest, ...(await createAccount(sql, guest)) };
     }
-    for (let pending = rooms.pendingDeparture(account.id); pending; pending = rooms.pendingDeparture(account.id)) {
-      await pending;
-      if (socket.readyState !== socket.OPEN) return;
+    while (socket.readyState === socket.OPEN) {
+      const pending = rooms.pendingDeparture(account.id);
+      if (pending) { await pending; continue; }
+      if (revision === connections.revision()) break;
+      // Deletion could have committed while hello was waiting for SQL or a seat change.
+      revision = connections.revision();
+      const known = await findAccount(sql, account.token);
+      if (!known) throw new Rejection('invalid_token', 'Unknown token');
     }
     if (socket.readyState !== socket.OPEN) return;
+    untrack = connections.track(account.id, () => { revoked = true; close(); });
     member = { account: account.id, name: account.name, send, close };
     send({ type: 'welcome', token: account.token, name: account.name, resumed: rooms.playing(account.id) });
     rooms.resume(member);
   };
 
   const handle = async (message: Record<string, unknown>): Promise<void> => {
+    if (revoked) return;
     if (message.type === 'hello') return hello(message.token, message.name);
     if (!member) throw new Rejection('bad_message', 'Say hello first');
     switch (message.type) {
@@ -213,6 +277,7 @@ export function serve(socket: WebSocket, sql: Sql, rooms: Rooms, alive: () => vo
     queue = queue.then(() => handle(message)).catch(report);
   });
   socket.on('close', () => {
+    untrack?.();
     queue = queue.then(() => {
       if (member) rooms.leave(member);
     }).catch(() => { warn(); });

@@ -1,7 +1,7 @@
 import { hash, randomBytes } from 'node:crypto';
 import postgres from 'postgres';
 import type { IdentityStore, Provider } from './account/flows.ts';
-import type { Snapshot, Summary } from './rooms.ts';
+import { redactPlayers, type Player, type Snapshot, type Summary } from './rooms.ts';
 
 export type Sql = postgres.Sql;
 
@@ -52,6 +52,17 @@ export async function openDatabase(url: string): Promise<Sql> {
         duration_seconds integer not null,
         finished_at timestamptz not null default now()
       )`;
+    // Older snapshots discarded the owner of a released seat but kept its name. Those legacy names cannot
+    // be attributed safely, so anonymize them before loading any room. New releases retain the erasure tag.
+    for (const table of ['room_snapshots', 'game_summaries']) {
+      await sql`update ${sql(table)} set players = (
+        select jsonb_agg(case when player->>'account' is null and player->>'departedAccount' is null
+          and player->>'name' !~ '^Bot [1-9][0-9]*$'
+          then jsonb_build_object('account', null::text, 'name', 'Bot ' || seat) else player end order by seat)
+        from jsonb_array_elements(players) with ordinality as p(player, seat)
+      ) where exists (select 1 from jsonb_array_elements(players) as p(player)
+        where player->>'account' is null and player->>'departedAccount' is null and player->>'name' !~ '^Bot [1-9][0-9]*$')`;
+    }
   } catch (error) {
     await sql.end();
     throw error;
@@ -108,6 +119,37 @@ export function identityStore(sql: Sql): IdentityStore {
       return { token, name: account.name };
     }),
   };
+}
+
+/** Caller serializes this transaction with room writes. The row lock also excludes link and restore. */
+export function eraseAccount(sql: Sql, token: string, revokeApple?: (encrypted: string) => Promise<void>): Promise<string | undefined> {
+  const digest = hashOf(token);
+  return sql.begin(async (tx) => {
+    const [account] = await tx<{ id: string }[]>`
+      select a.id from accounts a where a.token_hash = ${digest} or exists (
+        select 1 from account_sessions s where s.account_id = a.id and s.token_hash = ${digest}) for update`;
+    if (!account) return;
+    const { id } = account;
+    const [apple] = await tx<{ revocation: string | null }[]>`
+      select revocation from account_identities where account_id = ${id} and provider = 'apple'`;
+    if (apple) {
+      if (!apple.revocation || !revokeApple) throw Error('Apple revocation unavailable');
+      await revokeApple(apple.revocation);
+    }
+    const owner = tx.json([{ account: id }]), released = tx.json([{ departedAccount: id }]);
+    const snapshots = await tx<{ code: string; players: Player[] }[]>`
+      select code, players from room_snapshots where players @> ${owner} or players @> ${released} for update`;
+    for (const { code, players } of snapshots) {
+      await tx`update room_snapshots set players = ${tx.json(redactPlayers(players, id))} where code = ${code}`;
+    }
+    const summaries = await tx<{ id: string; players: Player[] }[]>`
+      select id, players from game_summaries where players @> ${owner} or players @> ${released} for update`;
+    for (const summary of summaries) {
+      await tx`update game_summaries set players = ${tx.json(redactPlayers(summary.players, id))} where id = ${summary.id}`;
+    }
+    await tx`delete from accounts where id = ${id}`;
+    return id;
+  });
 }
 
 /** The account plays under `name` from now on. */

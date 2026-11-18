@@ -9,10 +9,16 @@ function bearer(req: FastifyRequest): string | undefined {
   return /^Bearer ([A-Za-z0-9_-]{43})$/i.exec(req.headers.authorization ?? '')?.[1];
 }
 
-export function accountRoutes(app: FastifyInstance, adapters: ProviderAdapters, store: IdentityStore) {
+export function accountRoutes(app: FastifyInstance, adapters: ProviderAdapters, store: IdentityStore,
+  erase?: (token: string) => Promise<boolean>) {
   const flows = accountFlows(adapters, store);
   const headers = { 'cache-control': 'no-store', 'referrer-policy': 'no-referrer' };
   app.get('/account', async (req, reply) => reply.headers(headers).send(await flows.status(bearer(req))));
+  if (erase) app.delete('/account', async (req, reply) => {
+    const token = bearer(req);
+    if (!token || !await erase(token)) return reply.headers(headers).code(401).send({ error: 'invalid_token' });
+    return reply.headers(headers).code(204).send();
+  });
   app.post('/account/begin', { bodyLimit: 2048 }, async (req, reply) => {
     const url = await flows.begin(record(req.body), bearer(req));
     return reply.headers(headers).code(url ? 200 : 403).send(url ? { url } : { error: 'sign_in_unavailable' });
