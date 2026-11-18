@@ -135,9 +135,9 @@ export async function startServer(options: ServerOptions): Promise<Server> {
       reply.header('cache-control', 'no-store').code(clientError ? 400 : 503).send({ error: 'account_unavailable' });
     });
     const apple = options.providers?.apple;
-    accountRoutes(account, options.providers ?? {}, identityStore(sql), token => store.erase(
+    accountRoutes(account, options.providers ?? {}, identityStore(sql), (token, cancelFlows) => store.erase(
       () => eraseAccount(sql, token, apple?.revoke?.bind(apple)),
-      id => { connections.erase(id); rooms.eraseAccount(id); },
+      id => { cancelFlows(id); connections.erase(id); rooms.eraseAccount(id); },
     ));
   });
   // The connections heard from since the last sweep. One that is not among them at the next sweep is taken for

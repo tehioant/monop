@@ -10,13 +10,14 @@ function bearer(req: FastifyRequest): string | undefined {
 }
 
 export function accountRoutes(app: FastifyInstance, adapters: ProviderAdapters, store: IdentityStore,
-  erase?: (token: string) => Promise<boolean>) {
+  erase?: (token: string, committed: (id: string) => void) => Promise<boolean>) {
   const flows = accountFlows(adapters, store);
+  app.addHook('preClose', async () => flows.close());
   const headers = { 'cache-control': 'no-store', 'referrer-policy': 'no-referrer' };
   app.get('/account', async (req, reply) => reply.headers(headers).send(await flows.status(bearer(req))));
   if (erase) app.delete('/account', async (req, reply) => {
     const token = bearer(req);
-    if (!token || !await erase(token)) return reply.headers(headers).code(401).send({ error: 'invalid_token' });
+    if (!token || !await erase(token, flows.erase)) return reply.headers(headers).code(401).send({ error: 'invalid_token' });
     return reply.headers(headers).code(204).send();
   });
   app.post('/account/begin', { bodyLimit: 2048 }, async (req, reply) => {

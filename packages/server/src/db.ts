@@ -123,10 +123,15 @@ export function identityStore(sql: Sql): IdentityStore {
         values (${id}, ${provider}, ${subject}, ${revocation ?? null}) on conflict do nothing returning account_id`;
       return !!inserted;
     }),
-    restore: ({ provider, subject, revocation }) => sql.begin(async (tx) => {
+    async ownerOf({ provider, subject }) {
+      const [binding] = await sql<{ account_id: string }[]>`
+        select account_id from account_identities where provider = ${provider} and subject = ${subject}`;
+      return binding?.account_id;
+    },
+    restore: ({ provider, subject, revocation }, owner) => sql.begin(async (tx) => {
       const [account] = await tx<{ id: string; name: string }[]>`
         select a.id, a.name from accounts a join account_identities i on i.account_id = a.id
-        where i.provider = ${provider} and i.subject = ${subject} for update of a`;
+        where i.provider = ${provider} and i.subject = ${subject} and a.id = ${owner} for update of a`;
       if (!account) return;
       if (provider === 'apple' && revocation) await refreshAppleBinding(tx, account.id, subject, revocation);
       const token = randomBytes(32).toString('base64url');

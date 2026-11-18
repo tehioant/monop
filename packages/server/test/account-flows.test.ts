@@ -19,9 +19,10 @@ function fixture() {
       bindings.set(identity.subject, id);
       return true;
     },
-    restore: async (identity) => {
+    ownerOf: async identity => bindings.get(identity.subject),
+    restore: async (identity, owner) => {
       const id = bindings.get(identity.subject);
-      if (!id) return;
+      if (!id || id !== owner) return;
       issued.push(id);
       return { token: 'recovery-token', name: 'Guest' };
     },
@@ -74,4 +75,82 @@ test('wrong provider, unknown state, cancelled, replayed and expired callbacks c
   assert.equal(await f.flows.callback('google', callback(expired!)), undefined);
   assert.equal(f.count(), 0);
   assert.deepEqual([...f.bindings], []);
+});
+
+
+function scopedFlows(now: () => number = Date.now) {
+  const accounts = new Set(['first', 'second']);
+  const exchanges = new Map<string, Promise<Awaited<ReturnType<ProviderAdapter['exchange']>>>>();
+  const commits = new Map<string, Promise<boolean>>();
+  let linkStarted = () => {};
+  const restore: IdentityStore['restore'] = async (_identity, id) => ({ token: `session-${id}`, name: 'Guest' });
+  const flows = accountFlows({ google: {
+    authorize: ({ state }) => `https://accounts.example.test/?state=${state}`,
+    exchange: async ({ code }) => exchanges.get(code) ?? { provider: 'google', subject: code },
+  } }, {
+    account: async id => accounts.has(id) ? { id, name: 'Guest' } : undefined,
+    providers: async () => [],
+    ownerOf: async ({ subject }: { subject: string }) => accounts.has(subject) ? subject : undefined,
+    link: async id => { linkStarted(); return commits.get(id) ?? accounts.has(id); },
+    restore,
+  }, now);
+  const prepare = async (mode: 'link' | 'restore', id: string) => {
+    const url = await flows.begin({ ...begin, mode }, mode === 'link' ? id : undefined);
+    assert.ok(url);
+    return { state: state(url), code: id };
+  };
+  const claim = async (mode: 'link' | 'restore', id: string) => {
+    const code = await flows.callback('google', await prepare(mode, id));
+    assert.ok(code);
+    return { code, verifier };
+  };
+  return { flows, accounts, exchanges, commits, prepare, claim, onLink: (callback: () => void) => { linkStarted = callback; } };
+}
+
+test('committed erasure discards its pending link and verified restore while preserving another account', async () => {
+  const f = scopedFlows();
+  const pending = await f.prepare('link', 'first');
+  const restore = await f.claim('restore', 'first');
+  const other = await f.claim('restore', 'second');
+  f.accounts.delete('first');
+  f.flows.erase('first');
+  assert.equal(await f.flows.callback('google', pending), undefined);
+  assert.equal(await f.flows.redeem(restore), undefined);
+  assert.deepEqual(await f.flows.redeem(other), { token: 'session-second', name: 'Guest' });
+});
+
+test('deferred provider and store completions cannot publish for an erased account', async () => {
+  const f = scopedFlows();
+  const link = await f.claim('link', 'first');
+  const commit = Promise.withResolvers<boolean>();
+  const started = Promise.withResolvers<void>();
+  f.onLink(() => started.resolve());
+  f.commits.set('first', commit.promise);
+  const redemption = f.flows.redeem(link, 'first');
+  await started.promise;
+  const exchange = Promise.withResolvers<{ provider: 'google'; subject: string }>();
+  const restore = await f.prepare('restore', 'first');
+  f.exchanges.set('first', exchange.promise);
+  const callback = f.flows.callback('google', restore);
+  f.accounts.delete('first');
+  f.flows.erase('first');
+  commit.resolve(true);
+  exchange.resolve({ provider: 'google', subject: 'first' });
+  assert.deepEqual([await redemption, await callback], [undefined, undefined]);
+});
+
+test('sign-in deadlines evict entries without subsequent traffic and shutdown cancels timers', async t => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  // Hold the admission clock still to distinguish active timer eviction from lazy expiry on access.
+  const f = scopedFlows(() => 0);
+  const pending = await f.prepare('link', 'first');
+  const verify = await f.claim('restore', 'first');
+  t.mock.timers.tick(60_000);
+  assert.equal(await f.flows.redeem(verify), undefined);
+  t.mock.timers.tick(240_000);
+  assert.equal(await f.flows.callback('google', pending), undefined);
+  const remaining = await f.prepare('link', 'first');
+  f.flows.close();
+  assert.equal(await f.flows.callback('google', remaining), undefined);
+  assert.equal(await f.flows.begin(begin, 'first'), undefined);
 });

@@ -10,7 +10,8 @@ export interface IdentityStore {
   account(token: string): Promise<Account | undefined>;
   providers(id: string): Promise<Provider[]>;
   link(id: string, identity: VerifiedIdentity): Promise<boolean>;
-  restore(identity: VerifiedIdentity): Promise<Session | undefined>;
+  ownerOf(identity: VerifiedIdentity): Promise<string | undefined>;
+  restore(identity: VerifiedIdentity, owner: string): Promise<Session | undefined>;
 }
 
 export interface ProviderAdapter {
@@ -25,66 +26,112 @@ const proof = (value: unknown): value is string => typeof value === 'string' && 
 const TTL = 5 * 60_000;
 const MAX_PENDING = 2048;
 
-type Attempt = { provider: Provider; owner?: string; challenge: string; deadline: number; nonce: string; pkce: string };
+type Timed = { owner?: string; deadline: number; timer?: ReturnType<typeof setTimeout> };
+type Attempt = Timed & { provider: Provider; challenge: string; nonce: string; pkce: string; exchanging?: boolean };
+type Claim = Timed & { owner: string; link: boolean; challenge: string; identity: VerifiedIdentity; redeeming?: boolean };
 
 /** Bounded single-use browser state and device-bound redemption. Provider data never goes back to the browser. */
 export function accountFlows(adapters: ProviderAdapters, store: IdentityStore, now = Date.now) {
   const pending = new Map<string, Attempt>();
-  const verified = new Map<string, { attempt: Attempt; identity: VerifiedIdentity; deadline: number }>();
+  const verified = new Map<string, Claim>();
   const available = providers.filter(provider => adapters[provider]);
-  const prune = () => {
-    const time = now();
-    for (const map of [pending, verified]) for (const [key, value] of map) {
-      if (value.deadline <= time) map.delete(key);
-    }
-  };
+  let closed = false;
+  // A lookup initiated before a committed erasure can return an older view of the binding.
+  let erasureRevision = 0;
+  function forget<T extends Timed>(map: Map<string, T>, key: string) {
+    clearTimeout(map.get(key)?.timer);
+    map.delete(key);
+  }
+  function remember<T extends Timed>(map: Map<string, T>, key: string, entry: T) {
+    entry.timer = setTimeout(() => forget(map, key), Math.max(0, entry.deadline - now()));
+    entry.timer.unref?.();
+    map.set(key, entry);
+  }
+  function current<T extends Timed>(map: Map<string, T>, key: string, entry: T) {
+    if (map.get(key) !== entry) return false;
+    if (now() < entry.deadline) return true;
+    forget(map, key);
+    return false;
+  }
   return {
+    erase(id: string) {
+      ++erasureRevision;
+      for (const [key, attempt] of pending) if (attempt.owner === id) forget(pending, key);
+      for (const [key, claim] of verified) if (claim.owner === id) forget(verified, key);
+    },
+    close() {
+      closed = true;
+      for (const key of pending.keys()) forget(pending, key);
+      for (const key of verified.keys()) forget(verified, key);
+    },
     async status(token?: string) {
       const account = token ? await store.account(token) : undefined;
       return { providers: available, linked: account ? await store.providers(account.id) : [], authenticated: !!account };
     },
     async begin(body: Record<string, unknown>, token?: string) {
       const { provider, mode, challenge } = body;
-      if (!isProvider(provider) || !proof(challenge) || (mode !== 'link' && mode !== 'restore')) return;
+      if (closed || !isProvider(provider) || !proof(challenge) || (mode !== 'link' && mode !== 'restore')) return;
       const adapter = adapters[provider];
       if (!adapter) return;
-      const owner = mode === 'link' && token ? (await store.account(token))?.id : undefined;
-      if (mode === 'link' && !owner) return;
-      prune();
-      if (pending.size >= MAX_PENDING) return;
+      const deadline = now() + TTL;
+      let owner: string | undefined;
+      if (mode === 'link') {
+        if (!token) return;
+        while (!closed && now() < deadline) {
+          const revision = erasureRevision;
+          owner = (await store.account(token))?.id;
+          if (revision === erasureRevision) break;
+          owner = undefined;
+        }
+        if (!owner) return;
+      }
+      if (closed || now() >= deadline || pending.size >= MAX_PENDING) return;
       const state = random(), nonce = random(), pkce = random();
       const authorization = adapter.authorize({ state, nonce, pkce });
-      pending.set(state, { provider, owner, challenge, deadline: now() + TTL, nonce, pkce });
+      remember(pending, state, { provider, owner, challenge, deadline, nonce, pkce });
       return authorization;
     },
     async callback(provider: Provider, body: Record<string, unknown>) {
       const { state, code, error } = body;
       if (!proof(state)) return;
-      prune();
       const attempt = pending.get(state);
       const adapter = adapters[provider];
-      if (!adapter || !attempt || attempt.provider !== provider) return;
-      pending.delete(state);
-      if (error !== undefined || typeof code !== 'string' || !code || code.length > 4096) return;
-      const identity = await adapter.exchange({ code, nonce: attempt.nonce, pkce: attempt.pkce });
-      if (!identity || identity.provider !== provider || now() >= attempt.deadline || verified.size >= MAX_PENDING) return;
-      const claim = random();
-      verified.set(claim, { attempt, identity, deadline: Math.min(attempt.deadline, now() + 60_000) });
-      return claim;
+      if (!adapter || !attempt || attempt.provider !== provider || attempt.exchanging || !current(pending, state, attempt)) return;
+      attempt.exchanging = true;
+      try {
+        if (error !== undefined || typeof code !== 'string' || !code || code.length > 4096) return;
+        const identity = await adapter.exchange({ code, nonce: attempt.nonce, pkce: attempt.pkce });
+        if (!identity || identity.provider !== provider) return;
+        let owner = attempt.owner;
+        if (!owner) {
+          while (current(pending, state, attempt)) {
+            const revision = erasureRevision;
+            owner = await store.ownerOf(identity);
+            if (revision === erasureRevision) break;
+            owner = undefined;
+          }
+        }
+        if (!owner || !current(pending, state, attempt) || verified.size >= MAX_PENDING) return;
+        const claim = random();
+        remember(verified, claim, { owner, identity, link: !!attempt.owner, challenge: attempt.challenge,
+          deadline: Math.min(attempt.deadline, now() + 60_000) });
+        return claim;
+      } finally { forget(pending, state); }
     },
     async redeem(body: Record<string, unknown>, token?: string) {
       const { code, verifier } = body;
       if (!proof(code) || !proof(verifier)) return;
-      prune();
-      const result = verified.get(code);
-      if (!result) return;
-      const { attempt, identity } = result;
-      if (!timingSafeEqual(Buffer.from(attempt.challenge), Buffer.from(sha256url(verifier)))) return;
-      if (attempt.owner && (!token || (await store.account(token))?.id !== attempt.owner)) return;
-      // Ownership lookup yields: another request may have consumed this exact code in the meantime.
-      if (now() >= result.deadline || !verified.delete(code)) return;
-      if (!attempt.owner) return store.restore(identity);
-      if (await store.link(attempt.owner, identity)) return { linked: true };
+      const claim = verified.get(code);
+      if (!claim || claim.redeeming || !current(verified, code, claim)) return;
+      const { owner, identity, link } = claim;
+      if (!timingSafeEqual(Buffer.from(claim.challenge), Buffer.from(sha256url(verifier)))) return;
+      if (link && (!token || (await store.account(token))?.id !== owner)) return;
+      if (claim.redeeming || !current(verified, code, claim)) return;
+      claim.redeeming = true;
+      try {
+        const result = link ? await store.link(owner, identity) && { linked: true } : await store.restore(identity, owner);
+        if (current(verified, code, claim)) return result || undefined;
+      } finally { forget(verified, code); }
     },
   };
 }

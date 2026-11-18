@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { hash } from 'node:crypto';
 import test from 'node:test';
 import { createGame } from '@atlas/engine';
+import type { VerifiedIdentity } from '../src/account/flows.ts';
 import { anonymizeLegacyPlayers, eraseAccount, identityStore, type Sql } from '../src/db.ts';
 import { roomWrites } from '../src/server.ts';
 import { Rooms, type Member, type Player, type Snapshot } from '../src/rooms.ts';
@@ -33,7 +34,8 @@ function database() {
       return bindings.has(values[0]) && values[1] === 'apple' ? [{ subject: 'apple-subject' }] : [];
     }
     if (command.startsWith('select a.id, a.name from accounts')) {
-      assert.ok(command.endsWith('for update of a'));
+      assert.ok(command.endsWith('and a.id = ? for update of a'));
+      assert.equal(values[2], 'target-id');
       events.push('lock restore owner');
       return values[0] === 'apple' && values[1] === 'apple-subject' && bindings.has('target-id')
         ? [{ id: 'target-id', name: 'Private name' }] : [];
@@ -170,7 +172,8 @@ test('the locked Apple binding retains the newest verified revocation material f
     const f = database();
     const store = identityStore(f.sql);
     const apple = { provider: 'apple', subject: 'apple-subject' } as const;
-    const apply = operation === 'link' ? store.link.bind(store, 'target-id') : store.restore;
+    const apply = (identity: VerifiedIdentity) => operation === 'link'
+      ? store.link('target-id', identity) : store.restore(identity, 'target-id');
     assert.ok(await apply(apple));
     assert.equal(f.bindings.get('target-id'), 'encrypted-refresh', 'absent material never overwrites');
     assert.ok(!await apply({ ...apple, subject: 'different-subject', revocation: 'different-material' }));

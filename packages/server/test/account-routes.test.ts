@@ -14,7 +14,7 @@ test('authenticated account removal is unavailable without ownership and never c
   t.after(() => app.close());
   const attempts: string[] = [];
   accountRoutes(app, {}, {
-    account: async () => undefined, providers: async () => [], link: async () => false, restore: async () => undefined,
+    account: async () => undefined, providers: async () => [], ownerOf: async () => undefined, link: async () => false, restore: async () => undefined,
   }, async candidate => { attempts.push(candidate); return candidate === token; });
   const remove = (authorization?: string) => app.inject({ method: 'DELETE', url: '/account', headers: authorization ? { authorization } : {} });
   assert.equal((await remove()).statusCode, 401);
@@ -34,7 +34,9 @@ test('account HTTP routes return a proof-bound callback and issue credentials on
     account: async (candidate) => accounts.get(candidate),
     providers: async () => ['google'],
     link: async () => assert.fail('restore must not link a new identity'),
-    restore: async (identity) => {
+    ownerOf: async () => 'original-account',
+    restore: async (identity, owner) => {
+      assert.equal(owner, 'original-account');
       assert.deepEqual(identity, { provider: 'google', subject: 'verified' });
       return { token, name: 'Original guest' };
     },
