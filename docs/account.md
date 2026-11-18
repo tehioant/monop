@@ -1,6 +1,6 @@
 # Account, sign-in and privacy
 
-Open **Settings → Account**. The app still supports offline solo play and online guests with no provider configured. Play online once to create the guest account before linking it. **Link** adds a provider to that account; **Restore** replaces the local sign-in with the account already linked to the selected provider. Neither operation identifies players by email. **Delete account** asks for confirmation and deletes the online account, not the offline solo save.
+Open **Settings → Account**. The app still supports offline solo play and online guests with no provider configured. Play online once to create the guest account before linking it. **Link** adds a provider to that account; **Restore** replaces the local sign-in with the account already linked to the selected provider. Neither operation identifies players by email. **Delete account** asks for confirmation and deletes the online account, not the offline solo save. If the server does not confirm deletion, Account checks whether the same sign-in is still valid. An invalid sign-in is cleared on this device without claiming the account was deleted; if the check is unavailable or the sign-in is still valid, you can retry.
 
 ## Configuration
 

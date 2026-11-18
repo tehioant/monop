@@ -16,7 +16,8 @@ function fixture(url?: string, t = english, linked: string[] = []) {
   const signIns: unknown[][] = [];
   const deletes: string[] = [];
   const clearances: string[] = [];
-  let refuseDelete = true;
+  let deletion: () => Promise<void> = async () => { throw Error('unconfirmed response'); };
+  let canClear = true;
   let confirmation: any[] = [];
   let token: string | null = 'guest-token';
   let status = async (_candidate: string | null) => ({ providers: ['google'], linked, authenticated: true });
@@ -33,18 +34,18 @@ function fixture(url?: string, t = english, linked: string[] = []) {
     '../account/config.ts': { privacyPolicyUrl: url },
     '../account/client.ts': { accountClient: () => ({
       status: (candidate: string | null) => status(candidate),
-      deleteAccount: async (candidate: string) => { deletes.push(candidate); if (refuseDelete) throw Error('private'); },
+      deleteAccount: async (candidate: string) => { deletes.push(candidate); await deletion(); },
       signIn: async (...args: unknown[]) => { signIns.push(args); return { token: 'restored-token', name: 'Guest' }; },
     }) },
     '../online/store.ts': { useOnline: Object.assign((select: (state: { accountToken: () => string | null }) => unknown) =>
       select({ accountToken: () => token }), { getState: () => ({
       accountToken: () => token,
-      clearAccount: (candidate: string) => { clearances.push(candidate); return true; },
+      clearAccount: (candidate: string) => { clearances.push(candidate); token = null; return canClear; },
       replaceAccount: (...args: unknown[]) => { replacement = args; token = 'restored-token'; return true; },
     }) }) },
   }).default;
   return { opened, paths, load, render: h.render, flush: h.flush, signIns, deletes, clearances,
-    confirm: () => confirmation, allowDelete: () => { refuseDelete = false; }, replacement: () => replacement, refuse: () => { refuse = true; },
+    confirm: () => confirmation, allowDelete: () => { deletion = async () => {}; }, failClear: () => { canClear = false; }, replacement: () => replacement, refuse: () => { refuse = true; },
     setToken: (next: string) => { token = next; }, setStatus: (next: typeof status) => { status = next; } };
 }
 
@@ -146,4 +147,38 @@ test('Account renders replacement status and ignores a delayed previous observat
   assert.ok(button(render(), 'Restore with Google'));
   assert.ok(!button(render(), 'Delete account'));
   assert.ok(!copy(render()).includes('Linked: Google'));
+});
+
+
+test('Unconfirmed deletion reconciles only an authoritatively invalid current credential', async () => {
+  for (const outcome of ['invalid', 'unreachable', 'changed', 'clear-failed'] as const) {
+    const f = fixture();
+    const screen = f.load('account');
+    const render = () => f.render(screen);
+    render(); f.flush(); await new Promise(resolve => setImmediate(resolve));
+    const requested: (string | null)[] = [];
+    const response = Promise.withResolvers<{ providers: string[]; linked: string[]; authenticated: boolean }>();
+    if (outcome === 'clear-failed') f.failClear();
+    f.setStatus(candidate => { requested.push(candidate); return response.promise; });
+    button(render(), 'Delete account').props.onPress();
+    const completed = f.confirm()[1].onPress();
+    await new Promise(resolve => setImmediate(resolve));
+    if (outcome === 'changed') f.setToken('replacement-token');
+    if (outcome === 'unreachable') response.reject(Error('status unavailable'));
+    else response.resolve({ providers: ['google'], linked: [], authenticated: false });
+    // Mark the mock response handled even when the observer under test omitted the read.
+    await response.promise.catch(() => {});
+    await completed;
+    assert.deepEqual(requested, ['guest-token']);
+    assert.deepEqual(f.clearances, outcome === 'invalid' || outcome === 'clear-failed' ? ['guest-token'] : []);
+    const tree = render();
+    assert.ok(!copy(tree).includes('Online account deleted.'));
+    if (outcome === 'invalid') assert.ok(copy(tree).includes('This sign-in is no longer valid. Account deletion could not be confirmed.'));
+    if (outcome === 'clear-failed') assert.ok(copy(tree).includes('Account deletion could not be confirmed, and this device could not clear all saved sign-in details.'));
+    if (outcome === 'unreachable') {
+      assert.ok(copy(tree).includes('Could not delete the account. Try again.'));
+      assert.ok(button(tree, 'Delete account'));
+    }
+    if (outcome === 'changed') assert.ok(!copy(tree).includes('Could not delete the account. Try again.'));
+  }
 });

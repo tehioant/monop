@@ -45,7 +45,7 @@ export function accountClient(io: typeof fetch = fetch) {
     async status(token: string | null): Promise<AccountStatus> {
       const { providers, linked, authenticated } = await (await request('', token)).json();
       if (!Array.isArray(providers) || !providers.every(isProvider) || !Array.isArray(linked) || !linked.every(isProvider) ||
-          typeof authenticated !== 'boolean') throw Error('Invalid account status');
+          (typeof authenticated !== 'boolean' || (!authenticated && linked.length > 0))) throw Error('Invalid account status');
       return { providers, linked, authenticated };
     },
     async deleteAccount(token: string): Promise<void> {

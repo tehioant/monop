@@ -21,7 +21,7 @@ export default function AccountScreen() {
   const revision = useRef(0);
   const status = observation?.token === token ? observation.status : null;
   const [busy, setBusy] = useState(false);
-  const [notice, setNotice] = useState<'signInError' | 'deleteError' | 'deleted' | 'deletedLocalError' | null>(null);
+  const [notice, setNotice] = useState<'signInError' | 'deleteError' | 'deleted' | 'deletedLocalError' | 'deleteUnconfirmed' | 'deleteUnconfirmedLocalError' | null>(null);
   const pending = useRef(false);
   const mounted = useRef(true);
   const online = useOnline.getState;
@@ -66,14 +66,23 @@ export default function AccountScreen() {
     setBusy(true);
     setNotice(null);
     try {
-      await client.deleteAccount(token);
+      let confirmed = false;
+      try {
+        await client.deleteAccount(token);
+        confirmed = true;
+      } catch {
+        if (online().accountToken() !== token) return;
+        // A failed DELETE is not evidence that the credential or the account is gone.
+        if ((await client.status(token)).authenticated) throw Error('Account remains active');
+      }
       if (online().accountToken() !== token) return;
       const cleared = online().clearAccount(token);
       if (mounted.current) {
         latest.current = null;
         ++revision.current;
         setObservation(null);
-        setNotice(cleared ? 'deleted' : 'deletedLocalError');
+        if (confirmed) setNotice(cleared ? 'deleted' : 'deletedLocalError');
+        else setNotice(cleared ? 'deleteUnconfirmed' : 'deleteUnconfirmedLocalError');
       }
     } catch { if (mounted.current && online().accountToken() === token) setNotice('deleteError'); }
     finally {

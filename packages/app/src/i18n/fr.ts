@@ -17,6 +17,8 @@ export const fr = {
   'account.delete': 'Supprimer le compte',
   'account.deleteConfirm': 'Supprimer définitivement votre compte en ligne et ses données ? Votre sauvegarde solo sur cet appareil reste inchangée.',
   'account.deleteError': 'Impossible de supprimer le compte. Réessayez.',
+  'account.deleteUnconfirmed': 'Cette connexion n’est plus valide. La suppression du compte n’a pas pu être confirmée.',
+  'account.deleteUnconfirmedLocalError': 'La suppression du compte n’a pas pu être confirmée et cet appareil n’a pas pu effacer toutes les informations de connexion.',
   'account.deleted': 'Compte en ligne supprimé.',
   'account.deletedLocalError': 'Compte en ligne supprimé, mais cet appareil n’a pas pu effacer toutes les informations de connexion.',
   'rules.title': 'Règles',

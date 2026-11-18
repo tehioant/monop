@@ -15,6 +15,8 @@ export const en = {
   'account.delete': 'Delete account',
   'account.deleteConfirm': 'Permanently delete your online account and its data? Your solo save on this device stays unchanged.',
   'account.deleteError': 'Could not delete the account. Try again.',
+  'account.deleteUnconfirmed': 'This sign-in is no longer valid. Account deletion could not be confirmed.',
+  'account.deleteUnconfirmedLocalError': 'Account deletion could not be confirmed, and this device could not clear all saved sign-in details.',
   'account.deleted': 'Online account deleted.',
   'account.deletedLocalError': 'Online account deleted, but this device could not clear all saved sign-in details.',
   'rules.title': 'Rules',
