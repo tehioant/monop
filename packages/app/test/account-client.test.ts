@@ -5,14 +5,14 @@ import { loadComponent } from './componentBoundary.ts';
 const src = new URL('../src/', import.meta.url).pathname;
 const verifier = 'A'.repeat(43), code = 'c'.repeat(43), token = 't'.repeat(43);
 
-function fixture(callback: unknown, serverUrl = 'wss://game.example.test/ws') {
+function fixture(callback: unknown, serverUrl = 'wss://game.example.test/ws', bytes = new Uint8Array(32), expected = verifier) {
   const requests: Array<{ url: string; headers: unknown; body: unknown }> = [];
   const client = loadComponent(`${src}account/client.ts`, {
     './config.ts': { serverUrl },
     'expo-crypto': {
-      getRandomBytesAsync: async () => new Uint8Array(32),
+      getRandomBytesAsync: async (count: number) => { assert.equal(count, 32); return bytes; },
       digestStringAsync: async (_alg: string, value: string) => {
-        assert.equal(value, verifier);
+        assert.equal(value, expected);
         return `${'B'.repeat(43)}=`;
       },
       CryptoDigestAlgorithm: { SHA256: 'SHA-256' }, CryptoEncoding: { BASE64: 'base64' },
@@ -51,4 +51,19 @@ test('cancelled or unrelated native callbacks never submit a code; insecure game
   const insecure = fixture({ type: 'cancel' }, 'ws://game.example.test/ws');
   await assert.rejects(insecure.client.signIn('google', 'link', token));
   assert.deepEqual(insecure.requests, []);
+});
+
+
+test('native sign-in encodes all 32 verifier bytes without a browser base64 global', async t => {
+  t.mock.method(globalThis, 'btoa', () => assert.fail('used the unavailable browser encoder'));
+  Object.defineProperty(globalThis, 'btoa', { value: undefined });
+  for (const [bytes, expected] of [
+    [new Uint8Array(32), 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA'],
+    [Uint8Array.from({ length: 32 }, (_, i) => 255 - i), '__79_Pv6-fj39vX08_Lx8O_u7ezr6uno5-bl5OPi4eA'],
+  ] as const) {
+    const f = fixture({ type: 'success', url: `atlas://account-auth#code=${code}` }, undefined, bytes, expected);
+    await f.client.signIn('google', 'restore', null);
+    assert.deepEqual(f.requests[1]?.body, { code, verifier: expected });
+    assert.match(expected, /^[A-Za-z0-9_-]{43}$/);
+  }
 });

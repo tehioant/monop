@@ -12,6 +12,18 @@ const authorizedEndpoint: Record<Provider, string> = {
 };
 const isProvider = (value: unknown): value is Provider => value === 'apple' || value === 'google';
 const base64url = (value: string) => value.replaceAll('+', '-').replaceAll('/', '_').replace(/=+$/, '');
+const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_';
+
+function encodeBytes(bytes: Uint8Array): string {
+  let encoded = '';
+  for (let i = 0; i < bytes.length; i += 3) {
+    const first = bytes[i]!, second = bytes[i + 1] ?? 0, third = bytes[i + 2] ?? 0;
+    encoded += alphabet[first >> 2]! + alphabet[((first & 3) << 4) | (second >> 4)]!;
+    if (i + 1 < bytes.length) encoded += alphabet[((second & 15) << 2) | (third >> 6)]!;
+    if (i + 2 < bytes.length) encoded += alphabet[third & 63]!;
+  }
+  return encoded;
+}
 
 export function accountClient(io: typeof fetch = fetch) {
   const request = async (path: string, token: string | null, method = 'GET', body?: object) => {
@@ -41,7 +53,7 @@ export function accountClient(io: typeof fetch = fetch) {
       if (response.status !== 204) throw Error('Deletion not confirmed');
     },
     async signIn(provider: Provider, mode: Mode, token: string | null): Promise<RestoredAccount | { linked: true } | undefined> {
-      const verifier = base64url(btoa(String.fromCharCode(...await Crypto.getRandomBytesAsync(32))));
+      const verifier = encodeBytes(await Crypto.getRandomBytesAsync(32));
       const challenge = base64url(await Crypto.digestStringAsync(Crypto.CryptoDigestAlgorithm.SHA256, verifier, { encoding: Crypto.CryptoEncoding.BASE64 }));
       const { url } = await (await request('/begin', token, 'POST', { provider, mode, challenge })).json();
       const authorize = new URL(url);
