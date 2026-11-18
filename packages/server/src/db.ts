@@ -93,7 +93,12 @@ export async function findAccount(sql: Sql, token: string): Promise<{ id: string
   return account;
 }
 
-/** Verified subject bindings never overwrite or move an existing identity. */
+async function refreshAppleBinding(tx: postgres.TransactionSql, id: string, subject: string, revocation: string) {
+  await tx`update account_identities set revocation = ${revocation}
+    where account_id = ${id} and provider = 'apple' and subject = ${subject}`;
+}
+
+/** Verified subject bindings never move to a different account. */
 export function identityStore(sql: Sql): IdentityStore {
   return {
     account: token => findAccount(sql, token),
@@ -107,18 +112,23 @@ export function identityStore(sql: Sql): IdentityStore {
       if (!owner) return false;
       const [linked] = await tx`
         select subject from account_identities where account_id = ${id} and provider = ${provider}`;
-      if (linked) return linked.subject === subject;
+      if (linked) {
+        if (linked.subject !== subject) return false;
+        if (provider === 'apple' && revocation) await refreshAppleBinding(tx, id, subject, revocation);
+        return true;
+      }
       if (provider === 'apple' && !revocation) return false;
       const [inserted] = await tx`
         insert into account_identities (account_id, provider, subject, revocation)
         values (${id}, ${provider}, ${subject}, ${revocation ?? null}) on conflict do nothing returning account_id`;
       return !!inserted;
     }),
-    restore: ({ provider, subject }) => sql.begin(async (tx) => {
+    restore: ({ provider, subject, revocation }) => sql.begin(async (tx) => {
       const [account] = await tx<{ id: string; name: string }[]>`
         select a.id, a.name from accounts a join account_identities i on i.account_id = a.id
         where i.provider = ${provider} and i.subject = ${subject} for update of a`;
       if (!account) return;
+      if (provider === 'apple' && revocation) await refreshAppleBinding(tx, account.id, subject, revocation);
       const token = randomBytes(32).toString('base64url');
       await tx`insert into account_sessions (token_hash, account_id) values (${hashOf(token)}, ${account.id})`;
       return { token, name: account.name };

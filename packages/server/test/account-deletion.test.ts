@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { hash } from 'node:crypto';
 import test from 'node:test';
 import { createGame } from '@atlas/engine';
-import { anonymizeLegacyPlayers, eraseAccount, type Sql } from '../src/db.ts';
+import { anonymizeLegacyPlayers, eraseAccount, identityStore, type Sql } from '../src/db.ts';
 import { roomWrites } from '../src/server.ts';
 import { Rooms, type Member, type Player, type Snapshot } from '../src/rooms.ts';
 
@@ -25,6 +25,31 @@ function database() {
     const command = parts.join('?').replace(/\s+/g, ' ').trim();
     if (command.startsWith('select a.id from accounts')) return accounts.has('target-id') && allowed(values)
       ? [{ id: 'target-id' }] : [];
+    if (command.startsWith('select id from accounts') && command.endsWith('for update')) {
+      events.push('lock link owner');
+      return accounts.has(values[0]) ? [{ id: values[0] }] : [];
+    }
+    if (command.startsWith('select subject from account_identities')) {
+      return bindings.has(values[0]) && values[1] === 'apple' ? [{ subject: 'apple-subject' }] : [];
+    }
+    if (command.startsWith('select a.id, a.name from accounts')) {
+      assert.ok(command.endsWith('for update of a'));
+      events.push('lock restore owner');
+      return values[0] === 'apple' && values[1] === 'apple-subject' && bindings.has('target-id')
+        ? [{ id: 'target-id', name: 'Private name' }] : [];
+    }
+    if (command.startsWith('update account_identities set revocation')) {
+      assert.equal(command, "update account_identities set revocation = ? where account_id = ? and provider = 'apple' and subject = ?");
+      assert.equal(values[2], 'apple-subject');
+      assert.match(events.at(-1) ?? '', /^lock (link|restore) owner$/);
+      events.push('update Apple binding');
+      bindings.set(values[1], values[0]);
+      return [];
+    }
+    if (command.startsWith('insert into account_sessions')) {
+      assert.equal(values[1], 'target-id');
+      return [];
+    }
     if (command.startsWith('select revocation from account_identities')) return [{ revocation: bindings.get(values[0]) }];
     if (command.startsWith('select code, players from room_snapshots')) return selected(snapshots, 'code', values);
     if (command.startsWith('select id, players from game_summaries')) return selected(summaries, 'id', values);
@@ -137,4 +162,24 @@ test('legacy roster migration canonicalizes anonymous seats by position without 
   assert.deepEqual(writes, ['room_snapshots', 'game_summaries']);
   await anonymizeLegacyPlayers(sql);
   assert.deepEqual(writes, ['room_snapshots', 'game_summaries']);
+});
+
+
+test('the locked Apple binding retains the newest verified revocation material for erasure', async () => {
+  for (const operation of ['link', 'restore'] as const) {
+    const f = database();
+    const store = identityStore(f.sql);
+    const apple = { provider: 'apple', subject: 'apple-subject' } as const;
+    const apply = operation === 'link' ? store.link.bind(store, 'target-id') : store.restore;
+    assert.ok(await apply(apple));
+    assert.equal(f.bindings.get('target-id'), 'encrypted-refresh', 'absent material never overwrites');
+    assert.ok(!await apply({ ...apple, subject: 'different-subject', revocation: 'different-material' }));
+    assert.equal(f.bindings.get('target-id'), 'encrypted-refresh');
+    assert.ok(await apply({ ...apple, revocation: 'fresh-encrypted-refresh' }));
+    assert.equal(f.bindings.get('target-id'), 'fresh-encrypted-refresh');
+    assert.equal(f.bindings.get('other-id'), 'other-refresh');
+    const revoked: string[] = [];
+    assert.equal(await eraseAccount(f.sql, token, async encrypted => { revoked.push(encrypted); }), 'target-id');
+    assert.deepEqual(revoked, ['fresh-encrypted-refresh']);
+  }
 });
