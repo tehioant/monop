@@ -7,7 +7,9 @@ import { COUNTRIES } from '@atlas/engine';
 
 const config = { bots: 1, difficulty: 'easy' as const, countriesToWin: 3 };
 const path = (name: string) => new URL(`../src/${name}`, import.meta.url).pathname;
-function device(saved?: SoloGame) {
+function device(saved?: SoloGame, fetch = async (_url: string, _request: RequestInit): Promise<never> => {
+  throw Error('unexpected telemetry');
+}) {
   const files = new Map<string, string>(saved ? [['solo-game.json', serialize(saved)]] : []);
   const faults = new Set<string>();
   const calls: string[] = [];
@@ -22,7 +24,7 @@ function device(saved?: SoloGame) {
     moveSync(to: File, _options?: unknown) { files.delete(to.name); if (faults.has('move')) throw Error('private details'); files.set(to.name, files.get(this.name)!); files.delete(this.name); this.name = to.name; }
     delete() { calls.push('delete'); if (faults.has('delete')) throw Error('private details'); files.delete(this.name); }
   }
-  const load = () => loadComponent(path('solo/store.ts'), { 'expo-file-system': { File, Paths: { document: 'device' } } }).useSolo;
+  const load = () => loadComponent(path('solo/store.ts'), { 'expo-file-system': { File, Paths: { document: 'device' } }, 'expo/fetch': { fetch } }).useSolo;
   return { files, faults, calls, load };
 }
 function prepared(player = 0): SoloGame {
@@ -42,14 +44,13 @@ test('solo telemetry observes saved starts, rematches and the first persisted te
   const active = prepared();
   const almostOver = prepared();
   almostOver.state.players[0]!.table = COUNTRIES.slice(0, 3).map(({ id, cities }) => ({ country: id, cities: [...cities], upgrades: [] }));
-  const io = device(active);
   const observed: unknown[] = [];
-  const store = io.load();
-  t.mock.method(globalThis, 'fetch', async (_url: string, request?: RequestInit) => {
-    const log = JSON.parse(String(request?.body)).resourceLogs[0].scopeLogs[0].logRecords[0];
+  const io = device(active, async (_url, request) => {
+    const log = JSON.parse(String(request.body)).resourceLogs[0].scopeLogs[0].logRecords[0];
     observed.push([log.body.stringValue, store.getState().game?.state.phase.kind === 'over', io.files.has('solo-game.json')]);
     throw Error('private');
   });
+  const store = io.load();
   assert.deepEqual(observed, [], 'loading a save is silent');
   io.faults.add('write');
   assert.equal(store.getState().start(config), false);

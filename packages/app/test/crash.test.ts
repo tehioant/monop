@@ -22,12 +22,14 @@ function boot(value: string | undefined, sdk: object) {
 }
 
 test('Expo root renders with crash reporting off, only initializes a valid project, and survives SDK failure', () => {
-  let count = 0;
-  const sdk = { init: () => { count++; throw Error('private'); } };
-  for (const value of [undefined, '', 'not configured', DSN.replace('@', ':password@')]) assert.ok(boot(value, sdk));
-  assert.equal(count, 0);
+  const initialized: string[] = [];
+  const sdk = { init: ({ dsn }: { dsn: string }) => { initialized.push(dsn); throw Error('private'); } };
+  for (const value of [undefined, '', 'not configured', DSN.replace('@', ':password@'), DSN.replace('telemetry.invalid', '256.256.256.256')]) assert.ok(boot(value, sdk));
+  assert.deepEqual(initialized, []);
   assert.ok(boot(DSN, sdk));
-  assert.equal(count, 1);
+  const withPrefix = DSN.replace('telemetry.invalid/', 'telemetry.invalid:8443/Prefix/');
+  assert.ok(boot(withPrefix.replace('https://', 'HTTPS://').replace('telemetry.invalid', 'TELEMETRY.INVALID'), sdk));
+  assert.deepEqual(initialized, [DSN, withPrefix]);
 });
 
 test('crash init disables capture extras and keeps only scrubbed JS crash diagnostics', () => {

@@ -19,7 +19,13 @@ function fixture(t: TestContext, prepared: Session) {
   process.env[env] = 'https://0123456789abcdef0123456789abcdef@telemetry.invalid/123';
   t.after(() => { if (previous === undefined) delete process.env[env]; else process.env[env] = previous; });
   let adopt!: (next: Session, message?: ServerMessage) => void;
+  const events: unknown[] = [];
   const store = loadComponent(new URL('../src/online/store.ts', import.meta.url).pathname, {
+    'expo/fetch': { fetch: async (_url: string, request: RequestInit) => {
+      const log = JSON.parse(String(request.body)).resourceLogs[0].scopeLogs[0].logRecords[0];
+      events.push([log.body.stringValue, store.getState().session.game?.stateVersion]);
+      throw Error('offline');
+    } },
     'expo-secure-store': { getItem: () => null, setItem() {} },
     'expo-localization': { getLocales: () => [{ languageTag: 'en' }] },
     './connection.ts': { connection(_socket: unknown, _get: unknown, set: typeof adopt) {
@@ -28,12 +34,6 @@ function fixture(t: TestContext, prepared: Session) {
     } },
   }).useOnline;
   store.setState({ session: prepared });
-  const events: unknown[] = [];
-  t.mock.method(globalThis, 'fetch', (_url: string, request: RequestInit) => {
-    const log = JSON.parse(String(request.body)).resourceLogs[0].scopeLogs[0].logRecords[0];
-    events.push([log.body.stringValue, store.getState().session.game?.stateVersion]);
-    return Promise.reject(Error('offline'));
-  });
   const accept = (message: ServerMessage) => adopt(receive(store.getState().session, message).session, message);
   return { store, accept, events };
 }

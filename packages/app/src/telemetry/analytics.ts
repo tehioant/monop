@@ -1,10 +1,9 @@
 import { RULES } from '@atlas/engine';
 import { sentryProject } from './dsn.ts';
 
-type Send = (url: string, init: RequestInit) => Promise<unknown>;
 type Settings = { countriesToWin: unknown; players: unknown };
 
-export function createGameAnalytics(dsn: string | undefined, send: Send = (url, init) => fetch(url, init)) {
+function createGameAnalytics(dsn: string | undefined) {
   const project = sentryProject(dsn);
   return (name: unknown, mode: unknown, settings: Settings): void => {
     if (!project || (name !== 'game started' && name !== 'game finished') || (mode !== 'solo' && mode !== 'online')) return;
@@ -22,8 +21,10 @@ export function createGameAnalytics(dsn: string | undefined, send: Send = (url, 
           { key: 'player_count', value: { intValue: String(players) } },
         ],
       };
-      void send(`${project.apiBase}/integration/otlp/v1/logs`, {
-        method: 'POST', credentials: 'omit',
+      // Resolve only on use so an unavailable optional transport cannot prevent boot.
+      const { fetch }: typeof import('expo/fetch') = require('expo/fetch');
+      void fetch(`${project.apiBase}/integration/otlp/v1/logs`, {
+        method: 'POST', credentials: 'omit', redirect: 'error',
         headers: { 'Content-Type': 'application/json', 'X-Sentry-Auth': `sentry sentry_key=${project.publicKey}` },
         body: JSON.stringify({ resourceLogs: [{ scopeLogs: [{ logRecords: [record] }] }] }),
       }).catch(() => {});
