@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { hash } from 'node:crypto';
 import test from 'node:test';
 import { createGame } from '@atlas/engine';
-import { eraseAccount, type Sql } from '../src/db.ts';
+import { anonymizeLegacyPlayers, eraseAccount, type Sql } from '../src/db.ts';
 import { roomWrites } from '../src/server.ts';
 import { Rooms, type Member, type Player, type Snapshot } from '../src/rooms.ts';
 
@@ -102,4 +102,39 @@ test('room erasure keeps the other player and revokes the deleted seat before th
   assert.throws(() => rooms.resync(targetMember), /Not in a room/);
   const room = messages.findLast(m => m.type === 'room');
   assert.deepEqual(room.players.map((p: any) => p.name), ['Bot 1', 'Other player']);
+});
+
+
+test('legacy roster migration canonicalizes anonymous seats by position without rewriting current rosters', async () => {
+  const generated = { account: null, name: 'Bot 1' };
+  const misnumbered = { account: null, name: 'Bot 907' };
+  const labelMissing = { account: null };
+  const tables = new Map<string, Array<{ account: string | null; name?: string; departedAccount?: string }>>(
+    ['room_snapshots', 'game_summaries'].map(table => [table, [generated, misnumbered, other, departed, labelMissing]]),
+  );
+  const writes: string[] = [];
+  const sql = ((parts: TemplateStringsArray | string, table?: string) => {
+    if (typeof parts === 'string') return parts;
+    assert.ok(table);
+    const query = parts.join('?').replace(/\s+/g, ' ').trim();
+    assert.ok(query.startsWith('update ? set players ='));
+    assert.match(query, /jsonb_agg\(case when player->>'account' is null and player->>'departedAccount' is null/);
+    assert.match(query, /else player end order by seat/);
+    assert.match(query, /where exists .*where player->>'account' is null and player->>'departedAccount' is null/);
+    assert.equal((query.match(/with ordinality as p\(player, seat\)/g) ?? []).length, 2,
+      'both replacement and no-op selection must use roster ordinality');
+    assert.equal((query.match(/player->>'name' is distinct from \('Bot ' \|\| seat\)/g) ?? []).length, 2);
+    const before = tables.get(table)!;
+    const after = before.map((p, i) => !p.account && !('departedAccount' in p) && p.name !== `Bot ${i + 1}`
+      ? { account: null, name: `Bot ${i + 1}` } : p);
+    if (after.some((p, i) => p !== before[i])) { writes.push(table); tables.set(table, after); }
+    return [];
+  }) as unknown as Sql;
+  await anonymizeLegacyPlayers(sql);
+  for (const roster of tables.values()) {
+    assert.deepEqual(roster, [generated, { account: null, name: 'Bot 2' }, other, departed, { account: null, name: 'Bot 5' }]);
+  }
+  assert.deepEqual(writes, ['room_snapshots', 'game_summaries']);
+  await anonymizeLegacyPlayers(sql);
+  assert.deepEqual(writes, ['room_snapshots', 'game_summaries']);
 });
