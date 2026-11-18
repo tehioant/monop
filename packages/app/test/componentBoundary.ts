@@ -26,6 +26,7 @@ export function componentLoader(mocks: Record<string, any>) {
       if (name in mocks) return mocks[name];
       if (name === 'react-native-safe-area-context') return { SafeAreaView: 'SafeAreaView' };
       if (name.endsWith('.wav')) return name;
+      if (name.endsWith('.webp')) return createRequire(file).resolve(name);
       if (name.startsWith('.')) return load(resolve(dirname(file), name));
       return createRequire(file)(name);
     };
@@ -68,7 +69,7 @@ export function hooks() {
   };
 }
 
-export const native = { View: 'View', Text: 'Text', ScrollView: 'ScrollView', Pressable: 'Pressable', StyleSheet: { create: (styles: any) => styles } };
+export const native = { View: 'View', Text: 'Text', ScrollView: 'ScrollView', Pressable: 'Pressable', Image: 'Image', Platform: { select: (styles: { default: string }) => styles.default }, StyleSheet: { create: (styles: any) => styles } };
 export const animated = { __esModule: true, default: { createAnimatedComponent: (component: any) => component }, ZoomIn: { delay: () => ({ duration: () => ({}) }) } };
 export function nodes(tree: any): any[] {
   if (!tree || typeof tree !== 'object') return [];

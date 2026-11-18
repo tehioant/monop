@@ -1,11 +1,14 @@
 // The pieces the table and the results screen are drawn from.
 
-import type { CardId, PlayerView } from '@atlas/engine';
+import { COUNTRIES, type CardId, type PlayerView } from '@atlas/engine';
 import type { ComponentRef, ReactNode, Ref } from 'react';
-import { Pressable, StyleSheet, Text, View, type ViewStyle } from 'react-native';
+import { Image, Platform, Pressable, StyleSheet, Text, View, type ViewStyle } from 'react-native';
 import Animated, { ZoomIn } from 'react-native-reanimated';
 import { useTranslation } from '../i18n/locale.tsx';
+import type { Translate } from '../i18n/strings.ts';
 import { cardInfo, countryName, countryPerk, countrySize } from './actions.ts';
+import { cardArtwork, deckBack } from './cardArt.ts';
+import { tollText } from './cardText.ts';
 import { colors, countryColor } from './theme.ts';
 
 type Stack = PlayerView['players'][number]['table'][number];
@@ -24,6 +27,19 @@ export const CARD_WIDTH = 68;
 export const CARD_HEIGHT = 96;
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
+const FACE_INK = '#203b3f';
+const FACE_WHITE = '#fff7e4';
+const WILD_INK = '#614c72';
+const ACTION_INK = '#285d53';
+const COIN_INK = '#714a21';
+const ATLAS_COUNTRY_INK: Record<string, string> = {
+  egypt: '#775725', australia: '#25696e', france: '#244d64', uk: '#393761', italy: '#375837',
+  japan: '#833e36', brazil: '#235b46', usa: '#884b32', china: '#773b52', india: '#865322',
+};
+
+function cardCountryInk(country: string) {
+  return ATLAS_COUNTRY_INK[country] ?? countryColor(country);
+}
 
 /**
  * A card that has just moved here shows only once it has landed. Decided when the card is first drawn there.
@@ -33,39 +49,118 @@ function landed(after: number | undefined) {
   return after === undefined ? undefined : ZoomIn.delay(after).duration(140);
 }
 
+function renderTollTiles(tolls: readonly number[], ink: string, t: Translate) {
+  return (
+    <View testID="city-tolls" style={styles.tollFooter}>
+      <Text allowFontScaling={false} style={[styles.tollHeading, { color: ink }]}>{t('card.faceToll')}</Text>
+      <View style={styles.tollRow}>
+        {tolls.map((amount, index) => {
+          const complete = index === tolls.length - 1;
+          return (
+            <View key={index} style={[styles.tollTile, complete && styles.tollTileComplete]}>
+              <Text allowFontScaling={false} style={styles.tollAmount}>{amount}</Text>
+              <Text allowFontScaling={false} style={styles.tollMilestone}>{complete ? t('card.faceSet') : String(index + 1)}</Text>
+            </View>
+          );
+        })}
+      </View>
+    </View>
+  );
+}
+
 /** A card drawn from its data. */
 export function CardView({ id, selected, dimmed, onPress, landing }: Tappable) {
   const t = useTranslation();
-  const { name, kind, value, country } = cardInfo(id, t);
+  const { name, kind, value, country, countries, action } = cardInfo(id, t);
   const perk = country && countryPerk(country, t);
-  const band = country ? countryColor(country) : kind === 'coin' ? colors.coin : colors.action;
+  const tolls = country ? COUNTRIES.find((entry) => entry.id === country)?.toll : undefined;
+  const anyCountry = countries?.length === COUNTRIES.length;
+  let artKey = action ?? id;
+  let displayName = name;
+  let ink = ACTION_INK;
+  const kindLabel = t(`card.kind.${kind}`);
+  let label = kindLabel;
+  if (country) {
+    ink = cardCountryInk(country);
+    label = countryName(country, t);
+  } else if (countries) {
+    ink = WILD_INK;
+    displayName = kindLabel;
+    label = t('card.faceAnyCountry');
+    if (anyCountry) artKey = 'wild-any';
+  } else if (kind === 'coin') {
+    ink = COIN_INK;
+    displayName = kindLabel;
+    artKey = 'mint';
+  }
+  const artwork = cardArtwork[artKey];
+  const split = countries && !anyCountry ? countries.map((entry) => ({
+    entry, label: countryName(entry, t).toUpperCase(),
+  })) : undefined;
+  const compactSplit = split && split.reduce((length, { label }) => length + label.length, 0) > 15;
+  const splitName = displayName.length > 11 && displayName.includes(' ');
+  if (splitName) displayName = displayName.replace(/ (?=\S+$)/, '\n');
+  let nameSize = 15;
+  if (displayName.length >= 12 && !splitName) nameSize = 10;
+  else if (displayName.length >= 9) nameSize = 11;
+  else if (displayName.length >= 7) nameSize = 13;
   return (
     <AnimatedPressable
       entering={landed(landing)}
       onPress={onPress}
       disabled={!onPress}
-      accessibilityLabel={name}
-      style={[styles.card, selected && styles.cardSelected, dimmed && styles.dimmed]}
+      accessibilityLabel={tolls ? t('card.faceAccessibleToll', { name, toll: tollText(tolls, t) }) : name}
+      accessibilityRole={onPress ? 'button' : undefined}
+      accessibilityState={{ selected: !!selected }}
+      style={[styles.card, tolls && styles.cityCard, selected && styles.cardSelected, dimmed && styles.dimmed]}
     >
-      <View style={[styles.cardBand, { backgroundColor: band }]}>
-        <Text style={styles.cardBandText} numberOfLines={1}>
-          {country ? countryName(country, t) : t(`card.kind.${kind}`)}
-        </Text>
+      <View style={[styles.cardTop, tolls && styles.cityTop]}>
+        <View style={styles.cardBadge}>
+          <Text allowFontScaling={false} style={styles.cardValue}>{value}</Text>
+          <View style={styles.coinMark} />
+        </View>
+        {tolls ? (
+          <View style={styles.cityMetadata}>
+            <Text allowFontScaling={false} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.85} style={[styles.cityCountry, { color: ink }]}>{label.toUpperCase()}</Text>
+            {perk && <Text allowFontScaling={false} numberOfLines={1} style={[styles.cityPerk, perk.label.length > 12 && styles.cityPerkSmall, { color: ink }]}>{perk.label}</Text>}
+          </View>
+        ) : (
+          <Text allowFontScaling={false} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.85} style={[styles.cardTopLabel, { color: ink }]}>{kindLabel.toUpperCase()}</Text>
+        )}
       </View>
-      {/* One line per word at most, shrunk to fit: a long name is never cut in the middle. */}
       <Text
-        style={styles.cardName}
-        numberOfLines={Math.min(name.split(/[ /]/).length, 3)}
+        style={[styles.cardName, { fontSize: nameSize }, tolls && styles.cityName, splitName && styles.cardNameStacked]}
+        numberOfLines={splitName ? 2 : 1}
+        allowFontScaling={false}
         adjustsFontSizeToFit
-        minimumFontScale={0.6}
+        minimumFontScale={0.8}
       >
-        {name}
+        {displayName}
       </Text>
-      {/* What the city's country gives once complete: visible before the city is laid. */}
-      {perk && <Text style={styles.cardPerk}>{perk.label}</Text>}
-      <Text style={styles.cardValue}>{value}</Text>
+      <View style={styles.cardArtWindow}>
+        {artwork !== undefined && <Image source={artwork} resizeMode="cover" style={styles.cardIllustration} accessible={false} />}
+      </View>
+      {tolls ? (
+        renderTollTiles(tolls, ink, t)
+      ) : split ? (
+        <View style={styles.cardSplit}>
+          {split.map(({ entry, label }) => (
+            <View key={entry} style={[styles.cardBand, { flex: label.length, backgroundColor: cardCountryInk(entry) }]}>
+              <Text allowFontScaling={false} numberOfLines={1} style={[styles.cardBandText, styles.cardSplitText, compactSplit && styles.cardSplitSmall]}>{label}</Text>
+            </View>
+          ))}
+        </View>
+      ) : (
+        <View style={[styles.cardBand, { backgroundColor: ink }]}>
+          <Text allowFontScaling={false} numberOfLines={1} style={[styles.cardBandText, label.length > 9 && styles.cardBandSmall]}>{label.toUpperCase()}</Text>
+        </View>
+      )}
     </AnimatedPressable>
   );
+}
+
+export function DeckBack({ full = false }: { full?: boolean } = {}) {
+  return <Image source={deckBack} style={[styles.deckBack, full && styles.fullBack]} accessible={false} />;
 }
 
 /**
@@ -168,20 +263,50 @@ const styles = StyleSheet.create({
   card: {
     width: CARD_WIDTH,
     height: CARD_HEIGHT,
-    borderRadius: 8,
+    borderRadius: 5,
     borderWidth: 1,
-    borderColor: colors.line,
-    backgroundColor: colors.surface,
+    borderColor: '#c9bc98',
+    backgroundColor: '#fbf3dd',
     overflow: 'hidden',
-    alignItems: 'center',
+    flexShrink: 0,
+    paddingHorizontal: 3,
+    paddingTop: 3,
+    paddingBottom: 4,
+    gap: 2,
   },
-  cardSelected: { borderColor: colors.accent, borderWidth: 3 },
+  cityCard: { gap: 1 },
+  cardSelected: { borderColor: colors.accent, boxShadow: `inset 0 0 0 1px ${colors.accent}` },
   dimmed: { opacity: 0.6 },
-  cardBand: { alignSelf: 'stretch', paddingVertical: 3, paddingHorizontal: 2 },
-  cardBandText: { color: '#fff', fontSize: 10, fontWeight: '700', textAlign: 'center' },
-  cardName: { flex: 1, color: colors.ink, fontSize: 12, fontWeight: '600', textAlign: 'center', padding: 4 },
-  cardPerk: { color: colors.muted, fontSize: 9, fontWeight: '600' },
-  cardValue: { color: colors.coin, fontSize: 13, fontWeight: '700', paddingBottom: 4 },
+  cardTop: { height: 14, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 1 },
+  cardBadge: { minWidth: 18, height: 13, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 2, paddingHorizontal: 2, borderRadius: 2, backgroundColor: FACE_INK },
+  cardValue: { color: FACE_WHITE, fontSize: 11, lineHeight: 12, fontWeight: '800', includeFontPadding: false },
+  coinMark: { width: 4, height: 4, borderRadius: 2, borderWidth: 0.7, borderColor: FACE_WHITE },
+  cardTopLabel: { fontSize: 8, lineHeight: 10, fontWeight: '800', includeFontPadding: false, flexShrink: 1 },
+  cityTop: { height: 16 },
+  cityMetadata: { flexShrink: 1, minWidth: 0 },
+  cityCountry: { fontSize: 7, lineHeight: 8, fontWeight: '800', textAlign: 'right', includeFontPadding: false },
+  cityPerk: { fontSize: 7, lineHeight: 8, textAlign: 'right', includeFontPadding: false },
+  cityPerkSmall: { fontSize: 6 },
+  cardName: { height: 19, color: FACE_INK, fontFamily: Platform.select({ ios: 'Georgia', default: 'serif' }), lineHeight: 19, fontWeight: '700', includeFontPadding: false },
+  cityName: { height: 16, lineHeight: 16 },
+  cardNameStacked: { height: 22, lineHeight: 11 },
+  cardArtWindow: { flex: 1, overflow: 'hidden', backgroundColor: '#e4ddcb' },
+  cardIllustration: { width: '100%', height: '100%' },
+  cardSplit: { flexDirection: 'row', gap: 1 },
+  cardBand: { borderRadius: 2, paddingVertical: 1, justifyContent: 'center', minHeight: 15 },
+  cardBandText: { color: FACE_WHITE, fontSize: 8.5, lineHeight: 10, fontWeight: '800', textAlign: 'center', includeFontPadding: false },
+  cardBandSmall: { fontSize: 7 },
+  cardSplitText: { fontSize: 6.25 },
+  cardSplitSmall: { fontSize: 5.25 },
+  tollFooter: { gap: 1 },
+  tollHeading: { fontSize: 7.5, lineHeight: 8, fontWeight: '800', includeFontPadding: false },
+  tollRow: { flexDirection: 'row', gap: 1 },
+  tollTile: { flex: 1, height: 20, alignItems: 'center', justifyContent: 'center', borderRadius: 2, backgroundColor: '#e6ddc6' },
+  tollTileComplete: { backgroundColor: '#f1d397' },
+  tollAmount: { color: '#372819', fontSize: 11.5, lineHeight: 12, fontWeight: '800', includeFontPadding: false },
+  tollMilestone: { color: '#372819', fontSize: 6.5, lineHeight: 7, fontWeight: '800', includeFontPadding: false },
+  deckBack: { width: 18, height: 25.4, borderRadius: 2 },
+  fullBack: { width: CARD_WIDTH, height: CARD_HEIGHT, borderRadius: 5 },
   country: {
     flexDirection: 'row',
     alignItems: 'center',

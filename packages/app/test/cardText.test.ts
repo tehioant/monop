@@ -58,6 +58,21 @@ test('wild-city details limit free reassignment to the play phase in both langua
   assert.match(cardText(id, translate('fr')).lines.join(' '), /Pendant la phase de jeu de votre tour, si cette ville joker est sur votre table.*sans dépenser d’action/);
 });
 
+test('Thailand keeps the original tolls, extra draw and Wild eligibility', () => {
+  const city = cardText('london');
+  assert.equal(city.name, 'Bangkok');
+  assert.deepEqual(city.lines, [
+    'A city of Thailand. Complete the country with 3 city cards, including at least one native city. Eligible wilds can stand in for the others. Named cities: Bangkok, Chiang Mai, Phuket.',
+    'A Toll on Thailand charges each opponent 1 with 1 city, 2 with 2 cities, 4 once complete.',
+    'Held complete: draw 3 cards at the start of later turns if your hand is not empty.',
+    'Worth 2 as payment, laid or banked.',
+  ]);
+  const wild = cardText('wild-uk-india');
+  assert.equal(wild.name, 'Wild Thailand/India');
+  assert.equal(wild.lines[0], 'A wild city: lay it as a city of Thailand or India.');
+  assert.equal(wild.lines.at(-1), 'Worth 3 as payment, laid or banked.');
+});
+
 test('a card the table does not know has a name and no text', () => {
   assert.deepEqual(cardText('trade-embargo'), { name: 'Trade Embargo', lines: [] });
 });

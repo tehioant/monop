@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape" width="182" height="104" viewBox="0 0 182 104">
+  <title>Bangkok — Wat Arun</title>
+  <g id="field" inkscape:groupmode="layer" inkscape:label="01 · Field">
+    <rect width="182" height="104" fill="#b0a9cb"/><circle cx="114" cy="34" r="23" fill="#f4d596"/><path d="M0 84h182v20H0Z" fill="#6c719a" stroke="none" stroke-width="1" stroke-linejoin="round" stroke-linecap="round"/>
+  </g>
+  <g id="survey" inkscape:groupmode="layer" inkscape:label="02 · Cartography">
+    <path d="M8 0v104 M20 0v104 M32 0v104 M44 0v104 M56 0v104 M68 0v104 M80 0v104 M92 0v104 M104 0v104 M116 0v104 M128 0v104 M140 0v104 M152 0v104 M164 0v104 M176 0v104 M0 8h182 M0 20h182 M0 32h182 M0 44h182 M0 56h182 M0 68h182 M0 80h182 M0 92h182" fill="none" stroke="#fff5d3" stroke-width="0.45" stroke-linejoin="round" stroke-linecap="round"/>
+  </g>
+  <g id="landmark" inkscape:groupmode="layer" inkscape:label="03 · Landmark">
+    <path d="M54 87v-6h8v-6h6v-7h5v-7h4v-7h-3l6-7h-3l6-7h-2l5-7h-2l5-8 2-13 2 13 5 8h-2l5 7h-2l6 7h-3l6 7h-3v7h4v7h5v7h6v6h8v6Z M18 87v-6h5v-6h4v-6h3v-5h-2l4-5h-2l5-7 3-8 3 8 5 7h-2l4 5h-2v5h3v6h4v6h5v6Z" fill="#393761" stroke="none" stroke-width="1" stroke-linejoin="round" stroke-linecap="round"/><g transform="translate(106 0)"><path d="M18 87v-6h5v-6h4v-6h3v-5h-2l4-5h-2l5-7 3-8 3 8 5 7h-2l4 5h-2v5h3v6h4v6h5v6Z" fill="#393761" stroke="none" stroke-width="1" stroke-linejoin="round" stroke-linecap="round"/></g><path d="M58 82h66M67 76h48M73 69h36M78 62h26M80 55h22M83 48h16M85 41h12M88 34h6M23 80h29M28 74h20M33 68h10M129 80h29M134 74h20M139 68h10" fill="none" stroke="#f4d596" stroke-width="1.2" stroke-linejoin="round" stroke-linecap="round"/><path d="M84 76V63q7-12 14 0v13M88 57l3-11 3 11m-87 32h168m-155 6h22m10 0h32m15 0h12m16 0h25m-100 5h42m32 0h38" fill="none" stroke="#fff0ca" stroke-width="1.1" stroke-linejoin="round" stroke-linecap="round"/>
+  </g>
+</svg>

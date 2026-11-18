@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape" width="182" height="104" viewBox="0 0 182 104">
+  <title>Chiang Mai — Tha Phae Gate</title>
+  <g id="field" inkscape:groupmode="layer" inkscape:label="01 · Field">
+    <rect width="182" height="104" fill="#d9ba9e"/><circle cx="130" cy="30" r="18" fill="#f4d596"/><path d="M0 65 26 45 44 50 71 26 105 50 123 43 151 57 164 51 182 63v41H0Z" fill="#8e878e" stroke="none" stroke-width="1" stroke-linejoin="round" stroke-linecap="round"/><path d="M0 87h182v17H0Z" fill="#b27b58" stroke="none" stroke-width="1" stroke-linejoin="round" stroke-linecap="round"/>
+  </g>
+  <g id="survey" inkscape:groupmode="layer" inkscape:label="02 · Cartography">
+    <path d="M8 0v104 M20 0v104 M32 0v104 M44 0v104 M56 0v104 M68 0v104 M80 0v104 M92 0v104 M104 0v104 M116 0v104 M128 0v104 M140 0v104 M152 0v104 M164 0v104 M176 0v104 M0 8h182 M0 20h182 M0 32h182 M0 44h182 M0 56h182 M0 68h182 M0 80h182 M0 92h182" fill="none" stroke="#fff5d3" stroke-width="0.45" stroke-linejoin="round" stroke-linecap="round"/>
+  </g>
+  <g id="landmark" inkscape:groupmode="layer" inkscape:label="03 · Landmark">
+    <path d="M11 88V65h9v-6h8v6h8v-6h8v6h11V50h8v-7h9v7h9v-7h9v7h9v-7h9v7h9v-7h9v7h8v15h10v-6h8v6h8v-6h8v6h8v23h-71V70q-14-19-28 0v18Z" fill="#91492f" stroke="#393761" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/><path d="M14 70h40m80 0h35m-153 6h61m29 0h61M16 82h61m29 0h61M57 57h73m-73 6h23m23 0h27m-61-6v6m44-6v6m-87 7v6m18 0v6m77-6v6m21-12v6m17 0v6" fill="none" stroke="#f6bf8e" stroke-width="1.15" stroke-linejoin="round" stroke-linecap="round"/><path d="M77 88V70q14-19 28 0v18M10 89h68m26 0h66" fill="none" stroke="#393761" stroke-width="2.2" stroke-linejoin="round" stroke-linecap="round"/>
+  </g>
+</svg>

@@ -15,7 +15,7 @@ const effects: Record<ActionId, (t: Translate) => string[]> = {
   veto: (t) => [t('card.veto'), t('card.vetoAnswer'), t('card.vetoFree')],
 };
 
-function tollText(scale: readonly number[], t: Translate): string {
+export function tollText(scale: readonly number[], t: Translate): string {
   return scale.map((amount, i) => i === scale.length - 1 ? t('card.tollComplete', { amount })
     : t(i === 0 ? 'card.tollOne' : 'card.tollMany', { amount, count: i + 1 })).join(', ');
 }

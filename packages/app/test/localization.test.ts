@@ -55,7 +55,7 @@ test('each catalog card has French text; French card effects use catalog and rul
     if (card.kind === 'action') effects.add(lines[0]!);
   }
   assert.equal(effects.size, ACTIONS.length);
-  assert.match(cardText('london', french).lines[0]!, /Royaume-Uni.*Londres, Manchester, Édimbourg/);
+  assert.match(cardText('london', french).lines[0]!, /Thaïlande.*Bangkok, Chiang Mai, Phuket/);
   assert.match(cardText('cairo', french).lines[1]!, /Égypte.*1 avec 1 ville, 2 une fois le pays complet/);
   assert.match(cardText('cairo', french).lines[2]!, new RegExp(`piochez ${RULES.drawsWithPerk} cartes`));
   assert.equal(cardText('wild-egypt-italy', french).lines[0], 'Ville joker. Pays possibles : Égypte ou Italie.');
@@ -84,11 +84,11 @@ test('French actions, log, aim, payment and Veto keep canonical intents and lite
   const raid: Action = { type: 'play', card: 'raid-1', target: 1, city: 'london' };
   const aim = cardPrompt(view, [raid], {}, names, french);
   assert.equal(aim.steps[0]?.title, 'Quelle ville prendre ?');
-  assert.equal(aim.confirm, 'Prendre Londres à Ana {amount}');
+  assert.equal(aim.confirm, 'Prendre Bangkok à Ana {amount}');
   assert.equal(aim.chosen, raid);
   assert.equal(promptText(view, names, french), 'À vous (actions restantes : 2)');
   assert.equal(actionLabel({ type: 'endTurn' }, names, french), 'Terminer le tour');
-  assert.equal(logLine({ type: 'lay', card: 'london', player: 1 }, names, french), 'Ana {amount} : Poser Londres');
+  assert.equal(logLine({ type: 'lay', card: 'london', player: 1 }, names, french), 'Ana {amount} : Poser Bangkok');
   const pay: Action = { type: 'pay', card: 'coin-5-1' };
   const payment = payPrompt({ ...view, phase: { kind: 'pay', player: 0, receiver: 1, owed: 3, amount: 3, queue: [] } },
     [pay], ['coin-5-1'], names, french)!;
