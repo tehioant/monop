@@ -3,7 +3,8 @@ import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 export const providers = ['apple', 'google'] as const;
 export type Provider = typeof providers[number];
 export const isProvider = (value: unknown): value is Provider => providers.some(provider => provider === value);
-export type VerifiedIdentity = { provider: Provider; subject: string; revocation?: string };
+export type VerifiedIdentity = { provider: Provider; subject: string } &
+  ({ revocation: string; issuedAt: number } | { revocation?: never; issuedAt?: never });
 export type Account = { id: string; name: string };
 export type Session = { token: string; name: string };
 export interface IdentityStore {

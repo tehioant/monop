@@ -19,6 +19,7 @@ function database() {
   const accounts = new Set(['target-id', 'other-id']);
   const sessions = new Set(['target-id', 'other-id']);
   const bindings = new Map([['target-id', 'encrypted-refresh'], ['other-id', 'other-refresh']]);
+  const appleOrders = new Map<string, number>();
   const snapshots = new Map([['BCDFG', [target, other]], ['OTHER', [other, other]]]);
   const summaries = new Map([['finished', [departed, other]]]);
   const events: string[] = [];
@@ -41,11 +42,15 @@ function database() {
         ? [{ id: 'target-id', name: 'Private name' }] : [];
     }
     if (command.startsWith('update account_identities set revocation')) {
-      assert.equal(command, "update account_identities set revocation = ? where account_id = ? and provider = 'apple' and subject = ?");
-      assert.equal(values[2], 'apple-subject');
+      assert.equal(command, "update account_identities set revocation = ?, revocation_issued_at = ? where account_id = ? and provider = 'apple' and subject = ? and (revocation_issued_at is null or revocation_issued_at < ?)");
+      const [material, order, id, subject, comparison] = values;
+      assert.equal(subject, 'apple-subject');
+      assert.equal(comparison, order);
       assert.match(events.at(-1) ?? '', /^lock (link|restore) owner$/);
-      events.push('update Apple binding');
-      bindings.set(values[1], values[0]);
+      if (!appleOrders.has(id) || appleOrders.get(id)! < order) {
+        bindings.set(id, material);
+        appleOrders.set(id, order);
+      }
       return [];
     }
     if (command.startsWith('insert into account_sessions')) {
@@ -176,9 +181,17 @@ test('the locked Apple binding retains the newest verified revocation material f
       ? store.link('target-id', identity, 'target-id') : store.restore(identity, 'target-id');
     assert.ok(await apply(apple));
     assert.equal(f.bindings.get('target-id'), 'encrypted-refresh', 'absent material never overwrites');
-    assert.ok(!await apply({ ...apple, subject: 'different-subject', revocation: 'different-material' }));
+    const different = { ...apple, subject: 'different-subject', revocation: 'different-material', issuedAt: 40 };
+    assert.ok(!await apply(different));
     assert.equal(f.bindings.get('target-id'), 'encrypted-refresh');
-    assert.ok(await apply({ ...apple, revocation: 'fresh-encrypted-refresh' }));
+    const newer = { ...apple, revocation: 'fresh-encrypted-refresh', issuedAt: 30 };
+    const older = { ...apple, revocation: 'older-encrypted-refresh', issuedAt: 20 };
+    const equal = { ...apple, revocation: 'equal-order-refresh', issuedAt: 30 };
+    assert.ok(await apply(newer));
+    assert.ok(await apply(older), 'older material does not invalidate authentication');
+    assert.equal(f.bindings.get('target-id'), 'fresh-encrypted-refresh');
+    assert.ok(await apply(equal), 'equal-order material does not invalidate authentication');
+    assert.ok(await apply(apple));
     assert.equal(f.bindings.get('target-id'), 'fresh-encrypted-refresh');
     assert.equal(f.bindings.get('other-id'), 'other-refresh');
     const revoked: string[] = [];

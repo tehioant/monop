@@ -62,10 +62,12 @@ function oidc(provider: Provider, endpoint: typeof google, origin: string, clien
             (payload.azp !== undefined && payload.azp !== clientId) ||
             (Array.isArray(payload.aud) && payload.aud.length !== 1)) return;
         if (!revocationKey) return { provider, subject: payload.sub };
-        if (typeof refresh !== 'string' || !refresh || refresh.length > 4096) return { provider, subject: payload.sub };
+        const issuedAt = payload.iat;
+        if (typeof refresh !== 'string' || !refresh || refresh.length > 4096 ||
+            typeof issuedAt !== 'number' || !Number.isFinite(issuedAt)) return { provider, subject: payload.sub };
         const revocation = await new CompactEncrypt(Buffer.from(refresh))
           .setProtectedHeader({ alg: 'dir', enc: 'A256GCM' }).encrypt(revocationKey);
-        return { provider, subject: payload.sub, revocation };
+        return { provider, subject: payload.sub, revocation, issuedAt };
       } catch { /* Do not log provider payloads, proofs or tokens. */ }
     },
     ...(revocationKey && { async revoke(encrypted: string) {

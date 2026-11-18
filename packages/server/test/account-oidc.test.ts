@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { exportJWK, generateKeyPair, SignJWT } from 'jose';
+import { CompactEncrypt, exportJWK, generateKeyPair, SignJWT } from 'jose';
 import { configuredProviders } from '../src/account/oidc.ts';
 
 const env = { ACCOUNT_ORIGIN: 'https://game.example.test', GOOGLE_CLIENT_ID: 'google-client', GOOGLE_CLIENT_SECRET: 'test-secret', APPLE_CLIENT_ID: 'apple-client' };
@@ -47,39 +47,52 @@ test('Google exchanges a bound code and only admits correctly signed, issued, ad
   assert.equal(responses.filter(url => url.includes('/certs')).length, 1);
 });
 
-test('Apple retains only encrypted revocation material and uses the same Services ID to revoke it', async () => {
+const appleKey = Buffer.alloc(32, 7);
+const appleEnv = { ...env, APPLE_CLIENT_SECRET: 'secret-jwt-placeholder', APPLE_TOKEN_KEY: appleKey.toString('base64url') };
+
+test('Apple exchange returns only encrypted revocation material ordered by the signed issuance time', async () => {
   const keys = await generateKeyPair('RS256');
   const jwk = { ...await exportJWK(keys.publicKey), kid: 'apple-key' };
+  const issuedAt = Math.floor(Date.now() / 1000) - 1;
   const idToken = await new SignJWT({ iss: 'https://appleid.apple.com', aud: 'apple-client', sub: 'stable-apple', nonce: 'nonce' })
-    .setExpirationTime('2m').setProtectedHeader({ alg: 'RS256', kid: 'apple-key' }).sign(keys.privateKey);
+    .setIssuedAt(issuedAt).setExpirationTime('2m').setProtectedHeader({ alg: 'RS256', kid: 'apple-key' }).sign(keys.privateKey);
   const refresh = 'provider-refresh-fixture';
-  let revocations = 0;
-  const apple = configuredProviders({ ...env, APPLE_CLIENT_SECRET: 'secret-jwt-placeholder',
-    APPLE_TOKEN_KEY: Buffer.alloc(32, 7).toString('base64url') }, async (url, options) => {
+  const apple = configuredProviders(appleEnv, async (url, options) => {
     if (String(url).endsWith('/keys')) return Response.json({ keys: [jwk] });
+    assert.equal(String(url), 'https://appleid.apple.com/auth/token');
     const body = new URLSearchParams(String(options?.body));
     assert.equal(body.get('client_id'), 'apple-client');
-    if (String(url).endsWith('/token')) {
-      assert.equal(body.get('redirect_uri'), 'https://game.example.test/account/callback/apple');
-      assert.equal(body.get('grant_type'), 'authorization_code');
-      assert.ok(!body.has('code_verifier'));
-      return Response.json({ id_token: idToken, refresh_token: refresh });
-    }
-    assert.equal(url, 'https://appleid.apple.com/auth/revoke');
-    assert.equal(body.get('token'), refresh);
-    assert.equal(body.get('token_type_hint'), 'refresh_token');
-    revocations++;
-    return new Response(null, { status: 200 });
+    assert.equal(body.get('redirect_uri'), 'https://game.example.test/account/callback/apple');
+    assert.equal(body.get('grant_type'), 'authorization_code');
+    assert.ok(!body.has('code_verifier'));
+    return Response.json({ id_token: idToken, refresh_token: refresh });
   }).apple!;
   const authorize = new URL(apple.authorize(flow));
   assert.equal(authorize.searchParams.get('response_mode'), 'query');
   assert.ok(!authorize.searchParams.has('scope'));
   const identity = await apple.exchange({ ...flow, code: 'valid' });
   assert.equal(identity?.subject, 'stable-apple');
+  assert.equal(identity?.issuedAt, issuedAt);
   assert.ok(identity?.revocation);
   assert.ok(!identity.revocation.includes(refresh));
+});
+
+test('Apple revoke decrypts prepared revocation material and uses the configured Services ID', async () => {
+  const refresh = 'stored-refresh-fixture';
+  const encrypted = await new CompactEncrypt(Buffer.from(refresh))
+    .setProtectedHeader({ alg: 'dir', enc: 'A256GCM' }).encrypt(appleKey);
+  let revocations = 0;
+  const apple = configuredProviders(appleEnv, async (url, options) => {
+    assert.equal(url, 'https://appleid.apple.com/auth/revoke');
+    const body = new URLSearchParams(String(options?.body));
+    assert.equal(body.get('client_id'), 'apple-client');
+    assert.equal(body.get('token'), refresh);
+    assert.equal(body.get('token_type_hint'), 'refresh_token');
+    revocations++;
+    return new Response(null, { status: 200 });
+  }).apple!;
   await assert.rejects(apple.revoke!('bad ciphertext'));
   assert.equal(revocations, 0);
-  await apple.revoke!(identity.revocation);
+  await apple.revoke!(encrypted);
   assert.equal(revocations, 1);
 });
