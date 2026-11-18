@@ -15,11 +15,21 @@ the app for internal testers and runs without Metro. Neither is a store build.
    are not claimed identifiers. Both profiles share the app identity, so don't
    plan on installing them side by side; use separate devices or replace the
    installed profile as appropriate. Uninstalling can erase device-local data.
-3. From **`packages/app`**, use EAS CLI 27.10.0. Sign in as an authorized Expo
-   account member (`npx eas-cli@27.10.0 login`) and
-   [link the owner's Expo project](https://docs.expo.dev/eas/cli/#eas-projectinit)
-   (`npx eas-cli@27.10.0 project:init`; select the intended project). The repo
-   does not ship a project ID or signing credentials.
+3. From **`packages/app`**, sign in as an authorized Expo account member
+   (`npx eas-cli@27.10.0 login`). In the intended project's Expo dashboard,
+   verify its owner and slug and copy its Project ID into the shell variable
+   `EAS_PROJECT_ID`. [Link by ID](https://docs.expo.dev/eas/cli/#eas-projectinit)
+   without uploading an icon:
+
+   ```sh
+   npx eas-cli@27.10.0 project:init --id "${EAS_PROJECT_ID:?Set the verified project ID}" --no-icon
+   ```
+
+   Check `owner`, `slug` and `extra.eas.projectId` in the updated `app.json`
+   against the dashboard before building. If prompted to change the owner or
+   slug, continue only if they match the intended project. If no project exists,
+   stop; creating one is a separate owner decision. The source checkout ships
+   without a project ID or signing credentials.
 4. For **iOS**, the owner needs a paid Apple Developer Program team and signing
    access. Register each test iPhone (`npx eas-cli@27.10.0 device:create`) and
    ensure its UDID is included in the signed ad hoc provisioning profile. Run
