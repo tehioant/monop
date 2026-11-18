@@ -64,9 +64,26 @@ test('Thailand replaces the UK artwork and labels without retiring saved card ID
   const { CardView } = parts();
   for (const [id, name] of thailand) {
     const tree = CardView({ id });
-    assert.equal(tree.props.accessibilityLabel, name);
+    assert.equal(tree.props.accessibilityLabel.split('. Base toll:')[0], name);
     const rendered = nodes(tree);
     assert.ok(rendered.some((node) => node.type === 'Text' && node.props.children === 'THAILAND'));
+  }
+});
+
+test('city faces show the base toll for each set size, separate from the bank value', () => {
+  const { CardView } = parts();
+  const text = (id: string) => nodes(CardView({ id })).filter((node) => node.type === 'Text').map((node) => node.props.children);
+  for (const [id, toll, bankValue] of [
+    ['cairo', 'Toll 1/2', 1],
+    ['london', 'Toll 1/2/4', 2],
+    ['mumbai', 'Toll 1/3/5/7', 3],
+  ] as const) {
+    assert.ok(text(id).includes(toll), `${id}: missing ${toll}`);
+    assert.ok(text(id).includes(bankValue), `${id}: missing bank value`);
+  }
+  assert.equal(CardView({ id: 'london' }).props.accessibilityLabel, 'Bangkok. Base toll: 1 with 1 city, 2 with 2 cities, 4 once complete.');
+  for (const id of ['wild-uk-india', 'wild-any-1', 'toll-1', 'coin-2-1']) {
+    assert.ok(!text(id).some((label) => typeof label === 'string' && label.startsWith('Toll ')), `${id}: no fixed toll`);
   }
 });
 

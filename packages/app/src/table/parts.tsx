@@ -6,6 +6,7 @@ import { Image, Platform, Pressable, StyleSheet, Text, View, type ViewStyle } fr
 import Animated, { ZoomIn } from 'react-native-reanimated';
 import { cardInfo, countryPerk, countrySize, title } from './actions.ts';
 import { cardArtwork, deckBack } from './cardArt.ts';
+import { tollText } from './cardText.ts';
 import { colors, countryColor } from './theme.ts';
 
 type Stack = PlayerView['players'][number]['table'][number];
@@ -50,6 +51,7 @@ function landed(after: number | undefined) {
 export function CardView({ id, selected, dimmed, onPress, landing }: Tappable) {
   const { name, kind, value, country, countries, action } = cardInfo(id);
   const perk = country && countryPerk(country);
+  const tolls = country ? COUNTRIES.find((entry) => entry.id === country)?.toll : undefined;
   const anyCountry = countries?.length === COUNTRIES.length;
   let artKey = action ?? id;
   let displayName = name;
@@ -78,7 +80,7 @@ export function CardView({ id, selected, dimmed, onPress, landing }: Tappable) {
       entering={landed(landing)}
       onPress={onPress}
       disabled={!onPress}
-      accessibilityLabel={name}
+      accessibilityLabel={tolls ? `${name}. Base toll: ${tollText(tolls)}.` : name}
       accessibilityRole={onPress ? 'button' : undefined}
       accessibilityState={{ selected: !!selected }}
       style={[styles.card, selected && styles.cardSelected, dimmed && styles.dimmed]}
@@ -88,7 +90,9 @@ export function CardView({ id, selected, dimmed, onPress, landing }: Tappable) {
           <Text allowFontScaling={false} style={styles.cardValue}>{value}</Text>
           <View style={styles.coinMark} />
         </View>
-        <Text allowFontScaling={false} style={[styles.cardKind, { color: ink }]}>{kind.toUpperCase()}</Text>
+        <Text allowFontScaling={false} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.85} style={[styles.cardTopLabel, { color: ink }]}>
+          {tolls ? `Toll ${tolls.join('/')}` : kind.toUpperCase()}
+        </Text>
       </View>
       <Text
         style={[styles.cardName, { fontSize: nameSize }, splitName && styles.cardNameStacked]}
@@ -237,11 +241,11 @@ const styles = StyleSheet.create({
   },
   cardSelected: { borderColor: colors.accent, boxShadow: `inset 0 0 0 1px ${colors.accent}` },
   dimmed: { opacity: 0.6 },
-  cardTop: { height: 14, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  cardTop: { height: 14, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 1 },
   cardBadge: { minWidth: 18, height: 13, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 2, paddingHorizontal: 2, borderRadius: 2, backgroundColor: FACE_INK },
   cardValue: { color: FACE_WHITE, fontSize: 11, lineHeight: 12, fontWeight: '800', includeFontPadding: false },
   coinMark: { width: 4, height: 4, borderRadius: 2, borderWidth: 0.7, borderColor: FACE_WHITE },
-  cardKind: { fontSize: 8, lineHeight: 10, fontWeight: '800', includeFontPadding: false },
+  cardTopLabel: { fontSize: 8, lineHeight: 10, fontWeight: '800', includeFontPadding: false, flexShrink: 1 },
   cardName: { height: 19, color: FACE_INK, fontFamily: Platform.select({ ios: 'Georgia', default: 'serif' }), lineHeight: 19, fontWeight: '700', includeFontPadding: false },
   cardNameStacked: { height: 22, lineHeight: 11 },
   cardArtWindow: { flex: 1, overflow: 'hidden', backgroundColor: '#e4ddcb' },

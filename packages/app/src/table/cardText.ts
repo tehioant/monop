@@ -31,7 +31,7 @@ const EFFECTS: Record<ActionId, string[]> = {
 };
 
 /** A toll scale in words: '1 with 1 city, 2 with 2 cities, 4 once complete'. */
-function tollText(scale: readonly number[]): string {
+export function tollText(scale: readonly number[]): string {
   return scale
     .map((amount, i) => (i === scale.length - 1 ? `${amount} once complete` : `${amount} with ${i + 1} ${i === 0 ? 'city' : 'cities'}`))
     .join(', ');
