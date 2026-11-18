@@ -9,6 +9,25 @@ import { saveSnapshot, discardSnapshot, type Sql } from '../src/db.ts';
 
 const game = createGame({ players: 2, countriesToWin: 3 }, 1);
 const snapshot: Snapshot = { code: 'BCDFG', countriesToWin: 3, players: [{ account: 'a', name: 'Ada' }, { account: 'b', name: 'Bo' }], startedAt: new Date(0), stateVersion: 9, game };
+
+test('a lobby bot is distinguished from an anonymous legacy seat in the first snapshot', async (t) => {
+  const writes: Snapshot[] = [];
+  const rooms = new Rooms(() => game, () => { throw Error('no bot turn'); }, {
+    save: (value) => { writes.push(value); }, finish() { throw Error('no finish'); }, discard() { throw Error('no discard'); },
+  });
+  t.after(() => rooms.stop());
+  const messages: ServerMessage[] = [];
+  const host: Member = { account: 'a', name: 'Ada', send: (message) => messages.push(message), close() {} };
+  rooms.create(host, 3);
+  rooms.addBot(host);
+  rooms.start(host);
+  assert.equal(writes.length, 1);
+  assert.deepEqual(writes[0]!.players, [{ account: 'a', name: 'Ada' }, { account: null, name: 'Bot 1', generatedBot: true }]);
+  const lobby = messages.findLast((message) => message.type === 'room');
+  assert.ok(lobby);
+  assert.deepEqual(lobby.players[1], { name: 'Bot 1', bot: true, status: 'connected' });
+});
+
 function prepared(save: (s: Snapshot) => void | Promise<void> = () => { throw Error('no write'); }) {
   const rooms = new Rooms(() => { throw Error('no new game'); }, () => { throw Error('no bots'); }, { save, finish() { throw Error('no finish'); }, discard() { throw Error('no discard'); } }, [snapshot]);
   const member = (account: string) => {

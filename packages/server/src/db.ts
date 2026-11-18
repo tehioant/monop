@@ -63,15 +63,18 @@ export async function openDatabase(url: string): Promise<Sql> {
 
 export async function anonymizeLegacyPlayers(sql: Sql): Promise<void> {
   // Older snapshots discarded the owner of a released seat but kept its name. Those legacy names cannot
-  // be attributed safely, so anonymize them before loading any room. New releases retain the erasure tag.
+  // be attributed safely, so anonymize them before loading any room. Preserve new releases with an erasure
+  // tag and lobby bots whose names are known to be server-generated, not just names that look like bots.
   for (const table of ['room_snapshots', 'game_summaries']) {
     await sql`update ${sql(table)} set players = (
       select jsonb_agg(case when player->>'account' is null and player->>'departedAccount' is null
+        and player->'generatedBot' is distinct from 'true'::jsonb
         and player->>'name' is distinct from ('Bot ' || seat)
         then jsonb_build_object('account', null::text, 'name', 'Bot ' || seat) else player end order by seat)
       from jsonb_array_elements(players) with ordinality as p(player, seat)
     ) where exists (select 1 from jsonb_array_elements(players) with ordinality as p(player, seat)
       where player->>'account' is null and player->>'departedAccount' is null
+        and player->'generatedBot' is distinct from 'true'::jsonb
         and player->>'name' is distinct from ('Bot ' || seat))`;
   }
 }

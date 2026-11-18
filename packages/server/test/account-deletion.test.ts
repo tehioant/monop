@@ -137,12 +137,13 @@ test('room erasure keeps the other player and revokes the deleted seat before th
 });
 
 
-test('legacy roster migration canonicalizes anonymous seats by position without rewriting current rosters', async () => {
-  const generated = { account: null, name: 'Bot 1' };
+test('legacy roster migration canonicalizes unmarked anonymous seats and preserves server-generated bot names', async () => {
+  const generated = { account: null, name: 'Bot 1', generatedBot: true };
   const misnumbered = { account: null, name: 'Bot 907' };
   const labelMissing = { account: null };
-  const tables = new Map<string, Array<{ account: string | null; name?: string; departedAccount?: string }>>(
-    ['room_snapshots', 'game_summaries'].map(table => [table, [generated, misnumbered, other, departed, labelMissing]]),
+  const lookalike = { account: null, name: 'Bot 1', generatedBot: 'true' };
+  const tables = new Map<string, Array<{ account: string | null; name?: string; departedAccount?: string; generatedBot?: boolean | string }>>(
+    ['room_snapshots', 'game_summaries'].map(table => [table, [other, generated, misnumbered, departed, labelMissing, lookalike]]),
   );
   const writes: string[] = [];
   const sql = ((parts: TemplateStringsArray | string, table?: string) => {
@@ -156,15 +157,17 @@ test('legacy roster migration canonicalizes anonymous seats by position without 
     assert.equal((query.match(/with ordinality as p\(player, seat\)/g) ?? []).length, 2,
       'both replacement and no-op selection must use roster ordinality');
     assert.equal((query.match(/player->>'name' is distinct from \('Bot ' \|\| seat\)/g) ?? []).length, 2);
+    assert.match(query, /case when .*player->'generatedBot' is distinct from 'true'::jsonb.* else player end/);
+    assert.match(query, /where exists .*where .*player->'generatedBot' is distinct from 'true'::jsonb/);
     const before = tables.get(table)!;
-    const after = before.map((p, i) => !p.account && !('departedAccount' in p) && p.name !== `Bot ${i + 1}`
+    const after = before.map((p, i) => !p.account && !('departedAccount' in p) && p.generatedBot !== true && p.name !== `Bot ${i + 1}`
       ? { account: null, name: `Bot ${i + 1}` } : p);
     if (after.some((p, i) => p !== before[i])) { writes.push(table); tables.set(table, after); }
     return [];
   }) as unknown as Sql;
   await anonymizeLegacyPlayers(sql);
   for (const roster of tables.values()) {
-    assert.deepEqual(roster, [generated, { account: null, name: 'Bot 2' }, other, departed, { account: null, name: 'Bot 5' }]);
+    assert.deepEqual(roster, [other, generated, { account: null, name: 'Bot 3' }, departed, { account: null, name: 'Bot 5' }, { account: null, name: 'Bot 6' }]);
   }
   assert.deepEqual(writes, ['room_snapshots', 'game_summaries']);
   await anonymizeLegacyPlayers(sql);
