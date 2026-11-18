@@ -38,7 +38,10 @@ export function initializeCrashReporting(): void {
     const sdk: typeof import('@sentry/react-native') = require('@sentry/react-native');
     const options: ReactNativeOptions = {
       dsn: project.dsn,
-      autoInitializeNativeSdk: true,
+      // Native reports and cached envelopes do not pass through the JS privacy hook.
+      enableNative: false,
+      autoInitializeNativeSdk: false,
+      enableNativeCrashHandling: false,
       debug: false,
       enableNativeNagger: false,
       sendDefaultPii: false,

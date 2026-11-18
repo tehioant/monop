@@ -37,7 +37,8 @@ test('crash init disables capture extras and keeps only scrubbed JS crash diagno
   assert.ok(boot(DSN, { init: (value: ReactNativeOptions) => { options = value; } }));
   assert.ok(options);
   assert.equal(options.dsn, DSN);
-  for (const key of ['sendDefaultPii', 'enableLogs', 'enableAutoSessionTracking', 'sendClientReports',
+  for (const key of ['enableNative', 'autoInitializeNativeSdk', 'enableNativeCrashHandling',
+    'debug', 'enableNativeNagger', 'sendDefaultPii', 'enableLogs', 'enableAutoSessionTracking', 'sendClientReports',
     'attachScreenshot', 'attachViewHierarchy', 'enableAutoPerformanceTracing', 'enableNdkScopeSync'] as const) {
     assert.equal(options[key], false, key);
   }

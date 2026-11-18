@@ -4,7 +4,7 @@ Both channels are **off by default** and configured independently at Expo bundle
 
 | Setting | Destination and data |
 | --- | --- |
-| `EXPO_PUBLIC_SENTRY_DSN` | Sentry crash reporting. The Expo root only loads and initializes `@sentry/react-native` after validating this DSN. Use a current installed Expo native build to verify native capture; Expo Go is not a native-crash acceptance environment. |
+| `EXPO_PUBLIC_SENTRY_DSN` | JavaScript crash reporting only. The Expo root only loads and initializes `@sentry/react-native` after validating this DSN. Native crash collection is disabled. |
 | `EXPO_PUBLIC_SENTRY_ANALYTICS_DSN` | A Sentry project supporting [direct OTLP Logs](https://docs.sentry.io/concepts/otlp/direct/logs), ideally separate from the crash project. Only two game lifecycle events use this transport. No other app logs are forwarded. |
 
 ## Analytics data and counts
@@ -18,12 +18,14 @@ Requests are best-effort: no app queue, retry, blocking await, or game/persisten
 
 ## Crash privacy and limits
 
-JS exception reports keep a Sentry event ID/timestamp, severity, a bounded error type, handled status, and stack line/column numbers with fixed bundle names. The hook drops raw exception text, dynamic frame names and paths, breadcrumbs, URLs, user/context, tags and attachments. This loses detail; stack coordinates are still useful for diagnosing recurring failures. Crash options disable default PII, sessions, SDK logs, tracing/propagation, replay, screenshots, view hierarchy and NDK scope sync. Atlas does not set a Sentry user or session. Native Sentry crash collection is initialized from JS, not from a pre-JS native options file. A crash before that initialization is not covered. A native fatal report does not pass through the JS hook: native SDK diagnostics can include app/build, OS/device context, SDK-generated identifiers, stacks and native exception text. Do not add sensitive data to native errors, and verify raw native samples and Sentry-side scrubbing (including IP and device/user fields) before enabling any production project.
+JS exception reports keep a Sentry event ID/timestamp, severity, a bounded error type, handled status, and stack line/column numbers with fixed bundle names. The hook drops raw exception text, dynamic frame names and paths, breadcrumbs, URLs, user/context, tags and attachments. This loses detail; stack coordinates are still useful for diagnosing recurring failures. Crash options disable default PII, sessions, SDK logs, tracing/propagation, replay, screenshots, view hierarchy and NDK scope sync. Atlas does not set a Sentry user or session. Crashes before JS initialization are not covered.
+
+The app neither starts native Sentry nor hands the DSN to its native initialization bridge. The JS hook cannot filter native reports or envelopes already cached for retry. Do not enable separate native initialization: native capture remains blocked until both platforms have verified on-device filtering, safe handling of old caches, and no DSN logging during initialization. This change does not purge caches from older builds or modify apps already installed.
 
 ## Human acceptance (not run by the local source check)
 
 1. On installed iOS and Android builds with both variables absent, confirm startup and ordinary play, with no Sentry initialization or network traffic from the app. Check Expo's generated native dependency linkage when building; do not configure early native startup or source-map upload for this ticket.
-2. With approved test projects only, enable crash reporting and explicitly trigger a controlled JS exception and native fatal crash in a disposable test build. Relaunch where needed for delivery. Check the observed JS and native reports and privacy settings separately; remove any test trigger before building production. Confirm a disabled build does not generate them.
+2. With an approved test project only, check a controlled JS exception in a disposable installed build. Verify the raw JS report and project privacy settings, that the native initialization path is not called even when JS reporting is enabled, and that the startup logs do not contain the configured DSN. Remove any test trigger before building production. Native crash delivery and relaunch checks are deferred until a privacy-safe native implementation is available.
 3. With Logs enabled for the approved analytics project, verify one visible record for a saved solo start/finish and a newly adopted online start/finish; rematch is a new start. Spot-check a solo reload/abandon, tutorial and online seat resume/duplicate state for no extra start/finish. Inspect the raw submitted fields and server-side enrichment. Check a refused save and disabled analytics build send nothing.
 
 Offline Expo bundles and mocked checks do not verify an installed build, native crash contents, or live ingestion. Build profiles are separate (#31).
