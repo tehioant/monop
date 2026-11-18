@@ -6,7 +6,11 @@
     "scheme": "atlas",
     "orientation": "portrait",
     "userInterfaceStyle": "light",
+    "icon": "./assets/icon.png",
+    "ios": { "bundleIdentifier": "com.tehioant.atlas" },
+    "android": { "package": "com.tehioant.atlas" },
     "plugins": [
+      ["expo-splash-screen", { "image": "./assets/splash.png", "imageWidth": 160, "resizeMode": "contain", "backgroundColor": "#14283D" }],
       "expo-router",
       "expo-secure-store",
       ["expo-localization", { "supportedLocales": ["en", "fr"] }],
