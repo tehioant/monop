@@ -1,7 +1,7 @@
 // The connection of an online session: it opens the socket, says hello, keeps the connection alive, and opens
 // another one when it is lost. What the messages mean is in `session.ts`; `store.ts` plugs this into the app.
 
-import { HEARTBEAT_MS, type ClientMessage } from '@atlas/server/protocol';
+import { HEARTBEAT_MS, type ClientMessage, type ServerMessage } from '@atlas/server/protocol';
 import { backoff, decode, disconnected, encode, hello, receive, type Session } from './session.ts';
 
 /** What is used of a WebSocket. */
@@ -31,7 +31,7 @@ export interface Connection {
  * `socket` opens a WebSocket to the game server; `get` and `set` read and replace the session, which this
  * connection moves on with every message and every loss.
  */
-export function connection(socket: () => Socket, get: () => Session, set: (session: Session) => void): Connection {
+export function connection(socket: () => Socket, get: () => Session, set: (session: Session, packet?: ServerMessage) => void): Connection {
   let current: Socket | null = null;
   let beat: ReturnType<typeof setInterval> | undefined;
   let retry: ReturnType<typeof setTimeout> | undefined;
@@ -77,11 +77,14 @@ export function connection(socket: () => Socket, get: () => Session, set: (sessi
     opened.onmessage = (event) => {
       if (opened !== current) return;
       missed = 0;
-      let result;
-      try { result = receive(get(), decode(String(event.data))); }
+      let packet, result;
+      try {
+        packet = decode(String(event.data));
+        result = receive(get(), packet);
+      }
       catch { warn('Invalid message'); lost(); return; }
       const { session, send: answers } = result;
-      set(session);
+      set(session, packet);
       answers.forEach(send);
       if (!session.room && !session.request) close();
     };
