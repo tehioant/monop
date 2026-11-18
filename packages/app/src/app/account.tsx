@@ -15,22 +15,32 @@ const client = accountClient();
 export default function AccountScreen() {
   const t = useTranslation();
   const [policyError, setPolicyError] = useState(false);
-  const [status, setStatus] = useState<AccountStatus | null>(null);
+  const token = useOnline(state => state.accountToken());
+  const [observation, setObservation] = useState<{ token: string | null; status: AccountStatus } | null>(null);
+  const latest = useRef(observation);
+  const revision = useRef(0);
+  const status = observation?.token === token ? observation.status : null;
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<'signInError' | 'deleteError' | 'deleted' | 'deletedLocalError' | null>(null);
   const pending = useRef(false);
   const mounted = useRef(true);
   const online = useOnline.getState;
-  const refresh = async () => {
-    const token = online().accountToken();
-    const next = await client.status(token);
-    if (mounted.current && online().accountToken() === token) setStatus(next);
+  const refresh = async (credential: string | null) => {
+    const request = ++revision.current;
+    const status = await client.status(credential);
+    if (!mounted.current || revision.current !== request || online().accountToken() !== credential) return;
+    latest.current = { token: credential, status };
+    setObservation(latest.current);
   };
   useEffect(() => {
     mounted.current = true;
-    void refresh().catch(() => {});
-    return () => { mounted.current = false; };
-  }, []);
+    void refresh(token).catch(() => {});
+    return () => {
+      mounted.current = false;
+      latest.current = null;
+      ++revision.current;
+    };
+  }, [token]);
   const signIn = async (provider: Provider, mode: Mode) => {
     if (pending.current) return;
     pending.current = true;
@@ -39,36 +49,40 @@ export default function AccountScreen() {
     const token = online().accountToken();
     try {
       const result = await client.signIn(provider, mode, token);
-      if (!result || !mounted.current) return;
+      if (!result || !mounted.current || online().accountToken() !== token) return;
       if ('token' in result && !online().replaceAccount(token, result)) throw Error('Could not store restored account');
-      await refresh();
-    } catch { if (mounted.current) setNotice('signInError'); }
+      if (online().accountToken() === token) await refresh(token);
+    } catch { if (mounted.current && online().accountToken() === token) setNotice('signInError'); }
     finally {
       pending.current = false;
       if (mounted.current) setBusy(false);
     }
   };
+  const canRemove = () => mounted.current && !pending.current && !!status?.authenticated && !!token &&
+    latest.current === observation && online().accountToken() === token;
   const remove = async (token: string) => {
-    if (pending.current || online().accountToken() !== token) return;
+    if (!canRemove()) return;
     pending.current = true;
     setBusy(true);
     setNotice(null);
     try {
       await client.deleteAccount(token);
+      if (online().accountToken() !== token) return;
       const cleared = online().clearAccount(token);
       if (mounted.current) {
-        setStatus(current => current && { ...current, authenticated: false, linked: [] });
+        latest.current = null;
+        ++revision.current;
+        setObservation(null);
         setNotice(cleared ? 'deleted' : 'deletedLocalError');
       }
-    } catch { if (mounted.current) setNotice('deleteError'); }
+    } catch { if (mounted.current && online().accountToken() === token) setNotice('deleteError'); }
     finally {
       pending.current = false;
       if (mounted.current) setBusy(false);
     }
   };
   const confirmRemoval = () => {
-    const token = online().accountToken();
-    if (!token || pending.current) return;
+    if (!token || !canRemove()) return;
     Alert.alert(t('account.delete'), t('account.deleteConfirm'), [
       { text: t('common.cancel'), style: 'cancel' },
       { text: t('account.delete'), style: 'destructive', onPress: () => remove(token) },

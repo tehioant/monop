@@ -18,7 +18,8 @@ function fixture(url?: string, t = english, linked: string[] = []) {
   const clearances: string[] = [];
   let refuseDelete = true;
   let confirmation: any[] = [];
-  const token = 'guest-token';
+  let token: string | null = 'guest-token';
+  let status = async (_candidate: string | null) => ({ providers: ['google'], linked, authenticated: true });
   const load = (screen: string) => loadComponent(`${src}app/${screen}.tsx`, {
     react: h.react, 'react-native': { ...native, Switch: 'Switch', Alert: { alert: (_a: string, _b: string, actions: any[]) => { confirmation = actions; } } }, 'react-native-reanimated': animated,
     'expo-router': { router: { push: (path: string) => paths.push(path) } },
@@ -31,18 +32,20 @@ function fixture(url?: string, t = english, linked: string[] = []) {
     '../settings/feedback.ts': { signal: () => {} },
     '../account/config.ts': { privacyPolicyUrl: url },
     '../account/client.ts': { accountClient: () => ({
-      status: async () => ({ providers: ['google'], linked, authenticated: true }),
+      status: (candidate: string | null) => status(candidate),
       deleteAccount: async (candidate: string) => { deletes.push(candidate); if (refuseDelete) throw Error('private'); },
       signIn: async (...args: unknown[]) => { signIns.push(args); return { token: 'restored-token', name: 'Guest' }; },
     }) },
-    '../online/store.ts': { useOnline: { getState: () => ({
+    '../online/store.ts': { useOnline: Object.assign((select: (state: { accountToken: () => string | null }) => unknown) =>
+      select({ accountToken: () => token }), { getState: () => ({
       accountToken: () => token,
       clearAccount: (candidate: string) => { clearances.push(candidate); return true; },
-      replaceAccount: (...args: unknown[]) => { replacement = args; return true; },
-    }) } },
+      replaceAccount: (...args: unknown[]) => { replacement = args; token = 'restored-token'; return true; },
+    }) }) },
   }).default;
   return { opened, paths, load, render: h.render, flush: h.flush, signIns, deletes, clearances,
-    confirm: () => confirmation, allowDelete: () => { refuseDelete = false; }, replacement: () => replacement, refuse: () => { refuse = true; } };
+    confirm: () => confirmation, allowDelete: () => { refuseDelete = false; }, replacement: () => replacement, refuse: () => { refuse = true; },
+    setToken: (next: string) => { token = next; }, setStatus: (next: typeof status) => { status = next; } };
 }
 
 test('Settings opens Account, where a guest can open the configured privacy policy and retry a native refusal', async () => {
@@ -108,4 +111,39 @@ test('Account deletion needs explicit confirmation and only clears credentials a
   await f.confirm()[1].onPress();
   assert.deepEqual(f.clearances, ['guest-token']);
   assert.ok(copy(render()).includes('Online account deleted.'));
+});
+
+
+test('Account shows no old identity controls while replacement status is unavailable', async () => {
+  const f = fixture(undefined, english, ['google']);
+  const account = f.load('account');
+  const render = () => f.render(account);
+  render(); f.flush(); await new Promise(resolve => setImmediate(resolve));
+  assert.ok(copy(render()).includes('Linked: Google'));
+  button(render(), 'Delete account').props.onPress();
+  const previousConfirmation = f.confirm()[1];
+  f.setStatus(async () => { throw Error('status unavailable'); });
+  await button(render(), 'Restore with Google').props.onPress();
+  render(); f.flush(); await new Promise(resolve => setImmediate(resolve));
+  assert.ok(!copy(render()).includes('Linked: Google'));
+  assert.ok(!button(render(), 'Delete account'));
+  await previousConfirmation.onPress();
+  assert.deepEqual(f.deletes, []);
+});
+
+test('Account renders replacement status and ignores a delayed previous observation', async () => {
+  const f = fixture();
+  const first = Promise.withResolvers<{ providers: string[]; linked: string[]; authenticated: boolean }>();
+  f.setStatus(token => token === 'guest-token' ? first.promise :
+    Promise.resolve({ providers: ['google'], linked: [], authenticated: false }));
+  const account = f.load('account');
+  const render = () => f.render(account);
+  render(); f.flush();
+  f.setToken('replacement-token');
+  render(); f.flush(); await new Promise(resolve => setImmediate(resolve));
+  first.resolve({ providers: ['google'], linked: ['google'], authenticated: true });
+  await new Promise(resolve => setImmediate(resolve));
+  assert.ok(button(render(), 'Restore with Google'));
+  assert.ok(!button(render(), 'Delete account'));
+  assert.ok(!copy(render()).includes('Linked: Google'));
 });
