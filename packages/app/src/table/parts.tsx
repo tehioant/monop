@@ -47,6 +47,25 @@ function landed(after: number | undefined) {
   return after === undefined ? undefined : ZoomIn.delay(after).duration(140);
 }
 
+function renderTollTiles(tolls: readonly number[], ink: string) {
+  return (
+    <View testID="city-tolls" style={styles.tollFooter}>
+      <Text allowFontScaling={false} style={[styles.tollHeading, { color: ink }]}>TOLL</Text>
+      <View style={styles.tollRow}>
+        {tolls.map((amount, index) => {
+          const complete = index === tolls.length - 1;
+          return (
+            <View key={index} style={[styles.tollTile, complete && styles.tollTileComplete]}>
+              <Text allowFontScaling={false} style={styles.tollAmount}>{amount}</Text>
+              <Text allowFontScaling={false} style={styles.tollMilestone}>{complete ? 'SET' : String(index + 1)}</Text>
+            </View>
+          );
+        })}
+      </View>
+    </View>
+  );
+}
+
 /** A card drawn from its data. */
 export function CardView({ id, selected, dimmed, onPress, landing }: Tappable) {
   const { name, kind, value, country, countries, action } = cardInfo(id);
@@ -83,19 +102,24 @@ export function CardView({ id, selected, dimmed, onPress, landing }: Tappable) {
       accessibilityLabel={tolls ? `${name}. Base toll: ${tollText(tolls)}.` : name}
       accessibilityRole={onPress ? 'button' : undefined}
       accessibilityState={{ selected: !!selected }}
-      style={[styles.card, selected && styles.cardSelected, dimmed && styles.dimmed]}
+      style={[styles.card, tolls && styles.cityCard, selected && styles.cardSelected, dimmed && styles.dimmed]}
     >
-      <View style={styles.cardTop}>
+      <View style={[styles.cardTop, tolls && styles.cityTop]}>
         <View style={styles.cardBadge}>
           <Text allowFontScaling={false} style={styles.cardValue}>{value}</Text>
           <View style={styles.coinMark} />
         </View>
-        <Text allowFontScaling={false} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.85} style={[styles.cardTopLabel, { color: ink }]}>
-          {tolls ? `Toll ${tolls.join('/')}` : kind.toUpperCase()}
-        </Text>
+        {tolls ? (
+          <View style={styles.cityMetadata}>
+            <Text allowFontScaling={false} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.85} style={[styles.cityCountry, { color: ink }]}>{label.toUpperCase()}</Text>
+            {perk && <Text allowFontScaling={false} numberOfLines={1} style={[styles.cityPerk, { color: ink }]}>{perk.label}</Text>}
+          </View>
+        ) : (
+          <Text allowFontScaling={false} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.85} style={[styles.cardTopLabel, { color: ink }]}>{kind.toUpperCase()}</Text>
+        )}
       </View>
       <Text
-        style={[styles.cardName, { fontSize: nameSize }, splitName && styles.cardNameStacked]}
+        style={[styles.cardName, { fontSize: nameSize }, tolls && styles.cityName, splitName && styles.cardNameStacked]}
         numberOfLines={splitName ? 2 : 1}
         allowFontScaling={false}
         adjustsFontSizeToFit
@@ -106,7 +130,9 @@ export function CardView({ id, selected, dimmed, onPress, landing }: Tappable) {
       <View style={styles.cardArtWindow}>
         {artwork !== undefined && <Image source={artwork} resizeMode="cover" style={styles.cardIllustration} accessible={false} />}
       </View>
-      {split ? (
+      {tolls ? (
+        renderTollTiles(tolls, ink)
+      ) : split ? (
         <View style={styles.cardSplit}>
           {split.map((entry) => {
             const label = title(entry).toUpperCase();
@@ -120,7 +146,6 @@ export function CardView({ id, selected, dimmed, onPress, landing }: Tappable) {
       ) : (
         <View style={[styles.cardBand, { backgroundColor: ink }]}>
           <Text allowFontScaling={false} numberOfLines={1} style={[styles.cardBandText, label.length > 9 && styles.cardBandSmall]}>{label.toUpperCase()}</Text>
-          {perk && <Text allowFontScaling={false} numberOfLines={1} style={styles.cardPerk}>{perk.label}</Text>}
         </View>
       )}
     </AnimatedPressable>
@@ -239,6 +264,7 @@ const styles = StyleSheet.create({
     paddingBottom: 4,
     gap: 2,
   },
+  cityCard: { gap: 1 },
   cardSelected: { borderColor: colors.accent, boxShadow: `inset 0 0 0 1px ${colors.accent}` },
   dimmed: { opacity: 0.6 },
   cardTop: { height: 14, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 1 },
@@ -246,7 +272,12 @@ const styles = StyleSheet.create({
   cardValue: { color: FACE_WHITE, fontSize: 11, lineHeight: 12, fontWeight: '800', includeFontPadding: false },
   coinMark: { width: 4, height: 4, borderRadius: 2, borderWidth: 0.7, borderColor: FACE_WHITE },
   cardTopLabel: { fontSize: 8, lineHeight: 10, fontWeight: '800', includeFontPadding: false, flexShrink: 1 },
+  cityTop: { height: 16 },
+  cityMetadata: { flexShrink: 1, minWidth: 0 },
+  cityCountry: { fontSize: 7, lineHeight: 8, fontWeight: '800', textAlign: 'right', includeFontPadding: false },
+  cityPerk: { fontSize: 7, lineHeight: 8, textAlign: 'right', includeFontPadding: false },
   cardName: { height: 19, color: FACE_INK, fontFamily: Platform.select({ ios: 'Georgia', default: 'serif' }), lineHeight: 19, fontWeight: '700', includeFontPadding: false },
+  cityName: { height: 16, lineHeight: 16 },
   cardNameStacked: { height: 22, lineHeight: 11 },
   cardArtWindow: { flex: 1, overflow: 'hidden', backgroundColor: '#e4ddcb' },
   cardIllustration: { width: '100%', height: '100%' },
@@ -255,7 +286,13 @@ const styles = StyleSheet.create({
   cardBandText: { color: FACE_WHITE, fontSize: 8.5, lineHeight: 10, fontWeight: '800', textAlign: 'center', includeFontPadding: false },
   cardBandSmall: { fontSize: 7 },
   cardSplitText: { fontSize: 6.25 },
-  cardPerk: { color: FACE_WHITE, fontSize: 8, lineHeight: 9, textAlign: 'center', includeFontPadding: false },
+  tollFooter: { gap: 1 },
+  tollHeading: { fontSize: 7.5, lineHeight: 8, fontWeight: '800', includeFontPadding: false },
+  tollRow: { flexDirection: 'row', gap: 1 },
+  tollTile: { flex: 1, height: 20, alignItems: 'center', justifyContent: 'center', borderRadius: 2, backgroundColor: '#e6ddc6' },
+  tollTileComplete: { backgroundColor: '#f1d397' },
+  tollAmount: { color: '#372819', fontSize: 11.5, lineHeight: 12, fontWeight: '800', includeFontPadding: false },
+  tollMilestone: { color: '#372819', fontSize: 6.5, lineHeight: 7, fontWeight: '800', includeFontPadding: false },
   deckBack: { width: 18, height: 25.4, borderRadius: 2 },
   fullBack: { width: CARD_WIDTH, height: CARD_HEIGHT, borderRadius: 5 },
   country: {

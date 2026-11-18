@@ -70,20 +70,33 @@ test('Thailand replaces the UK artwork and labels without retiring saved card ID
   }
 });
 
-test('city faces show the base toll for each set size, separate from the bank value', () => {
+test('city faces pair each base toll with its city count or SET, separately from bank value', () => {
   const { CardView } = parts();
-  const text = (id: string) => nodes(CardView({ id })).filter((node) => node.type === 'Text').map((node) => node.props.children);
-  for (const [id, toll, bankValue] of [
-    ['cairo', 'Toll 1/2', 1],
-    ['london', 'Toll 1/2/4', 2],
-    ['mumbai', 'Toll 1/3/5/7', 3],
+  const text = (tree: unknown) => nodes(tree).filter((node) => node.type === 'Text').map((node) => node.props.children);
+  for (const [id, bankValue, expected] of [
+    ['cairo', 1, [[1, '1'], [2, 'SET']]],
+    ['london', 2, [[1, '1'], [2, '2'], [4, 'SET']]],
+    ['mumbai', 3, [[1, '1'], [3, '2'], [5, '3'], [7, 'SET']]],
   ] as const) {
-    assert.ok(text(id).includes(toll), `${id}: missing ${toll}`);
-    assert.ok(text(id).includes(bankValue), `${id}: missing bank value`);
+    const tree = CardView({ id });
+    const labels = text(tree);
+    assert.equal(labels[0], bankValue, `${id}: bank value stays first`);
+    const footer = nodes(tree).find((node) => node.props.testID === 'city-tolls');
+    assert.ok(footer, `${id}: missing toll footer`);
+    const [heading, row] = footer.props.children;
+    assert.deepEqual(text(heading), ['TOLL']);
+    assert.deepEqual(row.props.children.map(text), expected, id);
   }
   assert.equal(CardView({ id: 'london' }).props.accessibilityLabel, 'Bangkok. Base toll: 1 with 1 city, 2 with 2 cities, 4 once complete.');
-  for (const id of ['wild-uk-india', 'wild-any-1', 'toll-1', 'coin-2-1']) {
-    assert.ok(!text(id).some((label) => typeof label === 'string' && label.startsWith('Toll ')), `${id}: no fixed toll`);
+  for (const card of CARDS) {
+    if (card.kind === 'city') continue;
+    const rendered = nodes(CardView({ id: card.id }));
+    assert.ok(!rendered.some((node) => node.props.testID === 'city-tolls'), `${card.id}: no fixed toll`);
+    // Action and coin footers may repeat the kind; the header is the first match.
+    const kindLabel = rendered.find((node) => node.type === 'Text' && node.props.children === card.kind.toUpperCase());
+    assert.ok(kindLabel, `${card.id}: missing kind label`);
+    assert.equal(kindLabel.props.adjustsFontSizeToFit, true, `${card.id}: kind label shrinks to fit`);
+    assert.equal(kindLabel.props.minimumFontScale, 0.85, `${card.id}: minimum kind label scale`);
   }
 });
 
