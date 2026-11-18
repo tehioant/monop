@@ -9,7 +9,7 @@ export type Session = { token: string; name: string };
 export interface IdentityStore {
   account(token: string): Promise<Account | undefined>;
   providers(id: string): Promise<Provider[]>;
-  link(id: string, identity: VerifiedIdentity): Promise<boolean>;
+  link(id: string, identity: VerifiedIdentity, observedOwner: string | null): Promise<boolean>;
   ownerOf(identity: VerifiedIdentity): Promise<string | undefined>;
   restore(identity: VerifiedIdentity, owner: string): Promise<Session | undefined>;
 }
@@ -27,16 +27,17 @@ const TTL = 5 * 60_000;
 const MAX_PENDING = 2048;
 
 type Timed = { owner?: string; deadline: number; timer?: ReturnType<typeof setTimeout> };
-type Attempt = Timed & { provider: Provider; challenge: string; nonce: string; pkce: string; exchanging?: boolean };
-type Claim = Timed & { owner: string; link: boolean; challenge: string; identity: VerifiedIdentity; redeeming?: boolean };
+type Attempt = Timed & { provider: Provider; challenge: string; nonce: string; pkce: string; revision: number; exchanging?: boolean };
+type Claim = Timed & { owner: string; link: boolean; challenge: string; identity: VerifiedIdentity; unbound?: true; redeeming?: boolean };
 
 /** Bounded single-use browser state and device-bound redemption. Provider data never goes back to the browser. */
 export function accountFlows(adapters: ProviderAdapters, store: IdentityStore, now = Date.now,
   { pending, verified } = { pending: new Map<string, Attempt>(), verified: new Map<string, Claim>() }) {
   const available = providers.filter(provider => adapters[provider]);
   let closed = false;
-  // A lookup initiated before a committed erasure can return an older view of the binding.
   let erasureRevision = 0;
+  let erasing = 0;
+  const newLinks = new Set<Promise<boolean>>();
   function forget<T extends Timed>(map: Map<string, T>, key: string) {
     clearTimeout(map.get(key)?.timer);
     map.delete(key);
@@ -53,10 +54,19 @@ export function accountFlows(adapters: ProviderAdapters, store: IdentityStore, n
     return false;
   }
   return {
+    async duringErasure(erase: () => Promise<boolean>) {
+      // With no known binding owner there is no matching account row to lock against erasure.
+      // Drain admitted new links, and don't admit more until the commit and cancellation are visible.
+      ++erasing;
+      try {
+        await Promise.allSettled(newLinks);
+        return await erase();
+      } finally { --erasing; }
+    },
     erase(id: string) {
       ++erasureRevision;
       for (const [key, attempt] of pending) if (attempt.owner === id) forget(pending, key);
-      for (const [key, claim] of verified) if (claim.owner === id) forget(verified, key);
+      for (const [key, claim] of verified) if (claim.owner === id || claim.unbound) forget(verified, key);
     },
     close() {
       closed = true;
@@ -87,7 +97,7 @@ export function accountFlows(adapters: ProviderAdapters, store: IdentityStore, n
       if (closed || now() >= deadline || pending.size >= MAX_PENDING) return;
       const state = random(), nonce = random(), pkce = random();
       const authorization = adapter.authorize({ state, nonce, pkce });
-      remember(pending, state, { provider, owner, challenge, deadline, nonce, pkce });
+      remember(pending, state, { provider, owner, challenge, deadline, nonce, pkce, revision: erasureRevision });
       return authorization;
     },
     async callback(provider: Provider, body: Record<string, unknown>) {
@@ -101,18 +111,21 @@ export function accountFlows(adapters: ProviderAdapters, store: IdentityStore, n
         if (error !== undefined || typeof code !== 'string' || !code || code.length > 4096) return;
         const identity = await adapter.exchange({ code, nonce: attempt.nonce, pkce: attempt.pkce });
         if (!identity || identity.provider !== provider) return;
-        let owner = attempt.owner;
-        if (!owner) {
-          while (current(pending, state, attempt)) {
-            const revision = erasureRevision;
-            owner = await store.ownerOf(identity);
-            if (revision === erasureRevision) break;
-            owner = undefined;
-          }
+        if (!current(pending, state, attempt)) return;
+        let revision = erasureRevision;
+        const bound = await store.ownerOf(identity);
+        if (attempt.owner && bound && bound !== attempt.owner) return;
+        while (bound && revision !== erasureRevision && current(pending, state, attempt)) {
+          // Only reconfirm the same binding; never reinterpret a disappeared binding as unbound.
+          revision = erasureRevision;
+          if (await store.ownerOf(identity) !== bound) return;
         }
+        const unbound = bound === undefined;
+        if (unbound && (erasing || attempt.revision !== erasureRevision)) return;
+        const owner = attempt.owner ?? bound;
         if (!owner || !current(pending, state, attempt) || verified.size >= MAX_PENDING) return;
         const claim = random();
-        remember(verified, claim, { owner, identity, link: !!attempt.owner, challenge: attempt.challenge,
+        remember(verified, claim, { owner, identity, link: !!attempt.owner, ...(unbound && { unbound: true }), challenge: attempt.challenge,
           deadline: Math.min(attempt.deadline, now() + 60_000) });
         return claim;
       } finally { forget(pending, state); }
@@ -126,12 +139,21 @@ export function accountFlows(adapters: ProviderAdapters, store: IdentityStore, n
       if (!timingSafeEqual(Buffer.from(claim.challenge), Buffer.from(sha256url(verifier)))) return;
       if (link && (!token || (await store.account(token))?.id !== owner)) return;
       if (claim.redeeming || !current(verified, code, claim)) return;
+      if (claim.unbound && erasing) return;
       claim.redeeming = true;
       // Expiry governs admission; admitted work is tracked until settlement or explicit cancellation.
       clearTimeout(claim.timer);
       try {
-        const result = link ? await store.link(owner, identity) && { linked: true } : await store.restore(identity, owner);
-        if (verified.get(code) === claim) return result || undefined;
+        let result;
+        if (link) {
+          const write = store.link(owner, identity, claim.unbound ? null : owner);
+          if (claim.unbound) newLinks.add(write);
+          try { if (await write) result = { linked: true }; }
+          finally { newLinks.delete(write); }
+        } else {
+          result = await store.restore(identity, owner);
+        }
+        if (verified.get(code) === claim) return result;
       } finally { forget(verified, code); }
     },
   };

@@ -17,7 +17,9 @@ export function accountRoutes(app: FastifyInstance, adapters: ProviderAdapters, 
   app.get('/account', async (req, reply) => reply.headers(headers).send(await flows.status(bearer(req))));
   if (erase) app.delete('/account', async (req, reply) => {
     const token = bearer(req);
-    if (!token || !await erase(token, flows.erase)) return reply.headers(headers).code(401).send({ error: 'invalid_token' });
+    if (!token || !await flows.duringErasure(() => erase(token, flows.erase))) {
+      return reply.headers(headers).code(401).send({ error: 'invalid_token' });
+    }
     return reply.headers(headers).code(204).send();
   });
   app.post('/account/begin', { bodyLimit: 2048 }, async (req, reply) => {

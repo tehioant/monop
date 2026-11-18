@@ -107,16 +107,18 @@ export function identityStore(sql: Sql): IdentityStore {
         select provider from account_identities where account_id = ${id} order by provider`;
       return rows.map(row => row.provider);
     },
-    link: (id, { provider, subject, revocation }) => sql.begin(async (tx) => {
+    link: (id, { provider, subject, revocation }, observedOwner) => sql.begin(async (tx) => {
+      if (observedOwner !== null && observedOwner !== id) return false;
       const [owner] = await tx`select id from accounts where id = ${id} for update`;
       if (!owner) return false;
       const [linked] = await tx`
         select subject from account_identities where account_id = ${id} and provider = ${provider}`;
       if (linked) {
-        if (linked.subject !== subject) return false;
+        if (observedOwner !== id || linked.subject !== subject) return false;
         if (provider === 'apple' && revocation) await refreshAppleBinding(tx, id, subject, revocation);
         return true;
       }
+      if (observedOwner !== null) return false;
       if (provider === 'apple' && !revocation) return false;
       const [inserted] = await tx`
         insert into account_identities (account_id, provider, subject, revocation)

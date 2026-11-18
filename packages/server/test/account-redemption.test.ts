@@ -6,7 +6,7 @@ const code = 'c'.repeat(43);
 const verifier = 'v'.repeat(43);
 const identity = { provider: 'google', subject: 'fixture-subject' } as const;
 
-function prepared(store: Partial<IdentityStore>, link = true) {
+function prepared(store: Partial<IdentityStore>, link = true, unbound = false) {
   let time = 0;
   const flows = accountFlows({}, {
     account: async token => token === 'owner' ? { id: 'owner', name: 'Guest' } : undefined,
@@ -15,7 +15,8 @@ function prepared(store: Partial<IdentityStore>, link = true) {
     ...store,
   }, () => time, {
     pending: new Map(),
-    verified: new Map([[code, { owner: 'owner', link, identity, deadline: 50, challenge: sha256url(verifier) }]]),
+    verified: new Map([[code, { owner: 'owner', link, identity, deadline: 50, challenge: sha256url(verifier),
+      ...(unbound && { unbound: true }) }]]),
   });
   return { flows, expire: () => { time = 50; }, redeem: () => flows.redeem({ code, verifier }, link ? 'owner' : undefined) };
 }
@@ -68,4 +69,28 @@ test('erasure and closure cancel admitted redemption independently of its deadli
     finish.resolve(true);
     assert.equal(await redemption, undefined);
   }
+});
+
+test('erasure waits for an admitted new link before purging', async () => {
+  const started = Promise.withResolvers<void>();
+  const finish = Promise.withResolvers<boolean>();
+  let purged = false;
+  const f = prepared({ link: (_id, _identity, observed) => {
+    assert.equal(observed, null);
+    started.resolve();
+    return finish.promise;
+  } }, true, true);
+  const redemption = f.redeem();
+  await started.promise;
+  const removal = f.flows.duringErasure(async () => {
+    purged = true;
+    f.flows.erase('owner');
+    return true;
+  });
+  await Promise.resolve();
+  assert.equal(purged, false);
+  finish.resolve(true);
+  assert.deepEqual(await redemption, { linked: true });
+  assert.equal(await removal, true);
+  assert.equal(purged, true);
 });

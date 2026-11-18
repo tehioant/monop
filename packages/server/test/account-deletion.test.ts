@@ -173,7 +173,7 @@ test('the locked Apple binding retains the newest verified revocation material f
     const store = identityStore(f.sql);
     const apple = { provider: 'apple', subject: 'apple-subject' } as const;
     const apply = (identity: VerifiedIdentity) => operation === 'link'
-      ? store.link('target-id', identity) : store.restore(identity, 'target-id');
+      ? store.link('target-id', identity, 'target-id') : store.restore(identity, 'target-id');
     assert.ok(await apply(apple));
     assert.equal(f.bindings.get('target-id'), 'encrypted-refresh', 'absent material never overwrites');
     assert.ok(!await apply({ ...apple, subject: 'different-subject', revocation: 'different-material' }));
