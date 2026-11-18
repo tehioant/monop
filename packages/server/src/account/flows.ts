@@ -31,9 +31,8 @@ type Attempt = Timed & { provider: Provider; challenge: string; nonce: string; p
 type Claim = Timed & { owner: string; link: boolean; challenge: string; identity: VerifiedIdentity; redeeming?: boolean };
 
 /** Bounded single-use browser state and device-bound redemption. Provider data never goes back to the browser. */
-export function accountFlows(adapters: ProviderAdapters, store: IdentityStore, now = Date.now) {
-  const pending = new Map<string, Attempt>();
-  const verified = new Map<string, Claim>();
+export function accountFlows(adapters: ProviderAdapters, store: IdentityStore, now = Date.now,
+  { pending, verified } = { pending: new Map<string, Attempt>(), verified: new Map<string, Claim>() }) {
   const available = providers.filter(provider => adapters[provider]);
   let closed = false;
   // A lookup initiated before a committed erasure can return an older view of the binding.
@@ -128,9 +127,11 @@ export function accountFlows(adapters: ProviderAdapters, store: IdentityStore, n
       if (link && (!token || (await store.account(token))?.id !== owner)) return;
       if (claim.redeeming || !current(verified, code, claim)) return;
       claim.redeeming = true;
+      // Expiry governs admission; admitted work is tracked until settlement or explicit cancellation.
+      clearTimeout(claim.timer);
       try {
         const result = link ? await store.link(owner, identity) && { linked: true } : await store.restore(identity, owner);
-        if (current(verified, code, claim)) return result || undefined;
+        if (verified.get(code) === claim) return result || undefined;
       } finally { forget(verified, code); }
     },
   };
