@@ -6,7 +6,7 @@ import { loadComponent } from './componentBoundary.ts';
 const DSN = 'https://0123456789abcdef0123456789abcdef@telemetry.invalid/123';
 const layout = new URL('../src/app/_layout.tsx', import.meta.url).pathname;
 
-function boot(value: string | undefined, sdk: object) {
+function boot(value: string | undefined, sdk: object, fetch?: (...args: unknown[]) => unknown) {
   const key = 'EXPO_PUBLIC_SENTRY_DSN';
   const previous = process.env[key];
   if (value === undefined) delete process.env[key]; else process.env[key] = value;
@@ -15,6 +15,7 @@ function boot(value: string | undefined, sdk: object) {
       'expo-router': { Stack: Object.assign(() => {}, { Screen: () => {} }) },
       '../i18n/locale.tsx': { LocaleProvider: () => {} },
       '@sentry/react-native': sdk,
+      'expo/fetch': { fetch },
     }).default();
   } finally {
     if (previous === undefined) delete process.env[key]; else process.env[key] = previous;
@@ -59,4 +60,25 @@ test('crash init disables capture extras and keeps only scrubbed JS crash diagno
   assert.ok('exception' in report);
   assert.equal(report.event_id, 'e'.repeat(32));
   assert.deepEqual(report.exception?.values?.[0]?.stacktrace?.frames, [{ filename: 'app:///main.jsbundle', lineno: 42, colno: 9 }]);
+});
+
+test('crash envelopes use Expo fetch with credentials omitted and redirects rejected', async (t) => {
+  const globalFetch = t.mock.method(globalThis, 'fetch', () => { throw Error('unexpected global fetch'); });
+  const fetch = t.mock.fn(async (_input: unknown, _init: unknown) => new Response(null, { status: 202 }));
+  let options: ReactNativeOptions | undefined;
+  assert.ok(boot(DSN, { init: (value: ReactNativeOptions) => { options = value; } }, fetch));
+  assert.ok(options?.transport, 'Sentry must not choose its default transport');
+  const url = 'https://telemetry.invalid/api/123/envelope/';
+  const transport = options.transport({ url, recordDroppedEvent: () => {} });
+  const payload: ErrorEvent = { type: undefined, event_id: 'a'.repeat(32), platform: 'javascript' };
+  const envelopeHeaders = { event_id: 'a'.repeat(32), sent_at: '2026-01-01T00:00:00.000Z' };
+  assert.equal((await transport.send([envelopeHeaders, [[{ type: 'event' }, payload]]])).statusCode, 202);
+  assert.equal(globalFetch.mock.callCount(), 0);
+  assert.equal(fetch.mock.callCount(), 1);
+  assert.deepEqual(fetch.mock.calls[0]?.arguments, [url, {
+    method: 'POST', credentials: 'omit', redirect: 'error',
+    headers: { 'Content-Type': 'application/x-sentry-envelope' },
+    body: `${JSON.stringify(envelopeHeaders)}\n{"type":"event"}\n${JSON.stringify(payload)}`,
+  }]);
+  assert.equal(await transport.flush(), true);
 });

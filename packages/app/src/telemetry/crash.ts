@@ -57,6 +57,21 @@ export function initializeCrashReporting(): void {
       attachScreenshot: false,
       attachViewHierarchy: false,
       maxBreadcrumbs: 0,
+      transport: (options) => {
+        const { createTransport }: typeof import('@sentry/core') = require('@sentry/core');
+        const { fetch }: typeof import('expo/fetch') = require('expo/fetch');
+        return createTransport(options, async ({ body }) => {
+          const response = await fetch(options.url, {
+            method: 'POST', credentials: 'omit', redirect: 'error',
+            headers: { 'Content-Type': 'application/x-sentry-envelope' },
+            body: typeof body === 'string' ? body : new Uint8Array(body),
+          });
+          return { statusCode: response.status, headers: {
+            'x-sentry-rate-limits': response.headers.get('X-Sentry-Rate-Limits'),
+            'retry-after': response.headers.get('Retry-After'),
+          } };
+        });
+      },
       beforeBreadcrumb: () => null,
       beforeSend: (event, hint) => {
         hint.attachments = [];
