@@ -2,6 +2,7 @@
 import type { Action } from '@atlas/engine';
 import { File, Paths } from 'expo-file-system';
 import { create } from 'zustand';
+import { trackGame } from '../telemetry/analytics.ts';
 import { deserialize, serialize } from './save.ts';
 import { botToMove, inProgress, playBot, playHuman, rematch, startSolo, type SoloConfig, type SoloGame } from './solo.ts';
 
@@ -74,21 +75,26 @@ const newSeed = (previous?: number) => {
 
 export const useSolo = create<SoloStore>((set, get) => {
   // Persist before publishing state: a refused action stays available to retry.
-  function update(game: SoloGame | null): boolean {
+  function update(game: SoloGame | null, started = false): boolean {
     if (blocked) { set({ saveError: failure() }); return false; }
+    const previous = get().game;
     try {
       save(game);
       set({ game, saveError: null });
-      return true;
     } catch { set({ saveError: failure() }); return false; }
+    if (game && started) trackGame('game started', 'solo', game.state.options);
+    if (game && previous && inProgress(previous) && !inProgress(game)) {
+      trackGame('game finished', 'solo', game.state.options);
+    }
+    return true;
   }
   return {
     game: initial,
     saveError: initialError,
-    start: (config) => update(startSolo(config, newSeed())),
+    start: (config) => update(startSolo(config, newSeed()), true),
     rematch: () => {
       const { game } = get();
-      return game ? update(rematch(game, newSeed(game.seed))) : false;
+      return game ? update(rematch(game, newSeed(game.seed)), true) : false;
     },
     abandon: () => update(null),
     play: (action) => { const { game } = get(); return game ? update(playHuman(game, action)) : false; },

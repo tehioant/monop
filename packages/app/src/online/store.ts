@@ -9,6 +9,7 @@ import type { RestoredAccount } from '../account/client.ts';
 import { readLanguage } from '../i18n/deviceLanguage.ts';
 import { translate } from '../i18n/strings.ts';
 import { useSettings } from '../settings/store.ts';
+import { trackGame } from '../telemetry/analytics.ts';
 import { connection, type Socket } from './connection.ts';
 import { defaultName, intent, offline, type RoomRequest, type Session } from './session.ts';
 
@@ -53,18 +54,45 @@ export const useOnline = create<OnlineStore>((set, get) => {
   const write = (key: string, value: string) => { try { SecureStore.setItem(key, value); } catch { warn(); } };
   let forgetStoredToken = false;
   const accountToken = () => get().session.token ?? (forgetStoredToken ? null : read(TOKEN_KEY) || null);
+  let freshWelcome = false;
+  let lobbyToStart: string | null = null;
+  let lastFinishedRoom: string | null = null;
   const server = connection(
     () => new WebSocket(serverUrl) as Socket,
     () => get().session,
-    (session) => {
-      const { token } = get().session;
-      if (session.token !== null && session.token !== token) write(TOKEN_KEY, session.token);
+    (session, packet) => {
+      const previous = get().session;
+      if (session.token !== null && session.token !== previous.token) write(TOKEN_KEY, session.token);
       set({ session });
+
+      if (packet?.type === 'welcome' || !session.room) {
+        freshWelcome = packet?.type === 'welcome' && !packet.resumed;
+        lobbyToStart = null;
+      }
+      const code = session.room?.code;
+      const request = previous.request?.type;
+      // Only create/join can acknowledge a fresh lobby. A resumed welcome can also answer an invite request.
+      if (packet?.type === 'room' && code && freshWelcome && (request === 'createRoom' || request === 'joinRoom')) {
+        lobbyToStart = code;
+        if (lastFinishedRoom === code) lastFinishedRoom = null;
+        freshWelcome = false;
+      }
+      // Gaps are not adopted by receive(); duplicate packets and resync must not open a new observation.
+      if (packet?.type !== 'state' || !code || session.game !== packet || !session.synced) return;
+      const starts = lobbyToStart === code && !previous.game && packet.stateVersion === 1;
+      lobbyToStart = null;
+      if (starts) trackGame('game started', 'online', packet.view.options);
+      if (packet.view.phase.kind === 'over' && lastFinishedRoom !== code) {
+        lastFinishedRoom = code;
+        trackGame('game finished', 'online', packet.view.options);
+      }
     },
   );
 
   /** Opens a new connection, which says hello and sends `request` once welcomed. */
   const connect = (request: RoomRequest) => {
+    freshWelcome = false;
+    lobbyToStart = null;
     let name = get().session.name.trim();
     if (!name) {
       const choice = useSettings.getState().settings.language;

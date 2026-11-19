@@ -1,6 +1,9 @@
 import { Stack } from 'expo-router';
 import { LocaleProvider } from '../i18n/locale.tsx';
 import { colors } from '../table/theme.ts';
+import { initializeCrashReporting } from '../telemetry/crash.ts';
+
+initializeCrashReporting();
 
 export default function RootLayout() {
   return (

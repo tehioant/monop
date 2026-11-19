@@ -1,0 +1,31 @@
+# App telemetry
+
+Both channels are **off by default** and configured independently at Expo bundle time. Set variables in the app's build environment (or an untracked `packages/app/.env.local` for local development) and rebuild/rebundle to change them. An absent, blank or unsupported DSN disables that channel; there is no fallback project. Use the public HTTPS project DSN from **Client Keys (DSN)**: a hexadecimal public key, DNS host and numeric project ID, with no password, query or fragment. An optional port and simple path prefix are accepted. The HTTPS scheme and host are case-insensitive; the key, path and project ID retain their exact spelling. `EXPO_PUBLIC_` values are visible in the shipped JS. Never put `SENTRY_AUTH_TOKEN`, a privileged API token, or any password in them. No upload token or source-map upload is configured by this change.
+
+| Setting | Destination and data |
+| --- | --- |
+| `EXPO_PUBLIC_SENTRY_DSN` | JavaScript crash reporting only. The Expo root only loads and initializes `@sentry/react-native` after validating this DSN. Native crash collection is disabled. |
+| `EXPO_PUBLIC_SENTRY_ANALYTICS_DSN` | A Sentry project supporting [direct OTLP Logs](https://docs.sentry.io/concepts/otlp/direct/logs), ideally separate from the crash project. Only two game lifecycle events use this transport. No other app logs are forwarded. |
+
+## Analytics data and counts
+
+The only product fields are `game started` or `game finished`, `mode` (`solo` or `online`), `countries_to_win` and `player_count` (all seats, including bots). The app constructs a fresh OTLP record from supported options. It sends no guest/account/player/install identifier (including hashes), name, token, seed, room code, winner, move or card history, or trace/span ID. This path uses `expo/fetch` directly (not the global fetch or crash SDK) and sends HTTPS JSON with credentials omitted and redirects rejected. The project key is public routing/auth metadata; the JSON includes OTLP containers, an event timestamp and `info` severity. The receiving infrastructure can still observe IP and HTTP metadata such as user agent, and may generate its own storage IDs or add ingestion metadata. Review Sentry's IP handling, data scrubbing, access and retention settings before use; the client cannot guarantee how the service handles transport metadata.
+
+- **Solo:** Start and rematch count after the device save succeeds. A finish counts when an active game reaches `over` and the save cleanup succeeds. Loading/retrying a save, abandoning, viewing results and tutorial play do not create events. An actual finish after resuming can still count.
+- **Online:** Start counts for a successfully joined or created lobby when the app adopts its first game state (version 1). A restored seat, host tap, or resync does not itself count. A finish counts on the first accepted terminal state for the observed room, including one first seen after resync. Deduplication is local and in memory. Multiple players can each report the same match, and offline use or a missed terminal packet can undercount. These are app observations, not a globally unique match census or a matched start-to-finish funnel.
+
+Requests are best-effort: no app queue, retry, blocking await, or game/persistence error on delivery failure. Use aggregated counts, not individual histories.
+
+## Crash privacy and limits
+
+JS exception reports keep a Sentry event ID/timestamp, severity, a bounded error type, handled status, and stack line/column numbers with fixed bundle names. The hook drops raw exception text, dynamic frame names and paths, breadcrumbs, URLs, user/context, tags and attachments. This loses detail; stack coordinates are still useful for diagnosing recurring failures. Crash options disable default PII, sessions, SDK logs, tracing/propagation, replay, screenshots, view hierarchy and NDK scope sync. Atlas does not set a Sentry user or session. Crashes before JS initialization are not covered.
+
+The app neither starts native Sentry nor hands the DSN to its native initialization bridge. The JS hook cannot filter native reports or envelopes already cached for retry. Do not enable separate native initialization: native capture remains blocked until both platforms have verified on-device filtering, safe handling of old caches, and no DSN logging during initialization. This change does not purge caches from older builds or modify apps already installed.
+
+## Human acceptance (not run by the local source check)
+
+1. On installed iOS and Android builds with both variables absent, confirm startup and ordinary play, with no Sentry initialization or network traffic from the app. Check Expo's generated native dependency linkage when building; do not configure early native startup or source-map upload for this ticket.
+2. With an approved test project only, check a controlled JS exception in a disposable installed build. Verify the raw JS report and project privacy settings, that the native initialization path is not called even when JS reporting is enabled, and that the startup logs do not contain the configured DSN. Remove any test trigger before building production. Native crash delivery and relaunch checks are deferred until a privacy-safe native implementation is available.
+3. With Logs enabled for the approved analytics project, verify one visible record for a saved solo start/finish and a newly adopted online start/finish; rematch is a new start. Spot-check a solo reload/abandon, tutorial and online seat resume/duplicate state for no extra start/finish. Inspect the raw submitted fields and server-side enrichment. Check a refused save and disabled analytics build send nothing.
+
+Offline Expo bundles and mocked checks do not verify an installed build, native crash contents, or live ingestion. Build profiles are separate (#31).

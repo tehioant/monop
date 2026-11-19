@@ -3,10 +3,13 @@ import { test } from 'node:test';
 import { englishLocale, animated, hooks, loadComponent, native, nodes } from './componentBoundary.ts';
 import { startSolo, type SoloGame } from '../src/solo/solo.ts';
 import { serialize, deserialize } from '../src/solo/save.ts';
+import { COUNTRIES } from '@atlas/engine';
 
 const config = { bots: 1, difficulty: 'easy' as const, countriesToWin: 3 };
 const path = (name: string) => new URL(`../src/${name}`, import.meta.url).pathname;
-function device(saved?: SoloGame) {
+function device(saved?: SoloGame, fetch = async (_url: string, _request: RequestInit): Promise<never> => {
+  throw Error('unexpected telemetry');
+}) {
   const files = new Map<string, string>(saved ? [['solo-game.json', serialize(saved)]] : []);
   const faults = new Set<string>();
   const calls: string[] = [];
@@ -21,7 +24,7 @@ function device(saved?: SoloGame) {
     moveSync(to: File, _options?: unknown) { files.delete(to.name); if (faults.has('move')) throw Error('private details'); files.set(to.name, files.get(this.name)!); files.delete(this.name); this.name = to.name; }
     delete() { calls.push('delete'); if (faults.has('delete')) throw Error('private details'); files.delete(this.name); }
   }
-  const load = () => loadComponent(path('solo/store.ts'), { 'expo-file-system': { File, Paths: { document: 'device' } } }).useSolo;
+  const load = () => loadComponent(path('solo/store.ts'), { 'expo-file-system': { File, Paths: { document: 'device' } }, 'expo/fetch': { fetch } }).useSolo;
   return { files, faults, calls, load };
 }
 function prepared(player = 0): SoloGame {
@@ -30,6 +33,42 @@ function prepared(player = 0): SoloGame {
   game.state.phase = { kind: 'draw', player, remaining: 1 };
   return game;
 }
+
+test('solo telemetry observes saved starts, rematches and the first persisted terminal transition', (t) => {
+  t.mock.method(console, 'warn', () => {});
+  const env = 'EXPO_PUBLIC_SENTRY_ANALYTICS_DSN';
+  const previous = process.env[env];
+  process.env[env] = 'https://0123456789abcdef0123456789abcdef@telemetry.invalid/123';
+  t.after(() => { if (previous === undefined) delete process.env[env]; else process.env[env] = previous; });
+
+  const active = prepared();
+  const almostOver = prepared();
+  almostOver.state.players[0]!.table = COUNTRIES.slice(0, 3).map(({ id, cities }) => ({ country: id, cities: [...cities], upgrades: [] }));
+  const observed: unknown[] = [];
+  const io = device(active, async (_url, request) => {
+    const log = JSON.parse(String(request.body)).resourceLogs[0].scopeLogs[0].logRecords[0];
+    observed.push([log.body.stringValue, store.getState().game?.state.phase.kind === 'over', io.files.has('solo-game.json')]);
+    throw Error('private');
+  });
+  const store = io.load();
+  assert.deepEqual(observed, [], 'loading a save is silent');
+  io.faults.add('write');
+  assert.equal(store.getState().start(config), false);
+  io.faults.clear();
+  assert.equal(store.getState().start(config), true);
+  assert.equal(store.getState().abandon(), true);
+  store.setState({ game: almostOver });
+  io.files.set('solo-game.json', serialize(active));
+  io.faults.add('delete');
+  assert.equal(store.getState().play({ type: 'draw' }), false);
+  assert.equal(store.getState().game, almostOver);
+  io.faults.clear();
+  assert.equal(store.getState().play({ type: 'draw' }), true);
+  assert.equal(store.getState().game?.state.phase.kind, 'over');
+  store.getState().retrySave();
+  assert.equal(store.getState().rematch(), true);
+  assert.deepEqual(observed, [['game started', false, true], ['game finished', true, false], ['game started', false, true]]);
+});
 
 test('native store saves new starts and each human or bot action, and reloads identically', () => {
   const fresh = device(); const started = fresh.load(); started.getState().start(config);
